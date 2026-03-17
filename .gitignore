@@ -1,0 +1,21 @@
+# Données générées par le pipeline
+data/boites_brutes.json
+data/boites_qualifiees.json
+data/contacts_enrichis.json
+data/incomplets.json
+data/exclus.json
+data/errors.log
+
+# Environnement
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Credentials Google Sheets
+credentials.json
+token.json
+
+# OS
+.DS_Store
+Thumbs.db

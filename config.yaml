@@ -1,0 +1,43 @@
+# ============================================================
+# Configuration du pipeline de prospection outbound
+# Seule interface pour modifier les critères — jamais hardcodé
+# ============================================================
+
+# Mode de prospection : "levee_de_fonds" ou "cession"
+mode: "levee_de_fonds"
+
+# --- Filtres entreprises ---
+secteurs_inclus:
+  - "impact"
+  - "ESG"
+  - "fintech"
+  - "greentech"
+  - "edtech"
+
+secteurs_exclus:
+  - "casino"
+  - "tabac"
+  - "défense"
+
+taille_min: 10
+taille_max: 500
+pays:
+  - "France"
+
+# Score minimum pour passer au scoring (sur 10)
+score_minimum: 7
+
+# --- Filtres dirigeants ---
+titre_cibles:
+  - "CEO"
+  - "DG"
+  - "Directeur Général"
+  - "Associé"
+  - "Directeur Investissement"
+
+# --- Paramètres d'envoi Brevo ---
+envoi_par_jour: 15
+delai_entre_emails_min: 180
+delai_entre_emails_max: 420
+heure_debut_envoi: "09:00"
+heure_fin_envoi: "17:30"

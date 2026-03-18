@@ -1,4 +1,4 @@
-import type { Context } from "@netlify/functions";
+import type { Context, Config } from "@netlify/functions";
 import {
   findRowById,
   updateRow,
@@ -10,21 +10,15 @@ const FULLENRICH_BASE_URL = "https://app.fullenrich.com";
 const POLL_INTERVAL_MS = 5_000;
 const POLL_TIMEOUT_MS = 20_000;
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
 function fullenrichHeaders() {
-  const key = process.env.FULLENRICH_API_KEY;
+  const key = Netlify.env.get("FULLENRICH_API_KEY");
   if (!key) throw new Error("FULLENRICH_API_KEY non définie");
   return {
     Authorization: `Bearer ${key}`,
@@ -91,10 +85,6 @@ async function pollResults(enrichmentId: string): Promise<Record<string, string>
 }
 
 export default async (request: Request, _context: Context) => {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
-
   if (request.method !== "POST") {
     return json({ error: "Méthode non supportée" }, 405);
   }
@@ -157,4 +147,8 @@ export default async (request: Request, _context: Context) => {
     console.error("enrich error:", err);
     return json({ error: String(err) }, 500);
   }
+};
+
+export const config: Config = {
+  path: ["/api/enrich"],
 };

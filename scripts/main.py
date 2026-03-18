@@ -6,6 +6,7 @@ Usage :
     python scripts/main.py --step builder     # Étape spécifique
     python scripts/main.py --send             # Envoi réel (attention !)
     python scripts/main.py --input data/my.csv  # Fichier d'entrée custom
+    python scripts/main.py --dashboard        # Tableau de bord
 """
 
 import argparse
@@ -25,9 +26,10 @@ from qualifier import qualify
 from enricher import enrich
 from emailer import run_email_campaign
 from exporter import export_to_sheets, export_to_csv
+from dashboard import collect_all, render_dashboard
 
 
-STEPS = ["builder", "qualifier", "enricher", "emailer", "exporter"]
+STEPS = ["builder", "qualifier", "enricher", "emailer", "exporter", "dashboard"]
 
 
 def _print_step(name: str, result: dict) -> None:
@@ -79,6 +81,10 @@ def run_pipeline(
                     result = export_to_csv()
                 else:
                     result = export_to_sheets()
+            elif s == "dashboard":
+                data = collect_all()
+                render_dashboard(data)
+                result = {"status": "ok", "message": "Dashboard affiché"}
             else:
                 continue
 
@@ -112,7 +118,14 @@ def main():
     parser.add_argument("--csv", action="store_true", help="Export CSV au lieu de Google Sheets")
     parser.add_argument("--sender-email", default="", help="Email de l'expéditeur")
     parser.add_argument("--sender-name", default="", help="Nom de l'expéditeur")
+    parser.add_argument("--dashboard", action="store_true", help="Afficher le tableau de bord")
     args = parser.parse_args()
+
+    # Raccourci --dashboard
+    if args.dashboard:
+        data = collect_all()
+        render_dashboard(data)
+        sys.exit(0)
 
     if args.send:
         print("MODE PRODUCTION — les emails seront réellement envoyés !")

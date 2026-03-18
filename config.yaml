@@ -61,3 +61,19 @@ delai_entre_emails_max: 420
 heure_debut_envoi: "09:00"
 heure_fin_envoi: "17:30"
 hubspot_owner_id: "87316613"
+
+# --- Limites et coûts ---
+limites:
+  # Fullenrich
+  fullenrich_credits_max_par_mois: 500      # Plan Starter = 500 crédits/mois
+  fullenrich_credits_alerte_seuil: 50        # Alerte quand < 50 crédits restants
+  fullenrich_cout_par_credit_eur: 0.058      # 29€ / 500 crédits
+
+  # IA (Claude Haiku) — scoring + génération emails
+  haiku_max_appels_par_jour: 200             # Limite quotidienne d'appels Haiku
+  haiku_cout_input_par_mtok_eur: 0.001       # $0.001/1K input tokens (~0.001€)
+  haiku_cout_output_par_mtok_eur: 0.005      # $0.005/1K output tokens (~0.005€)
+  haiku_tokens_moyens_par_appel: 800         # Estimation tokens par scoring/email
+
+  # HubSpot
+  hubspot_emails_max_par_jour: 50            # Limite raisonnable (Starter = 500/jour)

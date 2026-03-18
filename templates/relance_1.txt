@@ -1,0 +1,10 @@
+Bonjour $prenom,
+
+Je me permets de revenir vers vous suite à mon précédent message.
+
+$hook
+
+Si le timing n'est pas le bon, je comprendrai parfaitement — n'hésitez pas à me le dire.
+
+Bien cordialement,
+[VOTRE NOM]

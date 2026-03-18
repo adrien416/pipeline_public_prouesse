@@ -22,21 +22,40 @@ async function callClaude(description: string, mode: string): Promise<Record<str
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
-  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres de recherche JSON pour l'API Fullenrich.
+  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres de recherche JSON pour l'API Fullenrich v2.
 
-Filtres disponibles pour "people_filters" : job_title (array de strings), location (string), industry (array de strings), headcount (object {min, max}), years_in_current_role (object {min, max}), years_at_current_company (object {min, max}), seniority (array de strings), name (string), skills (array de strings).
+IMPORTANT : Chaque filtre est un ARRAY d'objets avec les propriétés "value" (string), "exact_match" (boolean), "exclude" (boolean).
+Les filtres numériques (headcounts, founded_years) utilisent "min" et "max" au lieu de "value".
 
-Filtres disponibles pour "company_filters" : name (string), domain (string), headcount (object {min, max}), industry (array de strings), type (string), headquarters (string), specialties (array de strings).
+Filtres disponibles :
+COMPANY :
+- current_company_names: [{value, exact_match, exclude}]
+- current_company_domains: [{value, exact_match, exclude}]
+- current_company_industries: [{value, exact_match, exclude}]
+- current_company_specialties: [{value, exact_match, exclude}]
+- current_company_types: [{value, exact_match, exclude}]
+- current_company_headquarters: [{value, exact_match, exclude}]
+- current_company_headcounts: [{min, max, exclude}]
+- current_company_founded_years: [{min, max, exclude}]
+
+PEOPLE :
+- person_names: [{value, exact_match, exclude}]
+- person_locations: [{value, exact_match, exclude}]
+- person_skills: [{value, exact_match, exclude}]
+- current_position_titles: [{value, exact_match, exclude}]
+- current_position_seniority_level: [{value, exact_match, exclude}]
+- past_position_titles: [{value, exact_match, exclude}]
 
 Le mode est "${mode}".
-- Pour "levee_de_fonds" : cible les décideurs (CEO, DG, Directeur Général, Founder, Managing Partner, etc.) dans des entreprises correspondant à la description.
+- Pour "levee_de_fonds" : cible les décideurs (CEO, DG, Directeur Général, Founder, Managing Partner, Co-founder, CFO) dans des entreprises correspondant à la description.
 - Pour "cession" : cible les dirigeants/propriétaires (CEO, Gérant, Président, DG, Founder) dans des entreprises correspondant à la description.
 
-Réponds UNIQUEMENT avec un JSON valide de la forme :
+Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exemple :
 {
-  "people_filters": { ... },
-  "company_filters": { ... },
-  "search_type": "people"
+  "current_company_industries": [{"value": "Cleantech", "exact_match": false, "exclude": false}],
+  "current_company_headquarters": [{"value": "France", "exact_match": false, "exclude": false}],
+  "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}],
+  "current_company_headcounts": [{"min": 20, "max": 200, "exclude": false}]
 }
 
 N'inclus que les filtres pertinents par rapport à la description.`;
@@ -80,13 +99,19 @@ async function searchFullenrich(filters: Record<string, unknown>): Promise<unkno
   const apiKey = process.env.FULLENRICH_API_KEY;
   if (!apiKey) throw new Error("FULLENRICH_API_KEY non définie");
 
-  const response = await fetch("https://app.fullenrich.com/api/v2/search/people", {
+  const body = {
+    offset: 0,
+    limit: 100,
+    ...filters,
+  };
+
+  const response = await fetch("https://app.fullenrich.com/api/v2/people/search", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(filters),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -113,30 +138,22 @@ export default async (request: Request) => {
     // 1. Translate description to Fullenrich filters via Claude
     const filters = await callClaude(body.description, body.mode);
 
-    // Apply optional overrides
-    const companyFilters = (filters.company_filters ?? {}) as Record<string, unknown>;
-    const peopleFilters = (filters.people_filters ?? {}) as Record<string, unknown>;
-
+    // Apply optional overrides in Fullenrich v2 format
     if (body.headcount_min || body.headcount_max) {
-      companyFilters.headcount = {
-        ...(companyFilters.headcount as Record<string, unknown> ?? {}),
-        ...(body.headcount_min ? { min: body.headcount_min } : {}),
-        ...(body.headcount_max ? { max: body.headcount_max } : {}),
-      };
+      filters.current_company_headcounts = [
+        { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
+      ];
     }
     if (body.location) {
-      companyFilters.headquarters = body.location;
+      filters.current_company_headquarters = [
+        { value: body.location, exact_match: false, exclude: false },
+      ];
     }
     if (body.secteur) {
-      if (Array.isArray(companyFilters.industry)) {
-        (companyFilters.industry as string[]).push(body.secteur);
-      } else {
-        companyFilters.industry = [body.secteur];
-      }
+      const existing = (filters.current_company_industries as unknown[]) ?? [];
+      existing.push({ value: body.secteur, exact_match: false, exclude: false });
+      filters.current_company_industries = existing;
     }
-
-    filters.company_filters = companyFilters;
-    filters.people_filters = peopleFilters;
 
     // 2. Call Fullenrich Search API
     const results = await searchFullenrich(filters);
@@ -159,15 +176,15 @@ export default async (request: Request) => {
     // 4. Save contacts to Google Sheets
     const contacts: Record<string, string>[] = results.map((r: any) => ({
       id: uuidv4(),
-      nom: r.last_name ?? r.nom ?? "",
-      prenom: r.first_name ?? r.prenom ?? "",
-      email: r.email ?? "",
-      entreprise: r.company_name ?? r.company ?? r.entreprise ?? "",
-      titre: r.title ?? r.job_title ?? r.titre ?? "",
-      domaine: r.domain ?? r.company_domain ?? r.domaine ?? "",
-      secteur: r.industry ?? r.secteur ?? "",
-      linkedin: r.linkedin_url ?? r.linkedin ?? "",
-      telephone: r.phone ?? r.telephone ?? "",
+      nom: r.last_name ?? "",
+      prenom: r.first_name ?? "",
+      email: "",
+      entreprise: r.employment?.current?.company?.name ?? "",
+      titre: r.employment?.current?.title ?? "",
+      domaine: r.employment?.current?.company?.domain ?? "",
+      secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+      linkedin: r.social_profiles?.linkedin?.url ?? "",
+      telephone: "",
       statut: "nouveau",
       enrichissement_status: "",
       score_1: "",

@@ -90,6 +90,13 @@ export function launchEnrichment(recherche_id: string) {
   });
 }
 
+export function excludeContacts(ids: string[]) {
+  return request<{ excluded: number }>("/contacts", {
+    method: "PUT",
+    body: JSON.stringify({ exclude_ids: ids }),
+  });
+}
+
 // ─── Contacts ───
 export function fetchContacts(recherche_id?: string) {
   const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";

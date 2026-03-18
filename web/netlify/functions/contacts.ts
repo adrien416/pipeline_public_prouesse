@@ -6,6 +6,7 @@ import {
   appendRow,
   findRowById,
   updateRow,
+  batchUpdateRows,
   CONTACTS_HEADERS,
   toRow,
 } from "./_sheets.js";
@@ -19,7 +20,7 @@ async function handleGet(url: URL) {
   let contacts = await readAll("Contacts");
 
   if (rechercheId) {
-    contacts = contacts.filter((c) => c.recherche_id === rechercheId);
+    contacts = contacts.filter((c) => c.recherche_id === rechercheId && c.statut !== "exclu");
   }
   if (statutFilter) {
     contacts = contacts.filter((c) => c.statut.toLowerCase() === statutFilter);
@@ -69,6 +70,26 @@ async function handlePost(request: Request) {
 /** PUT /api/contacts */
 async function handlePut(request: Request) {
   const body = await request.json();
+
+  // Bulk exclude contacts
+  if (body.exclude_ids && Array.isArray(body.exclude_ids)) {
+    const allContacts = await readAll("Contacts");
+    const updates: Array<{ rowIndex: number; values: string[] }> = [];
+
+    for (const id of body.exclude_ids) {
+      const idx = allContacts.findIndex((c) => c.id === id);
+      if (idx === -1) continue;
+      const contact = allContacts[idx];
+      const updated = { ...contact, statut: "exclu", date_modification: new Date().toISOString() };
+      updates.push({ rowIndex: idx + 2, values: toRow(CONTACTS_HEADERS, updated) });
+    }
+
+    if (updates.length > 0) {
+      await batchUpdateRows("Contacts", updates);
+    }
+    return json({ excluded: updates.length });
+  }
+
   const { id, ...updates } = body;
   if (!id) return json({ error: "id requis" }, 400);
 

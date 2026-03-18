@@ -174,7 +174,7 @@ export default async (request: Request) => {
 
     // Find contacts for this search that haven't been scored yet
     const unscored = allContacts.filter(
-      (c) => c.recherche_id === body.recherche_id && !c.score_total
+      (c) => c.recherche_id === body.recherche_id && !c.score_total && c.statut !== "exclu"
     );
 
     // Process 1 contact per call (Anthropic rate limit: 5 req/min)

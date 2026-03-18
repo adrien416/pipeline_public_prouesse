@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { launchSearch } from "../api/client";
+import { launchSearch, excludeContacts } from "../api/client";
 import type { SearchParams } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
@@ -16,6 +16,7 @@ export function SearchPage({ onComplete }: Props) {
   const [headcountMax, setHeadcountMax] = useState("500");
   const [secteur, setSecteur] = useState("");
   const [limit, setLimit] = useState("100");
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
   const search = useMutation({
     mutationFn: (params: SearchParams) => launchSearch(params),
@@ -168,14 +169,20 @@ export function SearchPage({ onComplete }: Props) {
           <div className="p-4 border-b flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-gray-900">
-                {search.data.contacts.length} contacts trouves
+                {search.data.contacts.length - excluded.size} contacts trouves
+                {excluded.size > 0 && <span className="text-gray-400 font-normal text-sm ml-2">({excluded.size} exclus)</span>}
               </h3>
               {search.data.explication && (
                 <p className="text-xs text-gray-500 mt-1">{search.data.explication}</p>
               )}
             </div>
             <button
-              onClick={() => onComplete(search.data!.recherche.id)}
+              onClick={async () => {
+                if (excluded.size > 0) {
+                  await excludeContacts(Array.from(excluded));
+                }
+                onComplete(search.data!.recherche.id);
+              }}
               className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700"
             >
               Valider et passer au scoring →
@@ -186,6 +193,7 @@ export function SearchPage({ onComplete }: Props) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
                 <tr>
+                  <th className="px-2 py-2 text-center w-8"></th>
                   <th className="px-3 py-2 text-left">Nom</th>
                   <th className="px-3 py-2 text-left">Entreprise</th>
                   <th className="px-3 py-2 text-left">Titre</th>
@@ -194,8 +202,24 @@ export function SearchPage({ onComplete }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {search.data.contacts.map((c, i) => (
-                  <tr key={c.id || i} className="border-t border-gray-100 hover:bg-gray-50">
+                {search.data.contacts.map((c, i) => {
+                  const isExcluded = excluded.has(c.id);
+                  return (
+                  <tr key={c.id || i} className={`border-t border-gray-100 hover:bg-gray-50 ${isExcluded ? "opacity-30 line-through" : ""}`}>
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        onClick={() => {
+                          const next = new Set(excluded);
+                          if (isExcluded) next.delete(c.id);
+                          else next.add(c.id);
+                          setExcluded(next);
+                        }}
+                        className={`text-xs px-1.5 py-0.5 rounded ${isExcluded ? "bg-gray-200 text-gray-500" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
+                        title={isExcluded ? "Reinclure" : "Exclure"}
+                      >
+                        {isExcluded ? "+" : "x"}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {c.prenom} {c.nom}
                     </td>
@@ -204,7 +228,8 @@ export function SearchPage({ onComplete }: Props) {
                     <td className="px-3 py-2 text-gray-600">{c.secteur}</td>
                     <td className="px-3 py-2 text-gray-500">{c.domaine}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

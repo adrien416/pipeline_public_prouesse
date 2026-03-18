@@ -102,7 +102,7 @@ def load_from_csv(filepath: str) -> list[dict]:
         # Mapping flexible des colonnes
         headers = {h.strip().lower(): h for h in reader.fieldnames}
         domain_col = None
-        for candidate in ["domaine", "domain", "website", "url", "company_domain", "site"]:
+        for candidate in ["domaine", "domain", "website", "url", "company_domain", "site", "company website"]:
             if candidate in headers:
                 domain_col = headers[candidate]
                 break
@@ -112,10 +112,10 @@ def load_from_csv(filepath: str) -> list[dict]:
                 f"Attendu : domaine, domain, website, url, ou company_domain"
             )
 
-        name_col = headers.get("nom") or headers.get("name") or headers.get("company") or headers.get("entreprise")
-        secteur_col = headers.get("secteur") or headers.get("sector") or headers.get("industry")
-        taille_col = headers.get("taille") or headers.get("size") or headers.get("employees") or headers.get("headcount")
-        pays_col = headers.get("pays") or headers.get("country") or headers.get("location")
+        name_col = headers.get("nom") or headers.get("name") or headers.get("company") or headers.get("entreprise") or headers.get("company name")
+        secteur_col = headers.get("secteur") or headers.get("sector") or headers.get("industry") or headers.get("company industry")
+        taille_col = headers.get("taille") or headers.get("size") or headers.get("employees") or headers.get("headcount") or headers.get("company headcount")
+        pays_col = headers.get("pays") or headers.get("country") or headers.get("location") or headers.get("company country")
 
         companies = []
         for i, row in enumerate(reader, start=2):  # ligne 2 = première data row

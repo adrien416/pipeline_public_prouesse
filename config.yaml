@@ -35,6 +35,25 @@ titre_cibles:
   - "Associé"
   - "Directeur Investissement"
 
+# --- Signaux d'intention (par mode) ---
+signaux_intention:
+  levee_de_fonds:
+    - "Recrutements exécutifs récents (CTO, CFO, VP Sales)"
+    - "Pic d'offres d'emploi (phase de croissance)"
+    - "Lancement de nouveaux produits"
+    - "Expansion géographique ou nouveau marché"
+    - "Changements réglementaires favorables"
+    - "Concurrents ayant récemment levé"
+    - "Temps depuis le dernier tour de financement"
+    - "Croissance du headcount significative"
+  cession:
+    - "Fondateur en fin de carrière ou désengagement"
+    - "Croissance en déclin"
+    - "Consolidation du marché"
+    - "Intérêt du Private Equity dans le secteur"
+    - "Absence de plan de succession clair"
+    - "Stagnation des recrutements"
+
 # --- Paramètres d'envoi Brevo ---
 envoi_par_jour: 15
 delai_entre_emails_min: 180

@@ -1,17 +1,27 @@
 """
 enricher.py — Enrichissement des contacts pour les entreprises qualifiées.
 
-Utilise Clay MCP (via appels interactifs) ou accepte des données pré-enrichies.
+Enrichit les emails via l'API Fullenrich (waterfall multi-providers).
+Accepte aussi des données pré-enrichies en JSON/CSV.
 Entrée : data/boites_qualifiees.json
 Sortie  : data/contacts_enrichis.json + data/incomplets.json
 """
 
 import json
+import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import yaml
+
+try:
+    import requests as _requests
+except ImportError:
+    _requests = None
+
+logger = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -90,6 +100,209 @@ def _contact_completeness(contact: dict) -> dict:
         "champs_optionnels_manquants": missing_optional,
         "score_completude": (len(required) - len(missing)) / len(required) * 100,
     }
+
+
+# ============================================================
+# Client API Fullenrich
+# ============================================================
+
+FULLENRICH_BASE_URL = "https://app.fullenrich.com"
+FULLENRICH_BATCH_SIZE = 100
+FULLENRICH_POLL_INTERVAL = 10  # secondes
+FULLENRICH_POLL_TIMEOUT = 120  # secondes
+FULLENRICH_MAX_RETRIES = 3
+
+
+def _fullenrich_headers() -> dict:
+    """Headers d'authentification Fullenrich."""
+    api_key = os.environ.get("FULLENRICH_API_KEY", "")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+
+def _can_enrich_contact(contact: dict) -> bool:
+    """Vérifie qu'un contact a les champs requis pour Fullenrich."""
+    has_name = bool(contact.get("prenom") or contact.get("nom"))
+    has_company = bool(contact.get("domaine") or contact.get("entreprise"))
+    return has_name and has_company
+
+
+def _build_fullenrich_payload(contacts: list[dict]) -> list[dict]:
+    """Convertit les contacts en format Fullenrich API."""
+    payload = []
+    for c in contacts:
+        # Séparer nom/prénom si seul 'nom' est fourni
+        prenom = c.get("prenom", "")
+        nom_complet = c.get("nom", "")
+        if not prenom and " " in nom_complet:
+            parts = nom_complet.split(" ", 1)
+            prenom = parts[0]
+            nom_famille = parts[1]
+        else:
+            nom_famille = nom_complet
+
+        entry = {
+            "firstname": prenom,
+            "lastname": nom_famille,
+        }
+        if c.get("domaine"):
+            entry["domain"] = c["domaine"]
+        if c.get("entreprise"):
+            entry["company_name"] = c["entreprise"]
+        if c.get("linkedin"):
+            entry["linkedin_url"] = c["linkedin"]
+
+        payload.append(entry)
+    return payload
+
+
+def _start_fullenrich_enrichment(contacts_payload: list[dict]) -> str | None:
+    """Lance un enrichissement bulk via POST /api/v1/contact/enrich/bulk.
+    Retourne l'enrichment_id ou None en cas d'erreur."""
+    if _requests is None:
+        logger.error("pip install requests requis pour Fullenrich")
+        return None
+
+    url = f"{FULLENRICH_BASE_URL}/api/v1/contact/enrich/bulk"
+    for attempt in range(FULLENRICH_MAX_RETRIES):
+        try:
+            resp = _requests.post(
+                url,
+                headers=_fullenrich_headers(),
+                json={"contacts": contacts_payload},
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                delay = 2 ** (attempt + 1)
+                logger.warning("Fullenrich rate limit, retry dans %ds", delay)
+                time.sleep(delay)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("enrichment_id") or data.get("id")
+        except Exception as e:
+            logger.error("Fullenrich POST erreur (attempt %d): %s", attempt + 1, e)
+            if attempt < FULLENRICH_MAX_RETRIES - 1:
+                time.sleep(2 ** (attempt + 1))
+    return None
+
+
+def _poll_fullenrich_results(enrichment_id: str) -> list[dict] | None:
+    """Poll GET /bulk/{enrichment_id} jusqu'à complétion ou timeout."""
+    if _requests is None:
+        return None
+
+    url = f"{FULLENRICH_BASE_URL}/bulk/{enrichment_id}"
+    elapsed = 0
+    while elapsed < FULLENRICH_POLL_TIMEOUT:
+        try:
+            resp = _requests.get(url, headers=_fullenrich_headers(), timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            status = data.get("status", "")
+            if status == "completed":
+                return data.get("contacts", data.get("results", []))
+            if status == "failed":
+                logger.error("Fullenrich enrichment %s failed", enrichment_id)
+                return None
+        except Exception as e:
+            logger.warning("Fullenrich poll erreur: %s", e)
+        time.sleep(FULLENRICH_POLL_INTERVAL)
+        elapsed += FULLENRICH_POLL_INTERVAL
+
+    logger.warning("Fullenrich timeout après %ds pour %s", FULLENRICH_POLL_TIMEOUT, enrichment_id)
+    return None
+
+
+def _merge_fullenrich_results(contacts: list[dict], results: list[dict]) -> list[dict]:
+    """Merge les résultats Fullenrich dans les contacts originaux."""
+    # Indexer les résultats par nom+domaine pour matcher
+    result_index: dict[str, dict] = {}
+    for r in results:
+        key = f"{r.get('firstname', '').lower()}_{r.get('lastname', '').lower()}_{r.get('domain', '').lower()}"
+        result_index[key] = r
+
+    for contact in contacts:
+        prenom = contact.get("prenom", "")
+        nom = contact.get("nom", "")
+        if not prenom and " " in nom:
+            parts = nom.split(" ", 1)
+            prenom = parts[0]
+            nom_famille = parts[1]
+        else:
+            nom_famille = nom
+
+        key = f"{prenom.lower()}_{nom_famille.lower()}_{contact.get('domaine', '').lower()}"
+        match = result_index.get(key)
+        if match:
+            email = match.get("email", "")
+            if email and _validate_email(email):
+                contact["email"] = email
+            phone = match.get("phone", "")
+            if phone:
+                contact["telephone"] = phone
+            linkedin = match.get("linkedin_url", "")
+            if linkedin and not contact.get("linkedin"):
+                contact["linkedin"] = linkedin
+
+    return contacts
+
+
+def enrich_emails_fullenrich(contacts: list[dict]) -> list[dict]:
+    """
+    Enrichit les emails via l'API Fullenrich.
+    - Ne traite que les contacts sans email et avec les champs requis
+    - Batch de 100 max, poll async, timeout 120s
+    - Crédits consommés uniquement si email trouvé
+    """
+    api_key = os.environ.get("FULLENRICH_API_KEY", "")
+    if not api_key:
+        logger.info("FULLENRICH_API_KEY non définie, enrichissement email ignoré")
+        return contacts
+
+    if _requests is None:
+        logger.warning("pip install requests requis pour enrichissement Fullenrich")
+        return contacts
+
+    # Séparer contacts à enrichir vs déjà OK
+    to_enrich = []
+    for c in contacts:
+        if not _validate_email(c.get("email", "")) and _can_enrich_contact(c):
+            to_enrich.append(c)
+
+    if not to_enrich:
+        logger.info("Aucun contact à enrichir via Fullenrich")
+        return contacts
+
+    logger.info("Enrichissement Fullenrich : %d contacts", len(to_enrich))
+
+    # Traiter par batch de 100
+    for i in range(0, len(to_enrich), FULLENRICH_BATCH_SIZE):
+        batch = to_enrich[i : i + FULLENRICH_BATCH_SIZE]
+        payload = _build_fullenrich_payload(batch)
+
+        enrichment_id = _start_fullenrich_enrichment(payload)
+        if enrichment_id is None:
+            for c in batch:
+                c.setdefault("enrichissement_status", "erreur_api")
+            continue
+
+        results = _poll_fullenrich_results(enrichment_id)
+        if results is None:
+            for c in batch:
+                c.setdefault("enrichissement_status", "timeout")
+            continue
+
+        _merge_fullenrich_results(batch, results)
+        for c in batch:
+            if _validate_email(c.get("email", "")):
+                c["enrichissement_status"] = "ok"
+            else:
+                c["enrichissement_status"] = "pas_de_resultat"
+
+    return contacts
 
 
 def load_contacts_from_json(filepath: str) -> list[dict]:
@@ -202,6 +415,9 @@ def enrich(
         else:
             contact["raison_rejet"] = f"titre hors cible: {contact.get('titre', '')}"
             title_rejected.append(contact)
+
+    # Enrichir les emails via Fullenrich pour les contacts sans email
+    title_matched = enrich_emails_fullenrich(title_matched)
 
     # Séparer complets / incomplets
     enriched = []

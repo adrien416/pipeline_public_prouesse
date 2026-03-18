@@ -7,6 +7,7 @@ Sortie  : data/boites_qualifiees.json
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -32,8 +33,45 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
+def _extract_json(text: str) -> dict | None:
+    """Extrait le premier objet JSON valide d'un texte, supporte le JSON imbriqué."""
+    # Chercher le premier '{'
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if c == "\\":
+            if in_string:
+                escape_next = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 def _build_scoring_prompt(company: dict, config: dict) -> str:
-    """Construit le prompt de scoring pour Haiku."""
+    """Construit le prompt de scoring pour Haiku, avec signaux d'intention."""
     mode = config.get("mode", "levee_de_fonds")
     secteurs = ", ".join(config.get("secteurs_inclus", []))
 
@@ -42,7 +80,8 @@ def _build_scoring_prompt(company: dict, config: dict) -> str:
     else:
         contexte = "Tu es un analyste M&A. Tu évalues si cette entreprise est un bon candidat pour une cession ou acquisition."
 
-    return f"""{contexte}
+    # Données de base
+    prompt = f"""{contexte}
 
 Secteurs cibles : {secteurs}
 Taille cible : {config.get('taille_min', 10)}-{config.get('taille_max', 500)} employés
@@ -52,14 +91,42 @@ Entreprise à évaluer :
 - Nom : {company.get('nom', 'inconnu')}
 - Secteur : {company.get('secteur', 'non renseigné')}
 - Taille : {company.get('taille', 'non renseigné')} employés
-- Pays : {company.get('pays', 'non renseigné')}
+- Pays : {company.get('pays', 'non renseigné')}"""
+
+    # Section données enrichies (si présentes)
+    enriched_keys = {k: v for k, v in company.items() if k.startswith("enriched_") and v}
+    if enriched_keys:
+        prompt += "\n\nDonnées enrichies :"
+        key_labels = {
+            "enriched_headcount_growth": "Croissance effectifs",
+            "enriched_recent_news": "Actualités récentes",
+            "enriched_open_jobs": "Offres d'emploi ouvertes",
+            "enriched_latest_funding": "Dernier financement",
+            "enriched_investors": "Investisseurs",
+        }
+        for key, value in enriched_keys.items():
+            label = key_labels.get(key, key.replace("enriched_", "").replace("_", " ").title())
+            prompt += f"\n- {label} : {value}"
+
+    # Signaux d'intention à chercher
+    signaux_config = config.get("signaux_intention", {})
+    signaux = signaux_config.get(mode, [])
+    if signaux:
+        prompt += "\n\nSignaux d'intention à évaluer :"
+        for s in signaux:
+            prompt += f"\n- {s}"
+
+    prompt += f"""
 
 Réponds UNIQUEMENT avec un JSON valide (pas de markdown, pas de texte avant/après) :
 {{
   "score": <entier de 1 à 10>,
   "raison": "<explication courte en 1-2 phrases>",
   "signaux_positifs": ["<signal1>", "<signal2>"],
-  "signaux_negatifs": ["<signal1>"]
+  "signaux_negatifs": ["<signal1>"],
+  "signaux_intention": [
+    {{"signal": "<nom du signal détecté>", "confiance": "forte|moyenne|faible", "source": "<d'où vient l'indice>"}}
+  ]
 }}
 
 Critères de scoring :
@@ -69,36 +136,51 @@ Critères de scoring :
 - 3-4 : faible potentiel
 - 1-2 : hors cible"""
 
+    return prompt
+
+
+def _normalize_signaux_intention(raw_signaux: list) -> list[dict]:
+    """Normalise les signaux d'intention : accepte strings ou dicts."""
+    normalized = []
+    for s in raw_signaux:
+        if isinstance(s, str):
+            normalized.append({"signal": s, "confiance": "faible", "source": "inférence"})
+        elif isinstance(s, dict) and "signal" in s:
+            s.setdefault("confiance", "faible")
+            s.setdefault("source", "inférence")
+            normalized.append(s)
+    return normalized
+
 
 def _parse_score_response(raw: str) -> dict:
-    """Parse la réponse JSON de Haiku, avec tolérance aux erreurs."""
+    """Parse la réponse JSON de Haiku, avec tolérance aux erreurs et signaux."""
     # Nettoyer le markdown si présent
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Retirer première et dernière ligne de code block
         lines = [l for l in lines if not l.strip().startswith("```")]
         cleaned = "\n".join(lines)
 
+    # Tenter le parse direct, sinon extraction JSON imbriqué
     try:
         result = json.loads(cleaned)
     except json.JSONDecodeError:
-        # Tenter d'extraire le JSON du texte
-        import re
-        match = re.search(r'\{[^{}]*"score"[^{}]*\}', cleaned, re.DOTALL)
-        if match:
-            try:
-                result = json.loads(match.group())
-            except json.JSONDecodeError:
-                return {"score": 0, "raison": "Réponse IA non parsable", "erreur_parsing": True}
-        else:
-            return {"score": 0, "raison": "Réponse IA non parsable", "erreur_parsing": True}
+        result = _extract_json(cleaned)
+        if result is None:
+            return {"score": 0, "raison": "Réponse IA non parsable", "erreur_parsing": True, "signaux_intention": []}
 
     # Valider le score
     score = result.get("score")
     if not isinstance(score, (int, float)) or score < 1 or score > 10:
         result["score"] = 0
         result["raison"] = result.get("raison", "") + " [score invalide]"
+
+    # Normaliser les signaux d'intention
+    raw_signaux = result.get("signaux_intention", [])
+    if isinstance(raw_signaux, list):
+        result["signaux_intention"] = _normalize_signaux_intention(raw_signaux)
+    else:
+        result["signaux_intention"] = []
 
     return result
 
@@ -111,7 +193,7 @@ def score_company(client, company: dict, config: dict) -> dict:
         try:
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=300,
+                max_tokens=500,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw_text = response.content[0].text

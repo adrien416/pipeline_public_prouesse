@@ -121,11 +121,67 @@ export async function findRowById(
   return null;
 }
 
+/**
+ * Ajoute plusieurs lignes à la fin d'un onglet (batch).
+ */
+export async function appendRows(tabName: string, rows: string[][]): Promise<void> {
+  if (rows.length === 0) return;
+  const sheets = getSheets();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: getSpreadsheetId(),
+    range: tabName,
+    valueInputOption: "RAW",
+    requestBody: { values: rows },
+  });
+}
+
+/**
+ * Met à jour plusieurs lignes (batch update).
+ */
+export async function batchUpdateRows(
+  tabName: string,
+  updates: Array<{ rowIndex: number; values: string[] }>
+): Promise<void> {
+  if (updates.length === 0) return;
+  const sheets = getSheets();
+  const data = updates.map((u) => {
+    const endCol = String.fromCharCode(64 + u.values.length);
+    return {
+      range: `${tabName}!A${u.rowIndex}:${endCol}${u.rowIndex}`,
+      values: [u.values],
+    };
+  });
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetId(),
+    requestBody: { valueInputOption: "RAW", data },
+  });
+}
+
 /** Headers des onglets pour construire les valeurs dans le bon ordre. */
 export const CONTACTS_HEADERS = [
   "id", "nom", "prenom", "email", "entreprise", "titre",
   "domaine", "secteur", "linkedin", "telephone",
-  "statut", "enrichissement_status", "date_creation", "date_modification",
+  "statut", "enrichissement_status",
+  "score_1", "score_2", "score_total", "score_raison",
+  "recherche_id", "campagne_id",
+  "email_status", "email_sent_at", "phrase_perso",
+  "date_creation", "date_modification",
+];
+
+export const RECHERCHES_HEADERS = [
+  "id", "description", "mode", "filtres_json", "nb_resultats", "date",
+];
+
+export const CAMPAGNES_HEADERS = [
+  "id", "nom", "template_sujet", "template_corps", "mode", "status",
+  "max_par_jour", "jours_semaine", "heure_debut", "heure_fin", "intervalle_min",
+  "total_leads", "sent", "opened", "clicked", "replied", "bounced",
+  "date_creation",
+];
+
+export const EMAILLOG_HEADERS = [
+  "id", "campagne_id", "contact_id", "brevo_message_id", "status",
+  "sent_at", "opened_at", "clicked_at", "replied_at",
 ];
 
 export const FONDS_HEADERS = [

@@ -1,148 +1,148 @@
-import type { Context, Config } from "@netlify/functions";
-import {
-  findRowById,
-  updateRow,
-  CONTACTS_HEADERS,
-  toRow,
-} from "./_sheets.js";
+import type { Config } from "@netlify/functions";
+import { requireAuth, json } from "./_auth.js";
+import { readAll, batchUpdateRows, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 
-const FULLENRICH_BASE_URL = "https://app.fullenrich.com";
-const POLL_INTERVAL_MS = 5_000;
-const POLL_TIMEOUT_MS = 20_000;
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+const FULLENRICH_BASE = "https://app.fullenrich.com";
+const BATCH_SIZE = 10;
 
 function fullenrichHeaders() {
   const key = process.env.FULLENRICH_API_KEY;
-  if (!key) throw new Error("Clé API Fullenrich non configurée. Ajoutez FULLENRICH_API_KEY dans les variables d'environnement Netlify.");
-  return {
-    Authorization: `Bearer ${key}`,
-    "Content-Type": "application/json",
-  };
+  if (!key) throw new Error("FULLENRICH_API_KEY non configuree");
+  return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
 }
 
-function buildPayload(contact: Record<string, string>) {
-  let prenom = contact.prenom ?? "";
-  let nom = contact.nom ?? "";
-  if (!prenom && nom.includes(" ")) {
-    const parts = nom.split(" ");
-    prenom = parts[0];
-    nom = parts.slice(1).join(" ");
-  }
+export default async (request: Request) => {
+  if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
 
-  const entry: Record<string, string> = {
-    firstname: prenom,
-    lastname: nom,
-  };
-  if (contact.domaine) entry.domain = contact.domaine;
-  if (contact.entreprise) entry.company_name = contact.entreprise;
-  if (contact.linkedin) entry.linkedin_url = contact.linkedin;
-  return entry;
-}
-
-async function startEnrichment(payload: Record<string, string>): Promise<string | null> {
-  const url = `${FULLENRICH_BASE_URL}/api/v1/contact/enrich/bulk`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: fullenrichHeaders(),
-    body: JSON.stringify({ contacts: [payload] }),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Fullenrich POST ${resp.status}: ${text}`);
-  }
-
-  const data = await resp.json();
-  return data.enrichment_id ?? data.id ?? null;
-}
-
-async function pollResults(enrichmentId: string): Promise<Record<string, string> | null> {
-  const url = `${FULLENRICH_BASE_URL}/api/v1/contact/enrich/bulk/${enrichmentId}`;
-  let elapsed = 0;
-
-  while (elapsed < POLL_TIMEOUT_MS) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    elapsed += POLL_INTERVAL_MS;
-
-    const resp = await fetch(url, { headers: fullenrichHeaders() });
-    if (!resp.ok) continue;
-
-    const data = await resp.json();
-    if (data.status === "completed") {
-      const contacts = data.contacts ?? data.results ?? [];
-      return contacts[0] ?? null;
-    }
-    if (data.status === "failed") return null;
-  }
-
-  return null; // timeout
-}
-
-export default async (request: Request, _context: Context) => {
-  if (request.method !== "POST") {
-    return json({ error: "Méthode non supportée" }, 405);
-  }
+  const auth = requireAuth(request);
+  if (auth instanceof Response) return auth;
 
   try {
-    const { contact_id } = await request.json();
-    if (!contact_id) return json({ error: "contact_id requis" }, 400);
+    const { recherche_id, estimate_only } = await request.json();
+    if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
-    // Lire le contact
-    const found = await findRowById("Contacts", contact_id);
-    if (!found) return json({ error: "Contact introuvable" }, 404);
+    // Read contacts for this search with score >= 7 and not yet enriched
+    const allContacts = await readAll("Contacts");
+    const toEnrich = allContacts.filter(
+      (c) =>
+        c.recherche_id === recherche_id &&
+        parseInt(c.score_total) >= 7 &&
+        c.enrichissement_status !== "ok" &&
+        c.enrichissement_status !== "pending"
+    );
 
-    const contact = found.data;
-
-    // Vérifier qu'on a assez d'infos
-    if (!contact.nom && !contact.prenom) {
-      return json({ error: "Nom ou prénom requis pour l'enrichissement" }, 400);
+    if (estimate_only) {
+      // Get credit balance
+      const creditsResp = await fetch(`${FULLENRICH_BASE}/api/v1/account/credits`, {
+        headers: fullenrichHeaders(),
+      });
+      let balance = 0;
+      if (creditsResp.ok) {
+        const d = await creditsResp.json();
+        balance = d.balance ?? d.credits ?? 0;
+      }
+      return json({
+        contacts_to_enrich: toEnrich.length,
+        estimated_credits: toEnrich.length,
+        current_balance: balance,
+      });
     }
-    if (!contact.domaine && !contact.entreprise && !contact.linkedin) {
-      return json({ error: "Domaine, entreprise ou LinkedIn requis" }, 400);
+
+    // Enrich a batch
+    const batch = toEnrich.slice(0, BATCH_SIZE);
+    if (batch.length === 0) {
+      return json({ enriched: 0, not_found: 0, errors: 0, done: true });
     }
 
-    // Mettre le statut pending immédiatement
-    const pendingContact = {
-      ...contact,
-      enrichissement_status: "pending",
-      date_modification: new Date().toISOString(),
-    };
-    await updateRow("Contacts", found.rowIndex, toRow(CONTACTS_HEADERS, pendingContact));
+    // Build Fullenrich payload — emails only
+    const contacts = batch.map((c) => ({
+      firstname: c.prenom || "",
+      lastname: c.nom || "",
+      ...(c.domaine && { domain: c.domaine }),
+      ...(c.entreprise && { company_name: c.entreprise }),
+      ...(c.linkedin && { linkedin_url: c.linkedin }),
+      enrich_fields: ["email"],
+    }));
 
-    // Lancer l'enrichissement
-    const payload = buildPayload(contact);
-    const enrichmentId = await startEnrichment(payload);
+    // Start enrichment
+    const startResp = await fetch(`${FULLENRICH_BASE}/api/v1/contact/enrich/bulk`, {
+      method: "POST",
+      headers: fullenrichHeaders(),
+      body: JSON.stringify({ contacts }),
+    });
+
+    if (!startResp.ok) {
+      const text = await startResp.text();
+      throw new Error(`Fullenrich POST ${startResp.status}: ${text}`);
+    }
+
+    const startData = await startResp.json();
+    const enrichmentId = startData.enrichment_id ?? startData.id;
 
     if (!enrichmentId) {
-      const errContact = { ...pendingContact, enrichissement_status: "erreur" };
-      await updateRow("Contacts", found.rowIndex, toRow(CONTACTS_HEADERS, errContact));
-      return json({ status: "erreur", contact: errContact });
+      throw new Error("Pas d'enrichment_id dans la reponse Fullenrich");
     }
 
-    // Poll avec budget 20s
-    const result = await pollResults(enrichmentId);
+    // Poll for results (max 20s)
+    let results: Record<string, string>[] | null = null;
+    let elapsed = 0;
+    while (elapsed < 20_000) {
+      await new Promise((r) => setTimeout(r, 5000));
+      elapsed += 5000;
 
-    if (result) {
-      const email = result.email ?? result.professional_email ?? "";
-      const phone = result.phone ?? result.mobile_phone ?? "";
-      const updatedContact = {
-        ...pendingContact,
-        ...(email && { email }),
-        ...(phone && { telephone: phone }),
+      const pollResp = await fetch(
+        `${FULLENRICH_BASE}/api/v1/contact/enrich/bulk/${enrichmentId}`,
+        { headers: fullenrichHeaders() }
+      );
+      if (!pollResp.ok) continue;
+
+      const pollData = await pollResp.json();
+      if (pollData.status === "completed") {
+        results = pollData.contacts ?? pollData.results ?? [];
+        break;
+      }
+      if (pollData.status === "failed") break;
+    }
+
+    // Update contacts in Google Sheets
+    let enriched = 0;
+    let not_found = 0;
+    let errors = 0;
+
+    // Find row indices for batch contacts
+    const allRows = await readAll("Contacts");
+    const updates: Array<{ rowIndex: number; values: string[] }> = [];
+
+    for (let i = 0; i < batch.length; i++) {
+      const contact = batch[i];
+      const rowIdx = allRows.findIndex((r) => r.id === contact.id);
+      if (rowIdx === -1) continue;
+
+      const resultContact = results?.[i];
+      const email = resultContact?.email ?? resultContact?.professional_email ?? "";
+
+      const updated = {
+        ...contact,
         enrichissement_status: email ? "ok" : "pas_de_resultat",
+        ...(email && { email }),
+        date_modification: new Date().toISOString(),
       };
-      await updateRow("Contacts", found.rowIndex, toRow(CONTACTS_HEADERS, updatedContact));
-      return json({ status: updatedContact.enrichissement_status, contact: updatedContact });
+
+      if (email) enriched++;
+      else not_found++;
+
+      updates.push({
+        rowIndex: rowIdx + 2, // +2: 1-indexed + header row
+        values: toRow(CONTACTS_HEADERS, updated),
+      });
     }
 
-    // Timeout — reste en pending, résultat viendra au prochain refresh
-    return json({ status: "pending", contact: pendingContact });
+    if (updates.length > 0) {
+      await batchUpdateRows("Contacts", updates);
+    }
+
+    const remaining = toEnrich.length - batch.length;
+    return json({ enriched, not_found, errors, done: remaining <= 0 });
   } catch (err) {
     console.error("enrich error:", err);
     const message = err instanceof Error ? err.message : String(err);
@@ -150,6 +150,4 @@ export default async (request: Request, _context: Context) => {
   }
 };
 
-export const config: Config = {
-  path: ["/api/enrich"],
-};
+export const config: Config = { path: ["/api/enrich"] };

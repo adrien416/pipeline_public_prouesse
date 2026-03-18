@@ -1,5 +1,6 @@
 import type { Context, Config } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
+import { requireAuth, json } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -9,61 +10,28 @@ import {
   toRow,
 } from "./_sheets.js";
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-/** GET /api/contacts?grade=A&statut=nouveau&secteur=fintech */
+/** GET /api/contacts?recherche_id=xxx&statut=nouveau&secteur=fintech */
 async function handleGet(url: URL) {
-  const gradeFilter = url.searchParams.get("grade")?.toUpperCase();
+  const rechercheId = url.searchParams.get("recherche_id");
   const statutFilter = url.searchParams.get("statut")?.toLowerCase();
   const secteurFilter = url.searchParams.get("secteur")?.toLowerCase();
 
-  const [contacts, scorings] = await Promise.all([
-    readAll("Contacts"),
-    readAll("Scoring"),
-  ]);
+  let contacts = await readAll("Contacts");
 
-  // Index scoring par contact_id
-  const scoringMap = new Map<string, Record<string, string>>();
-  for (const s of scorings) {
-    scoringMap.set(s.contact_id, s);
-  }
-
-  // Joindre contacts + scoring
-  let result = contacts.map((c) => {
-    const s = scoringMap.get(c.id);
-    return {
-      ...c,
-      score: s?.score ?? "",
-      grade: s?.grade ?? "",
-      raison: s?.raison ?? "",
-      signaux_positifs: s?.signaux_positifs ?? "[]",
-      signaux_negatifs: s?.signaux_negatifs ?? "[]",
-      signaux_intention: s?.signaux_intention ?? "[]",
-    };
-  });
-
-  // Filtres
-  if (gradeFilter) {
-    result = result.filter((c) => c.grade.toUpperCase() === gradeFilter);
+  if (rechercheId) {
+    contacts = contacts.filter((c) => c.recherche_id === rechercheId);
   }
   if (statutFilter) {
-    result = result.filter((c) => c.statut.toLowerCase() === statutFilter);
+    contacts = contacts.filter((c) => c.statut.toLowerCase() === statutFilter);
   }
   if (secteurFilter) {
-    result = result.filter((c) =>
-      c.secteur.toLowerCase().includes(secteurFilter)
-    );
+    contacts = contacts.filter((c) => c.secteur.toLowerCase().includes(secteurFilter));
   }
 
-  return json({ contacts: result });
+  return json({ contacts });
 }
 
-/** POST /api/contacts — Créer un contact */
+/** POST /api/contacts */
 async function handlePost(request: Request) {
   const body = await request.json();
   const now = new Date().toISOString();
@@ -81,6 +49,15 @@ async function handlePost(request: Request) {
     telephone: body.telephone ?? "",
     statut: "nouveau",
     enrichissement_status: "",
+    score_1: "",
+    score_2: "",
+    score_total: "",
+    score_raison: "",
+    recherche_id: body.recherche_id ?? "",
+    campagne_id: "",
+    email_status: "",
+    email_sent_at: "",
+    phrase_perso: "",
     date_creation: now,
     date_modification: now,
   };
@@ -89,39 +66,31 @@ async function handlePost(request: Request) {
   return json({ contact }, 201);
 }
 
-/** PUT /api/contacts — Modifier un contact */
+/** PUT /api/contacts */
 async function handlePut(request: Request) {
   const body = await request.json();
   const { id, ...updates } = body;
-
   if (!id) return json({ error: "id requis" }, 400);
 
   const found = await findRowById("Contacts", id);
   if (!found) return json({ error: "Contact introuvable" }, 404);
 
-  const updated = {
-    ...found.data,
-    ...updates,
-    date_modification: new Date().toISOString(),
-  };
-
+  const updated = { ...found.data, ...updates, date_modification: new Date().toISOString() };
   await updateRow("Contacts", found.rowIndex, toRow(CONTACTS_HEADERS, updated));
   return json({ contact: updated });
 }
 
 export default async (request: Request, _context: Context) => {
+  const auth = requireAuth(request);
+  if (auth instanceof Response) return auth;
+
   try {
     const url = new URL(request.url);
-
     switch (request.method) {
-      case "GET":
-        return await handleGet(url);
-      case "POST":
-        return await handlePost(request);
-      case "PUT":
-        return await handlePut(request);
-      default:
-        return json({ error: "Méthode non supportée" }, 405);
+      case "GET": return await handleGet(url);
+      case "POST": return await handlePost(request);
+      case "PUT": return await handlePut(request);
+      default: return json({ error: "Methode non supportee" }, 405);
     }
   } catch (err) {
     console.error("contacts error:", err);
@@ -129,6 +98,4 @@ export default async (request: Request, _context: Context) => {
   }
 };
 
-export const config: Config = {
-  path: ["/api/contacts"],
-};
+export const config: Config = { path: ["/api/contacts"] };

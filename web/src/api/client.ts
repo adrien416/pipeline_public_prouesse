@@ -1,10 +1,3 @@
-import type {
-  ContactWithScoring,
-  ContactCreatePayload,
-  ContactUpdatePayload,
-  ContactFilters,
-} from "../types";
-
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -12,6 +5,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
+  if (res.status === 401) {
+    window.location.reload();
+    throw new Error("Non authentifié");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `Erreur ${res.status}`);
@@ -19,49 +16,120 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-/** Récupère les contacts avec filtres optionnels */
-export async function fetchContacts(
-  filters?: ContactFilters
-): Promise<ContactWithScoring[]> {
-  const params = new URLSearchParams();
-  if (filters?.grade) params.set("grade", filters.grade);
-  if (filters?.statut) params.set("statut", filters.statut);
-  if (filters?.secteur) params.set("secteur", filters.secteur);
-  const qs = params.toString();
-  const { contacts } = await request<{ contacts: ContactWithScoring[] }>(
-    `/contacts${qs ? `?${qs}` : ""}`
-  );
-  return contacts;
-}
-
-/** Crée un nouveau contact */
-export async function createContact(
-  data: ContactCreatePayload
-): Promise<ContactWithScoring> {
-  const { contact } = await request<{ contact: ContactWithScoring }>(
-    "/contacts",
-    { method: "POST", body: JSON.stringify(data) }
-  );
-  return contact;
-}
-
-/** Met à jour un contact existant */
-export async function updateContact(
-  data: ContactUpdatePayload
-): Promise<ContactWithScoring> {
-  const { contact } = await request<{ contact: ContactWithScoring }>(
-    "/contacts",
-    { method: "PUT", body: JSON.stringify(data) }
-  );
-  return contact;
-}
-
-/** Lance l'enrichissement Fullenrich pour un contact */
-export async function triggerEnrich(
-  contactId: string
-): Promise<{ status: string; contact: ContactWithScoring }> {
-  return request("/enrich", {
+// ─── Auth ───
+export function login(email: string, password: string) {
+  return request<{ ok: boolean }>("/login", {
     method: "POST",
-    body: JSON.stringify({ contact_id: contactId }),
+    body: JSON.stringify({ email, password }),
   });
+}
+
+// ─── Credits ───
+export function fetchCredits() {
+  return request<{ balance: number }>("/credits");
+}
+
+// ─── Search ───
+export interface SearchParams {
+  description: string;
+  mode: "levee_de_fonds" | "cession";
+  headcount_min?: number;
+  headcount_max?: number;
+  location?: string;
+  secteur?: string;
+}
+
+export function launchSearch(params: SearchParams) {
+  return request<{
+    contacts: Array<Record<string, string>>;
+    recherche: Record<string, string>;
+    filtres_utilises: Record<string, unknown>;
+    explication: string;
+  }>("/search", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// ─── Score ───
+export function launchScoring(recherche_id: string) {
+  return request<{
+    total: number;
+    scored: number;
+    qualified: number;
+    done: boolean;
+    contacts: Array<Record<string, string>>;
+  }>("/score", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id }),
+  });
+}
+
+// ─── Enrich ───
+export function getEnrichEstimate(recherche_id: string) {
+  return request<{
+    contacts_to_enrich: number;
+    estimated_credits: number;
+    current_balance: number;
+  }>("/enrich", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, estimate_only: true }),
+  });
+}
+
+export function launchEnrichment(recherche_id: string) {
+  return request<{
+    enriched: number;
+    not_found: number;
+    errors: number;
+    done: boolean;
+  }>("/enrich", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, estimate_only: false }),
+  });
+}
+
+// ─── Contacts ───
+export function fetchContacts(recherche_id?: string) {
+  const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";
+  return request<{ contacts: Array<Record<string, string>> }>(`/contacts${qs}`);
+}
+
+// ─── Campaign ───
+export function createCampaign(data: Record<string, unknown>) {
+  return request<{ campaign: Record<string, string> }>("/campaign", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateCampaign(data: Record<string, unknown>) {
+  return request<{ campaign: Record<string, string> }>("/campaign", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function fetchCampaign(id?: string) {
+  const qs = id ? `?id=${id}` : "";
+  return request<{ campaign: Record<string, string> | null }>(`/campaign${qs}`);
+}
+
+// ─── Send ───
+export function triggerSend(campagne_id: string) {
+  return request<{ sent: number; remaining: number }>("/send", {
+    method: "POST",
+    body: JSON.stringify({ campagne_id }),
+  });
+}
+
+// ─── Analytics ───
+export function fetchAnalytics(campagne_id?: string) {
+  const qs = campagne_id ? `?campagne_id=${campagne_id}` : "";
+  return request<{
+    campaign: Record<string, string> | null;
+    leads: { total: number; queued: number; in_progress: number; completed: number };
+    metrics: { sent: number; delivered: number; opened: number; clicked: number; replied: number; bounced: number };
+    daily: Array<{ date: string; sent: number; replied: number; bounced: number }>;
+  }>(`/analytics${qs}`);
 }

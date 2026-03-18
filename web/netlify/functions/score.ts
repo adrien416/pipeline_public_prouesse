@@ -8,8 +8,8 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const BATCH_SIZE = 2;
-const MAX_PER_CALL = 10;
+const BATCH_SIZE = 1;
+const MAX_PER_CALL = 3;
 
 interface ScoreBody {
   recherche_id: string;
@@ -20,7 +20,7 @@ async function fetchMetaDescription(domain: string): Promise<string> {
   const url = domain.startsWith("http") ? domain : `https://${domain}`;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 2000);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     const html = await res.text();

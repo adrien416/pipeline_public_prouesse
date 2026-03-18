@@ -33,7 +33,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         isDone = result.done;
         if (!isDone) {
-          await new Promise((r) => setTimeout(r, 13000)); // 5 req/min limit on Anthropic
+          await new Promise((r) => setTimeout(r, 15000)); // 5 req/min limit on Anthropic
         }
       }
       setDone(true);

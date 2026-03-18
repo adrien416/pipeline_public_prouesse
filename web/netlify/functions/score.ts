@@ -109,9 +109,9 @@ async function scoreContact(
       }),
     });
 
-    if (response.status === 429 && attempt === 0) {
-      await new Promise((r) => setTimeout(r, 1500));
-      continue;
+    if (response.status === 429) {
+      // Return a skip signal — frontend will retry on next cycle
+      return { score_1: 0, score_2: 0, score_total: 0, raison: "" };
     }
 
     if (!response.ok) {
@@ -122,7 +122,7 @@ async function scoreContact(
     result = await response.json();
     break;
   }
-  if (!result) throw new Error("Anthropic API: trop de requêtes, réessaie dans quelques secondes");
+  if (!result) return { score_1: 0, score_2: 0, score_total: 0, raison: "" };
   const text = result.content?.[0]?.text ?? "";
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -185,6 +185,13 @@ export default async (request: Request) => {
 
     const metaDesc = await fetchMetaDescription(contact.domaine);
     const scores = await scoreContact(contact, mode, metaDesc);
+
+    // If rate limited (scores all 0), skip saving — will retry next cycle
+    if (scores.score_total === 0 && !scores.raison) {
+      const totalForSearch = allContacts.filter((c) => c.recherche_id === body.recherche_id).length;
+      const alreadyScored = allContacts.filter((c) => c.recherche_id === body.recherche_id && c.score_total).length;
+      return json({ total: totalForSearch, scored: alreadyScored, qualified: allContacts.filter((c) => c.recherche_id === body.recherche_id && Number(c.score_total) >= 7).length, done: false });
+    }
 
     const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
     const rowIndex = contactIndex + 2;

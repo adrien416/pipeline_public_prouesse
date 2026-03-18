@@ -8,7 +8,7 @@ import { google, sheets_v4 } from "googleapis";
 let sheetsClient: sheets_v4.Sheets | null = null;
 
 function getAuth() {
-  const b64 = Netlify.env.get("GOOGLE_SERVICE_ACCOUNT_KEY");
+  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!b64) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY non définie");
 
   const credentials = JSON.parse(
@@ -29,7 +29,7 @@ function getSheets(): sheets_v4.Sheets {
 }
 
 function getSpreadsheetId(): string {
-  const id = Netlify.env.get("GOOGLE_SHEETS_ID");
+  const id = process.env.GOOGLE_SHEETS_ID;
   if (!id) throw new Error("GOOGLE_SHEETS_ID non définie");
   return id;
 }

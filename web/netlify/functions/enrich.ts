@@ -18,7 +18,7 @@ function json(data: unknown, status = 200) {
 }
 
 function fullenrichHeaders() {
-  const key = Netlify.env.get("FULLENRICH_API_KEY");
+  const key = process.env.FULLENRICH_API_KEY;
   if (!key) throw new Error("FULLENRICH_API_KEY non définie");
   return {
     Authorization: `Bearer ${key}`,

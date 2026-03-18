@@ -19,7 +19,7 @@ function json(data: unknown, status = 200) {
 
 function fullenrichHeaders() {
   const key = process.env.FULLENRICH_API_KEY;
-  if (!key) throw new Error("FULLENRICH_API_KEY non définie");
+  if (!key) throw new Error("Clé API Fullenrich non configurée. Ajoutez FULLENRICH_API_KEY dans les variables d'environnement Netlify.");
   return {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
@@ -63,7 +63,7 @@ async function startEnrichment(payload: Record<string, string>): Promise<string 
 }
 
 async function pollResults(enrichmentId: string): Promise<Record<string, string> | null> {
-  const url = `${FULLENRICH_BASE_URL}/bulk/${enrichmentId}`;
+  const url = `${FULLENRICH_BASE_URL}/api/v1/contact/enrich/bulk/${enrichmentId}`;
   let elapsed = 0;
 
   while (elapsed < POLL_TIMEOUT_MS) {
@@ -145,7 +145,8 @@ export default async (request: Request, _context: Context) => {
     return json({ status: "pending", contact: pendingContact });
   } catch (err) {
     console.error("enrich error:", err);
-    return json({ error: String(err) }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    return json({ error: message }, 500);
   }
 };
 

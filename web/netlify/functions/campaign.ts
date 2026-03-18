@@ -26,13 +26,12 @@ export default async (request: Request) => {
       return json({ campaign: found?.data ?? null });
     }
 
-    // Return the most recent campaign
     const all = await readAll("Campagnes");
     const latest = all.length > 0 ? all[all.length - 1] : null;
     return json({ campaign: latest });
   }
 
-  // POST — create campaign
+  // POST — create campaign (fast, no AI calls)
   if (request.method === "POST") {
     const body = await request.json();
     const {
@@ -57,84 +56,14 @@ export default async (request: Request) => {
       (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
     );
 
-    // Generate personalized phrases using Anthropic API
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (anthropicKey && enriched.length > 0) {
-      // Batch generate phrases (5 at a time)
-      const batches = [];
-      for (let i = 0; i < enriched.length; i += 5) {
-        batches.push(enriched.slice(i, i + 5));
-      }
-
-      const updates: Array<{ rowIndex: number; values: string[] }> = [];
-
-      for (const batch of batches) {
-        const promises = batch.map(async (contact) => {
-          if (contact.phrase_perso) return; // already has a phrase
-
-          try {
-            const resp = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: {
-                "x-api-key": anthropicKey,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                model: "claude-haiku-4-5-20251001",
-                max_tokens: 200,
-                messages: [
-                  {
-                    role: "user",
-                    content: `Genere une phrase d'accroche personnalisee pour un email de prospection.
-
-Contact : ${contact.prenom} ${contact.nom}, ${contact.titre} chez ${contact.entreprise}
-Secteur : ${contact.secteur}
-Mode : ${mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise"}
-
-Regles : pas de cliche, pas d'invention, 1-2 phrases max, ton professionnel.
-
-JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
-                  },
-                ],
-              }),
-            });
-
-            if (resp.ok) {
-              const data = await resp.json();
-              const text = data.content?.[0]?.text || "";
-              try {
-                const parsed = JSON.parse(text);
-                if (parsed.phrase) {
-                  const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-                  if (rowIdx !== -1) {
-                    const updated = { ...contact, phrase_perso: parsed.phrase };
-                    updates.push({
-                      rowIndex: rowIdx + 2,
-                      values: toRow(CONTACTS_HEADERS, updated),
-                    });
-                  }
-                }
-              } catch { /* ignore parse errors */ }
-            }
-          } catch { /* ignore API errors for individual contacts */ }
-        });
-        await Promise.all(promises);
-      }
-
-      if (updates.length > 0) {
-        await batchUpdateRows("Contacts", updates);
-      }
-    }
-
-    // Create campaign
+    // Create campaign — no phrase generation here (done at send time)
     const campaign: Record<string, string> = {
       id: uuid(),
       nom: `Campagne ${new Date().toLocaleDateString("fr-FR")}`,
       template_sujet,
       template_corps,
       mode: mode || "levee_de_fonds",
-      status: "active",
+      status: "draft",
       max_par_jour: String(max_par_jour || 15),
       jours_semaine: JSON.stringify(jours_semaine || ["lun", "mar", "mer", "jeu", "ven"]),
       heure_debut: heure_debut || "08:30",
@@ -156,15 +85,14 @@ JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
     for (const contact of enriched) {
       const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
       if (rowIdx !== -1) {
-        const updated = {
-          ...contact,
-          campagne_id: campaign.id,
-          email_status: "queued",
-          date_modification: new Date().toISOString(),
-        };
         contactUpdates.push({
           rowIndex: rowIdx + 2,
-          values: toRow(CONTACTS_HEADERS, updated),
+          values: toRow(CONTACTS_HEADERS, {
+            ...contact,
+            campagne_id: campaign.id,
+            email_status: "queued",
+            date_modification: new Date().toISOString(),
+          }),
         });
       }
     }

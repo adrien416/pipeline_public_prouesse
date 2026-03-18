@@ -3,7 +3,7 @@ import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 
 const FULLENRICH_BASE = "https://app.fullenrich.com";
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 3;
 
 function fullenrichHeaders() {
   const key = process.env.FULLENRICH_API_KEY;
@@ -21,18 +21,16 @@ export default async (request: Request) => {
     const { recherche_id, estimate_only } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
-    // Read contacts for this search with score >= 7 and not yet enriched
     const allContacts = await readAll("Contacts");
-    const toEnrich = allContacts.filter(
-      (c) =>
-        c.recherche_id === recherche_id &&
-        parseInt(c.score_total) >= 7 &&
-        c.enrichissement_status !== "ok" &&
-        c.enrichissement_status !== "pending"
+    const qualified = allContacts.filter(
+      (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
     );
 
+    // Estimate only — quick return
     if (estimate_only) {
-      // Get credit balance
+      const toEnrich = qualified.filter(
+        (c) => c.enrichissement_status !== "ok" && !c.enrichissement_status?.startsWith("pending:")
+      );
       const creditsResp = await fetch(`${FULLENRICH_BASE}/api/v1/account/credits`, {
         headers: fullenrichHeaders(),
       });
@@ -48,13 +46,75 @@ export default async (request: Request) => {
       });
     }
 
-    // Enrich a batch
-    const batch = toEnrich.slice(0, BATCH_SIZE);
-    if (batch.length === 0) {
+    // Step 1: Check if there are pending enrichments to poll
+    const pending = qualified.filter((c) => c.enrichissement_status?.startsWith("pending:"));
+
+    if (pending.length > 0) {
+      // Extract enrichment_id from first pending contact
+      const enrichmentId = pending[0].enrichissement_status.split(":")[1];
+
+      // Poll once (no waiting)
+      const pollResp = await fetch(
+        `${FULLENRICH_BASE}/api/v1/contact/enrich/bulk/${enrichmentId}`,
+        { headers: fullenrichHeaders() }
+      );
+
+      if (pollResp.ok) {
+        const pollData = await pollResp.json();
+
+        if (pollData.status === "completed" || pollData.status === "failed") {
+          const results = pollData.contacts ?? pollData.results ?? [];
+          const updates: Array<{ rowIndex: number; values: string[] }> = [];
+          let enriched = 0;
+          let not_found = 0;
+
+          for (let i = 0; i < pending.length; i++) {
+            const contact = pending[i];
+            const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
+            if (rowIdx === -1) continue;
+
+            const resultContact = results?.[i];
+            const email = resultContact?.email ?? resultContact?.professional_email ?? "";
+
+            updates.push({
+              rowIndex: rowIdx + 2,
+              values: toRow(CONTACTS_HEADERS, {
+                ...contact,
+                enrichissement_status: email ? "ok" : "pas_de_resultat",
+                ...(email && { email }),
+                date_modification: new Date().toISOString(),
+              }),
+            });
+
+            if (email) enriched++;
+            else not_found++;
+          }
+
+          if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+
+          const remaining = qualified.filter(
+            (c) => c.enrichissement_status !== "ok" && !c.enrichissement_status?.startsWith("pending:")
+          ).length - 0; // pending ones are now done
+
+          return json({ enriched, not_found, errors: 0, done: remaining <= 0 && pending.length === qualified.filter(c => c.enrichissement_status !== "ok").length });
+        }
+      }
+
+      // Still processing — tell frontend to keep polling
+      return json({ enriched: 0, not_found: 0, errors: 0, done: false });
+    }
+
+    // Step 2: Start new enrichment batch
+    const toEnrich = qualified.filter(
+      (c) => c.enrichissement_status !== "ok" && c.enrichissement_status !== "pas_de_resultat"
+    );
+
+    if (toEnrich.length === 0) {
       return json({ enriched: 0, not_found: 0, errors: 0, done: true });
     }
 
-    // Build Fullenrich payload — emails only
+    const batch = toEnrich.slice(0, BATCH_SIZE);
+
     const contacts = batch.map((c) => ({
       firstname: c.prenom || "",
       lastname: c.nom || "",
@@ -64,7 +124,6 @@ export default async (request: Request) => {
       enrich_fields: ["email"],
     }));
 
-    // Start enrichment
     const startResp = await fetch(`${FULLENRICH_BASE}/api/v1/contact/enrich/bulk`, {
       method: "POST",
       headers: fullenrichHeaders(),
@@ -83,66 +142,24 @@ export default async (request: Request) => {
       throw new Error("Pas d'enrichment_id dans la reponse Fullenrich");
     }
 
-    // Poll for results (max 20s)
-    let results: Record<string, string>[] | null = null;
-    let elapsed = 0;
-    while (elapsed < 20_000) {
-      await new Promise((r) => setTimeout(r, 5000));
-      elapsed += 5000;
-
-      const pollResp = await fetch(
-        `${FULLENRICH_BASE}/api/v1/contact/enrich/bulk/${enrichmentId}`,
-        { headers: fullenrichHeaders() }
-      );
-      if (!pollResp.ok) continue;
-
-      const pollData = await pollResp.json();
-      if (pollData.status === "completed") {
-        results = pollData.contacts ?? pollData.results ?? [];
-        break;
-      }
-      if (pollData.status === "failed") break;
-    }
-
-    // Update contacts in Google Sheets
-    let enriched = 0;
-    let not_found = 0;
-    let errors = 0;
-
-    // Find row indices for batch contacts
-    const allRows = await readAll("Contacts");
+    // Mark batch as pending with enrichment_id
     const updates: Array<{ rowIndex: number; values: string[] }> = [];
-
-    for (let i = 0; i < batch.length; i++) {
-      const contact = batch[i];
-      const rowIdx = allRows.findIndex((r) => r.id === contact.id);
+    for (const contact of batch) {
+      const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
       if (rowIdx === -1) continue;
-
-      const resultContact = results?.[i];
-      const email = resultContact?.email ?? resultContact?.professional_email ?? "";
-
-      const updated = {
-        ...contact,
-        enrichissement_status: email ? "ok" : "pas_de_resultat",
-        ...(email && { email }),
-        date_modification: new Date().toISOString(),
-      };
-
-      if (email) enriched++;
-      else not_found++;
-
       updates.push({
-        rowIndex: rowIdx + 2, // +2: 1-indexed + header row
-        values: toRow(CONTACTS_HEADERS, updated),
+        rowIndex: rowIdx + 2,
+        values: toRow(CONTACTS_HEADERS, {
+          ...contact,
+          enrichissement_status: `pending:${enrichmentId}`,
+          date_modification: new Date().toISOString(),
+        }),
       });
     }
+    if (updates.length > 0) await batchUpdateRows("Contacts", updates);
 
-    if (updates.length > 0) {
-      await batchUpdateRows("Contacts", updates);
-    }
-
-    const remaining = toEnrich.length - batch.length;
-    return json({ enriched, not_found, errors, done: remaining <= 0 });
+    // Return immediately — frontend will poll again
+    return json({ enriched: 0, not_found: 0, errors: 0, done: false });
   } catch (err) {
     console.error("enrich error:", err);
     const message = err instanceof Error ? err.message : String(err);

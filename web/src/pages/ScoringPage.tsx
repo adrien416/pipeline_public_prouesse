@@ -15,6 +15,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -121,6 +122,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
               <tr>
                 <th className="px-3 py-2 text-left">Nom</th>
                 <th className="px-3 py-2 text-left">Entreprise</th>
+                <th className="px-3 py-2 text-left">Site</th>
                 <th className="px-3 py-2 text-center">
                   {mode === "levee_de_fonds" ? "Scalabilite" : "Impact env."}
                 </th>
@@ -137,6 +139,10 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                 const s2 = parseInt(c.score_2) || 0;
                 const total = parseInt(c.score_total) || 0;
                 const scored = s1 > 0 || s2 > 0;
+                const isExpanded = expandedId === c.id;
+                const domain = c.domaine;
+                const siteUrl = domain ? (domain.startsWith("http") ? domain : `https://${domain}`) : "";
+
                 return (
                   <tr
                     key={c.id}
@@ -148,6 +154,20 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                       {c.prenom} {c.nom}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
+                    <td className="px-3 py-2">
+                      {siteUrl ? (
+                        <a
+                          href={siteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          {domain}
+                        </a>
+                      ) : (
+                        <span className="text-gray-300 text-xs">-</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       {scored ? <ScoreBadge score={s1} /> : <span className="text-gray-300">-</span>}
                     </td>
@@ -157,8 +177,21 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                     <td className="px-3 py-2 text-center">
                       {scored ? <TotalScoreBadge total={total} /> : <span className="text-gray-300">-</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">
-                      {c.score_raison}
+                    <td className="px-3 py-2 text-xs text-gray-500 max-w-sm">
+                      {c.score_raison ? (
+                        <button
+                          onClick={() => setExpandedId(isExpanded ? null : c.id)}
+                          className="text-left cursor-pointer hover:text-gray-700"
+                        >
+                          {isExpanded ? (
+                            <span>{c.score_raison}</span>
+                          ) : (
+                            <span className="truncate block max-w-[200px]">{c.score_raison}</span>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
                     </td>
                   </tr>
                 );

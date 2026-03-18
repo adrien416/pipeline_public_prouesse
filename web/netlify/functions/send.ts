@@ -5,7 +5,7 @@ import {
   readAll,
   findRowById,
   updateRow,
-  appendRows,
+  appendRow,
   batchUpdateRows,
   CONTACTS_HEADERS,
   CAMPAGNES_HEADERS,
@@ -14,6 +14,47 @@ import {
 } from "./_sheets.js";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
+
+async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return "";
+
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        messages: [{
+          role: "user",
+          content: `Genere une phrase d'accroche personnalisee pour un email de prospection.
+
+Contact : ${contact.prenom} ${contact.nom}, ${contact.titre} chez ${contact.entreprise}
+Secteur : ${contact.secteur}
+Mode : ${mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise"}
+
+Regles : pas de cliche, pas d'invention, 1-2 phrases max, ton professionnel.
+
+JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
+        }],
+      }),
+    });
+
+    if (!resp.ok) return "";
+    const data = await resp.json();
+    const text = data.content?.[0]?.text || "";
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return "";
+    return JSON.parse(match[0]).phrase || "";
+  } catch {
+    return "";
+  }
+}
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
@@ -28,7 +69,6 @@ export default async (request: Request) => {
     const brevoKey = process.env.BREVO_API_KEY;
     if (!brevoKey) return json({ error: "BREVO_API_KEY non configuree" }, 500);
 
-    // Load campaign
     const campFound = await findRowById("Campagnes", campagne_id);
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
     const campaign = campFound.data;
@@ -37,123 +77,94 @@ export default async (request: Request) => {
       return json({ error: "Campagne non active", sent: 0, remaining: 0 });
     }
 
-    // Load contacts queued for this campaign
     const allContacts = await readAll("Contacts");
     const queued = allContacts.filter(
       (c) => c.campagne_id === campagne_id && c.email_status === "queued" && c.email
     );
 
     const maxParJour = parseInt(campaign.max_par_jour) || 15;
+    const today = new Date().toISOString().slice(0, 10);
     const alreadySentToday = allContacts.filter(
-      (c) =>
-        c.campagne_id === campagne_id &&
-        c.email_status !== "queued" &&
-        c.email_sent_at?.startsWith(new Date().toISOString().slice(0, 10))
+      (c) => c.campagne_id === campagne_id && c.email_sent_at?.startsWith(today)
     ).length;
 
-    const canSend = Math.max(0, maxParJour - alreadySentToday);
-    const batch = queued.slice(0, Math.min(canSend, 5)); // Max 5 per API call
-
-    if (batch.length === 0) {
+    if (alreadySentToday >= maxParJour || queued.length === 0) {
       return json({ sent: 0, remaining: queued.length });
     }
 
-    const contactUpdates: Array<{ rowIndex: number; values: string[] }> = [];
-    const emailLogs: string[][] = [];
-    let sentCount = 0;
+    // Send 1 email per call to stay within Netlify timeout
+    const contact = queued[0];
 
-    for (const contact of batch) {
-      // Build email from template
-      const sujet = campaign.template_sujet
-        .replace(/\{Prenom\}/g, contact.prenom || "")
-        .replace(/\{Entreprise\}/g, contact.entreprise || "");
+    // Generate phrase if not already done
+    if (!contact.phrase_perso) {
+      contact.phrase_perso = await generatePhrase(contact, campaign.mode);
+    }
 
-      const corps = campaign.template_corps
-        .replace(/\{Prenom\}/g, contact.prenom || "")
-        .replace(/\{Entreprise\}/g, contact.entreprise || "")
-        .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+    // Build email from template
+    const sujet = campaign.template_sujet
+      .replace(/\{Prenom\}/g, contact.prenom || "")
+      .replace(/\{Entreprise\}/g, contact.entreprise || "");
 
-      // Send via Brevo
-      try {
-        const brevoResp = await fetch(BREVO_API, {
-          method: "POST",
-          headers: {
-            "api-key": brevoKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sender: { name: "Adrien Pannetier", email: "adrien@prouesse.vc" },
-            to: [{ email: contact.email, name: `${contact.prenom} ${contact.nom}` }],
-            subject: sujet,
-            textContent: corps,
-            headers: { "X-Campaign-Id": campagne_id },
+    const corps = campaign.template_corps
+      .replace(/\{Prenom\}/g, contact.prenom || "")
+      .replace(/\{Entreprise\}/g, contact.entreprise || "")
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+
+    const brevoResp = await fetch(BREVO_API, {
+      method: "POST",
+      headers: {
+        "api-key": brevoKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "Adrien Pannetier", email: "adrien@prouesse.vc" },
+        to: [{ email: contact.email, name: `${contact.prenom} ${contact.nom}` }],
+        subject: sujet,
+        textContent: corps,
+        headers: { "X-Campaign-Id": campagne_id },
+      }),
+    });
+
+    const brevoData = await brevoResp.json();
+    const now = new Date().toISOString();
+
+    if (brevoResp.ok) {
+      const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
+      if (rowIdx !== -1) {
+        await batchUpdateRows("Contacts", [{
+          rowIndex: rowIdx + 2,
+          values: toRow(CONTACTS_HEADERS, {
+            ...contact,
+            email_status: "sent",
+            email_sent_at: now,
+            statut: "contacte",
+            date_modification: now,
           }),
-        });
-
-        const brevoData = await brevoResp.json();
-        const messageId = brevoData.messageId || "";
-        const now = new Date().toISOString();
-
-        if (brevoResp.ok) {
-          sentCount++;
-
-          // Update contact
-          const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-          if (rowIdx !== -1) {
-            const updated = {
-              ...contact,
-              email_status: "sent",
-              email_sent_at: now,
-              statut: "contacte",
-              date_modification: now,
-            };
-            contactUpdates.push({
-              rowIndex: rowIdx + 2,
-              values: toRow(CONTACTS_HEADERS, updated),
-            });
-          }
-
-          // Log email
-          emailLogs.push(
-            toRow(EMAILLOG_HEADERS, {
-              id: uuid(),
-              campagne_id,
-              contact_id: contact.id,
-              brevo_message_id: messageId,
-              status: "sent",
-              sent_at: now,
-              opened_at: "",
-              clicked_at: "",
-              replied_at: "",
-            })
-          );
-        }
-      } catch (err) {
-        console.error(`Send error for ${contact.email}:`, err);
+        }]);
       }
 
-      // Wait between emails
-      const intervalMs = (parseInt(campaign.intervalle_min) || 20) * 60 * 1000;
-      if (batch.indexOf(contact) < batch.length - 1) {
-        // Don't actually wait in serverless — let the next call handle it
-        break; // Send 1 at a time to respect interval
-      }
+      await appendRow("EmailLog", toRow(EMAILLOG_HEADERS, {
+        id: uuid(),
+        campagne_id,
+        contact_id: contact.id,
+        brevo_message_id: brevoData.messageId || "",
+        status: "sent",
+        sent_at: now,
+        opened_at: "",
+        clicked_at: "",
+        replied_at: "",
+      }));
+
+      const newSent = parseInt(campaign.sent || "0") + 1;
+      await updateRow("Campagnes", campFound.rowIndex, toRow(CAMPAGNES_HEADERS, {
+        ...campaign,
+        sent: String(newSent),
+      }));
+
+      return json({ sent: 1, remaining: queued.length - 1 });
     }
 
-    // Batch update sheets
-    if (contactUpdates.length > 0) {
-      await batchUpdateRows("Contacts", contactUpdates);
-    }
-    if (emailLogs.length > 0) {
-      await appendRows("EmailLog", emailLogs);
-    }
-
-    // Update campaign counters
-    const newSent = parseInt(campaign.sent || "0") + sentCount;
-    const updatedCampaign = { ...campaign, sent: String(newSent) };
-    await updateRow("Campagnes", campFound.rowIndex, toRow(CAMPAGNES_HEADERS, updatedCampaign));
-
-    return json({ sent: sentCount, remaining: queued.length - sentCount });
+    return json({ sent: 0, remaining: queued.length, error: brevoData.message || "Erreur Brevo" });
   } catch (err) {
     console.error("send error:", err);
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);

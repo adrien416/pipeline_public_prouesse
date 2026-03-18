@@ -83,7 +83,7 @@ async function scoreContact(
     mode === "cession" ? "claude-opus-4-6" : "claude-haiku-4-5-20251001";
 
   let result: any;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -98,9 +98,8 @@ async function scoreContact(
       }),
     });
 
-    if (response.status === 429) {
-      const wait = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s, 16s
-      await new Promise((r) => setTimeout(r, wait));
+    if (response.status === 429 && attempt === 0) {
+      await new Promise((r) => setTimeout(r, 1500));
       continue;
     }
 

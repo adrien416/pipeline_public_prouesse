@@ -59,6 +59,10 @@ Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exempl
   "current_company_headcounts": [{"min": 20, "max": 200, "exclude": false}]
 }
 
+IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec "exclude": true) :
+- current_company_types: associations, nonprofit, government agency, educational
+- current_company_industries qui correspondent à : charité, coopérative, organisme public, banque d'affaires, conseil en fusions-acquisitions, investment banking
+
 N'inclus que les filtres pertinents par rapport à la description.`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {

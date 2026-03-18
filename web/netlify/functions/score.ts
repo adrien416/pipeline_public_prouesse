@@ -44,6 +44,8 @@ Description du site : ${metaDesc || "Non disponible"}
 2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable ?
    1=aucun impact, 5=transformateur
 
+IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié).
+
 JSON uniquement :
 {"scalabilite": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
 }
@@ -61,6 +63,8 @@ Description du site : ${metaDesc || "Non disponible"}
    Cherche : dirigeant âgé, pas de succession, croissance en baisse,
    consolidation du secteur, PE actif dans le secteur, stagnation recrutements.
    1=aucun signal, 5=signaux très forts
+
+IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié).
 
 JSON uniquement :
 {"impact_env": <1-5>, "signaux_vente": <1-5>, "raison": "<2-3 phrases>"}`;

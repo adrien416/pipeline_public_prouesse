@@ -8,8 +8,7 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const BATCH_SIZE = 1;
-const MAX_PER_CALL = 3;
+const MAX_PER_CALL = 1; // 1 contact per call to respect Anthropic 5 req/min limit
 
 interface ScoreBody {
   recherche_id: string;
@@ -44,7 +43,7 @@ Description du site : ${metaDesc || "Non disponible"}
 2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable ?
    1=aucun impact, 5=transformateur
 
-IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié).
+IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié). Les entreprises d'éducation/formation SONT acceptées.
 
 JSON uniquement :
 {"scalabilite": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
@@ -64,7 +63,7 @@ Description du site : ${metaDesc || "Non disponible"}
    consolidation du secteur, PE actif dans le secteur, stagnation recrutements.
    1=aucun signal, 5=signaux très forts
 
-IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié).
+IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié). Les entreprises d'éducation/formation SONT acceptées.
 
 JSON uniquement :
 {"impact_env": <1-5>, "signaux_vente": <1-5>, "raison": "<2-3 phrases>"}`;
@@ -170,39 +169,29 @@ export default async (request: Request) => {
       (c) => c.recherche_id === body.recherche_id && !c.score_total
     );
 
-    // Process up to MAX_PER_CALL contacts
-    const toProcess = unscored.slice(0, MAX_PER_CALL);
-    const updates: Array<{ rowIndex: number; values: string[] }> = [];
-
-    // Process in batches of BATCH_SIZE
-    for (let i = 0; i < toProcess.length; i += BATCH_SIZE) {
-      const batch = toProcess.slice(i, i + BATCH_SIZE);
-
-      const results = await Promise.all(
-        batch.map(async (contact) => {
-          const metaDesc = await fetchMetaDescription(contact.domaine);
-          const scores = await scoreContact(contact, mode, metaDesc);
-
-          // Find the row index for this contact in the sheet
-          // allContacts is 0-indexed from row 2 (row 1 = headers)
-          const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
-          const rowIndex = contactIndex + 2; // +2: 1 for 1-indexing, 1 for header row
-
-          const updated: Record<string, string> = {
-            ...contact,
-            score_1: String(scores.score_1),
-            score_2: String(scores.score_2),
-            score_total: String(scores.score_total),
-            score_raison: scores.raison,
-            date_modification: new Date().toISOString(),
-          };
-
-          return { rowIndex, values: toRow(headers, updated) };
-        })
-      );
-
-      updates.push(...results);
+    // Process 1 contact per call (Anthropic rate limit: 5 req/min)
+    const contact = unscored[0];
+    if (!contact) {
+      return json({ total: allContacts.filter((c) => c.recherche_id === body.recherche_id).length, scored: allContacts.filter((c) => c.recherche_id === body.recherche_id).length, qualified: allContacts.filter((c) => c.recherche_id === body.recherche_id && Number(c.score_total) >= 7).length, done: true });
     }
+
+    const metaDesc = await fetchMetaDescription(contact.domaine);
+    const scores = await scoreContact(contact, mode, metaDesc);
+
+    const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
+    const rowIndex = contactIndex + 2;
+
+    const updated: Record<string, string> = {
+      ...contact,
+      score_1: String(scores.score_1),
+      score_2: String(scores.score_2),
+      score_total: String(scores.score_total),
+      score_raison: scores.raison,
+      date_modification: new Date().toISOString(),
+    };
+
+    const updates = [{ rowIndex, values: toRow(headers, updated) }];
+    const toProcess = [contact];
 
     // Batch update all scored contacts
     if (updates.length > 0) {

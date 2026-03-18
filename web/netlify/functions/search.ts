@@ -60,7 +60,7 @@ Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exempl
 }
 
 IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec "exclude": true) :
-- current_company_types: associations, nonprofit, government agency, educational
+- current_company_types: nonprofit, government agency (mais PAS educational — les entreprises d'éducation/formation sont OK)
 - current_company_industries qui correspondent à : charité, coopérative, organisme public, banque d'affaires, conseil en fusions-acquisitions, investment banking
 
 N'inclus que les filtres pertinents par rapport à la description.`;

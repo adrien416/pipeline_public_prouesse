@@ -33,7 +33,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         isDone = result.done;
         if (!isDone) {
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 13000)); // 5 req/min limit on Anthropic
         }
       }
       setDone(true);
@@ -77,7 +77,17 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
             </div>
           )}
           {!scoring && progress.total === 0 && (
-            <span className="text-sm text-gray-500">{contactsList.length} contacts a scorer</span>
+            <div className="text-sm">
+              <span className="text-gray-500">{contactsList.length} contacts a scorer</span>
+              {contactsList.length > 0 && (
+                <span className="text-gray-400 ml-2">
+                  (cout IA estime : ~{mode === "cession"
+                    ? `$${(contactsList.length * 0.012).toFixed(2)}`
+                    : `$${(contactsList.length * 0.0003).toFixed(2)}`
+                  })
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div className="flex gap-2">

@@ -1,4 +1,4 @@
-"""Tests pour emailer.py — génération et envoi d'emails."""
+"""Tests pour emailer.py — génération et envoi d'emails via HubSpot."""
 
 import json
 import sys
@@ -15,6 +15,9 @@ from emailer import (
     _is_within_sending_window,
     _load_template,
     generate_email_from_template,
+    send_via_hubspot,
+    _hubspot_upsert_contact,
+    _hubspot_create_email_engagement,
     run_email_campaign,
 )
 
@@ -135,6 +138,152 @@ class TestGenerateEmailFromTemplate:
         result = generate_email_from_template(contact, template, config)
         # Ne doit pas crasher
         assert result["corps"] is not None
+
+
+# ============================================================
+# Tests HubSpot — _hubspot_upsert_contact
+# ============================================================
+
+class TestHubspotUpsertContact:
+    def test_create_new_contact(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        contact = {"nom": "Jean Dupont", "email": "jean@test.com", "titre": "CEO", "entreprise": "Test"}
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {"id": 12345}
+
+        with patch("emailer._requests") as mock_req:
+            mock_req.post.return_value = mock_resp
+            result = _hubspot_upsert_contact(contact)
+            assert result == 12345
+
+    def test_update_existing_contact(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        contact = {"nom": "Jean Dupont", "email": "jean@test.com"}
+
+        # Simule conflit 409
+        mock_conflict = MagicMock()
+        mock_conflict.status_code = 409
+        mock_conflict.json.return_value = {"message": "Contact already exists. Existing ID: 67890"}
+
+        mock_update = MagicMock()
+        mock_update.status_code = 200
+
+        with patch("emailer._requests") as mock_req:
+            mock_req.post.return_value = mock_conflict
+            mock_req.patch.return_value = mock_update
+            result = _hubspot_upsert_contact(contact)
+            assert result == 67890
+
+    def test_no_email_returns_none(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        result = _hubspot_upsert_contact({"nom": "Jean"})
+        assert result is None
+
+
+# ============================================================
+# Tests HubSpot — _hubspot_create_email_engagement
+# ============================================================
+
+class TestHubspotCreateEmailEngagement:
+    def test_successful_creation(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+
+        mock_email_resp = MagicMock()
+        mock_email_resp.status_code = 201
+        mock_email_resp.json.return_value = {"id": "email_001"}
+        mock_email_resp.raise_for_status = MagicMock()
+
+        mock_assoc_resp = MagicMock()
+        mock_assoc_resp.status_code = 200
+
+        with patch("emailer._requests") as mock_req:
+            mock_req.post.return_value = mock_email_resp
+            mock_req.put.return_value = mock_assoc_resp
+            result = _hubspot_create_email_engagement(
+                contact_id=12345,
+                email_content={"sujet": "Test", "corps": "Body"},
+                sender_email="adrien@prouesse.vc",
+                recipient_email="jean@test.com",
+            )
+            assert result["sent"] is True
+            assert result["message_id"] == "email_001"
+            assert result["hubspot_contact_id"] == 12345
+
+    def test_api_error(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+
+        with patch("emailer._requests") as mock_req:
+            mock_req.post.side_effect = Exception("API down")
+            result = _hubspot_create_email_engagement(
+                contact_id=12345,
+                email_content={"sujet": "Test", "corps": "Body"},
+                sender_email="a@b.com",
+                recipient_email="c@d.com",
+            )
+            assert result["sent"] is False
+            assert "error" in result
+
+
+# ============================================================
+# Tests HubSpot — send_via_hubspot
+# ============================================================
+
+class TestSendViaHubspot:
+    def test_missing_token(self, monkeypatch):
+        monkeypatch.delenv("HUBSPOT_ACCESS_TOKEN", raising=False)
+        result = send_via_hubspot(
+            {"email": "jean@test.com"},
+            {"sujet": "Test", "corps": "Body"},
+            "a@b.com", "Adrien",
+        )
+        assert result["sent"] is False
+        assert "HUBSPOT_ACCESS_TOKEN" in result["error"]
+
+    def test_missing_email(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        result = send_via_hubspot(
+            {"nom": "Jean"},
+            {"sujet": "Test", "corps": "Body"},
+            "a@b.com", "Adrien",
+        )
+        assert result["sent"] is False
+        assert "Email du contact" in result["error"]
+
+    def test_incomplete_content(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        result = send_via_hubspot(
+            {"email": "jean@test.com"},
+            {"sujet": "", "corps": "Body"},
+            "a@b.com", "Adrien",
+        )
+        assert result["sent"] is False
+
+    def test_successful_send(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+        contact = {"nom": "Jean Dupont", "email": "jean@test.com", "titre": "CEO", "entreprise": "Test"}
+
+        with patch("emailer._hubspot_upsert_contact", return_value=12345):
+            with patch("emailer._hubspot_create_email_engagement", return_value={"sent": True, "message_id": "e_001", "hubspot_contact_id": 12345}):
+                result = send_via_hubspot(
+                    contact,
+                    {"sujet": "Test", "corps": "Body"},
+                    "adrien@prouesse.vc", "Adrien",
+                )
+                assert result["sent"] is True
+
+    def test_contact_creation_fails(self, monkeypatch):
+        monkeypatch.setenv("HUBSPOT_ACCESS_TOKEN", "test-token")
+
+        with patch("emailer._hubspot_upsert_contact", return_value=None):
+            result = send_via_hubspot(
+                {"email": "jean@test.com", "nom": "Jean"},
+                {"sujet": "Test", "corps": "Body"},
+                "a@b.com", "Adrien",
+            )
+            assert result["sent"] is False
+            assert "contact" in result["error"].lower()
 
 
 # ============================================================

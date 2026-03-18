@@ -1,11 +1,12 @@
 """
-emailer.py — Génération d'emails personnalisés + envoi via Brevo.
+emailer.py — Génération d'emails personnalisés + envoi/tracking via HubSpot CRM.
 
 Entrée : data/contacts_enrichis.json + templates/
-Sortie  : emails envoyés via Brevo API
+Sortie  : emails envoyés via HubSpot API, contacts créés dans le CRM
 """
 
 import json
+import logging
 import os
 import random
 import re
@@ -22,11 +23,12 @@ except ImportError:
     anthropic = None
 
 try:
-    import sib_api_v3_sdk
-    from sib_api_v3_sdk.rest import ApiException
+    import requests as _requests
 except ImportError:
-    sib_api_v3_sdk = None
+    _requests = None
 
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.yaml"
@@ -35,6 +37,8 @@ TEMPLATES_DIR = ROOT / "templates"
 
 MAX_RETRIES = 3
 RETRY_DELAY_BASE = 2
+
+HUBSPOT_BASE_URL = "https://api.hubapi.com"
 
 
 def load_config() -> dict:
@@ -62,6 +66,11 @@ def _extract_first_name(full_name: str) -> str:
     if not parts:
         return ""
     return parts[0].capitalize()
+
+
+# ============================================================
+# Génération d'emails (IA + template)
+# ============================================================
 
 
 def generate_email_with_ai(
@@ -196,19 +205,147 @@ def _is_within_sending_window(config: dict) -> bool:
     return debut <= now <= fin
 
 
-def send_via_brevo(
+# ============================================================
+# Client HubSpot API
+# ============================================================
+
+
+def _hubspot_headers() -> dict:
+    """Headers d'authentification HubSpot (Private App token)."""
+    token = os.environ.get("HUBSPOT_ACCESS_TOKEN", "")
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+
+def _hubspot_upsert_contact(contact: dict, owner_id: str = "") -> int | None:
+    """
+    Crée ou met à jour un contact dans HubSpot CRM.
+    Retourne le contact ID, ou None en cas d'erreur.
+    Utilise l'email comme clé de déduplication.
+    """
+    if _requests is None:
+        return None
+
+    email = contact.get("email", "")
+    if not email:
+        return None
+
+    prenom = contact.get("prenom") or _extract_first_name(contact.get("nom", ""))
+    nom_complet = contact.get("nom", "")
+    if " " in nom_complet:
+        nom_famille = nom_complet.split(" ", 1)[1]
+    else:
+        nom_famille = nom_complet
+
+    properties = {
+        "email": email,
+        "firstname": prenom,
+        "lastname": nom_famille,
+        "jobtitle": contact.get("titre", ""),
+        "company": contact.get("entreprise", ""),
+    }
+    if contact.get("telephone"):
+        properties["phone"] = contact["telephone"]
+    if contact.get("linkedin"):
+        properties["linkedin"] = contact["linkedin"]
+    if owner_id:
+        properties["hubspot_owner_id"] = owner_id
+
+    # Tenter la création d'abord
+    url = f"{HUBSPOT_BASE_URL}/crm/v3/objects/contacts"
+    try:
+        resp = _requests.post(url, headers=_hubspot_headers(), json={"properties": properties}, timeout=15)
+        if resp.status_code == 201:
+            return resp.json().get("id")
+        elif resp.status_code == 409:
+            # Contact existe déjà — récupérer l'ID et mettre à jour
+            conflict_data = resp.json()
+            existing_id = conflict_data.get("message", "")
+            # Extraire l'ID du message "Contact already exists. Existing ID: 123"
+            import re as _re
+            id_match = _re.search(r"Existing ID:\s*(\d+)", existing_id)
+            if id_match:
+                contact_id = int(id_match.group(1))
+                # Mettre à jour le contact existant
+                update_url = f"{HUBSPOT_BASE_URL}/crm/v3/objects/contacts/{contact_id}"
+                _requests.patch(update_url, headers=_hubspot_headers(), json={"properties": properties}, timeout=15)
+                return contact_id
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error("HubSpot upsert contact erreur: %s", e)
+
+    return None
+
+
+def _hubspot_create_email_engagement(
+    contact_id: int,
+    email_content: dict,
+    sender_email: str,
+    recipient_email: str,
+    status: str = "SENT",
+) -> dict:
+    """
+    Crée un engagement email dans HubSpot, associé au contact.
+    Status : SENT (envoyé) ou DRAFT (brouillon).
+    """
+    if _requests is None:
+        return {"sent": False, "error": "pip install requests requis"}
+
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    properties = {
+        "hs_email_subject": email_content.get("sujet", ""),
+        "hs_email_html": email_content.get("corps", "").replace("\n", "<br>"),
+        "hs_email_direction": "EMAIL",  # outgoing
+        "hs_email_status": status,
+        "hs_email_from_email": sender_email,
+        "hs_email_to_email": recipient_email,
+        "hs_timestamp": timestamp,
+    }
+
+    # Créer l'email
+    url = f"{HUBSPOT_BASE_URL}/crm/v3/objects/emails"
+    try:
+        resp = _requests.post(url, headers=_hubspot_headers(), json={"properties": properties}, timeout=15)
+        resp.raise_for_status()
+        email_id = resp.json().get("id")
+
+        # Associer l'email au contact
+        if email_id and contact_id:
+            assoc_url = (
+                f"{HUBSPOT_BASE_URL}/crm/v4/objects/emails/{email_id}"
+                f"/associations/contacts/{contact_id}"
+            )
+            _requests.put(
+                assoc_url,
+                headers=_hubspot_headers(),
+                json=[{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 198}],
+                timeout=15,
+            )
+
+        return {"sent": True, "message_id": email_id, "hubspot_contact_id": contact_id}
+
+    except Exception as e:
+        logger.error("HubSpot create email erreur: %s", e)
+        return {"sent": False, "error": f"HubSpot API error: {e}"}
+
+
+def send_via_hubspot(
     contact: dict,
     email_content: dict,
     sender_email: str,
     sender_name: str,
+    owner_id: str = "",
 ) -> dict:
-    """Envoie un email via l'API Brevo."""
-    if sib_api_v3_sdk is None:
-        return {"sent": False, "error": "pip install sib-api-v3-sdk requis"}
+    """Crée le contact dans HubSpot CRM et enregistre l'email envoyé."""
+    token = os.environ.get("HUBSPOT_ACCESS_TOKEN")
+    if not token:
+        return {"sent": False, "error": "HUBSPOT_ACCESS_TOKEN non défini"}
 
-    api_key = os.environ.get("BREVO_API_KEY")
-    if not api_key:
-        return {"sent": False, "error": "BREVO_API_KEY non définie"}
+    if _requests is None:
+        return {"sent": False, "error": "pip install requests requis"}
 
     if not contact.get("email"):
         return {"sent": False, "error": "Email du contact manquant"}
@@ -216,33 +353,26 @@ def send_via_brevo(
     if not email_content.get("sujet") or not email_content.get("corps"):
         return {"sent": False, "error": "Contenu email incomplet"}
 
-    configuration = sib_api_v3_sdk.Configuration()
-    configuration.api_key["api-key"] = api_key
-    api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
-        sib_api_v3_sdk.ApiClient(configuration)
+    # 1. Upsert contact dans le CRM
+    contact_id = _hubspot_upsert_contact(contact, owner_id)
+    if contact_id is None:
+        return {"sent": False, "error": "Impossible de créer le contact HubSpot"}
+
+    # 2. Créer l'engagement email
+    result = _hubspot_create_email_engagement(
+        contact_id=contact_id,
+        email_content=email_content,
+        sender_email=sender_email,
+        recipient_email=contact["email"],
+        status="SENT",
     )
 
-    send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
-        to=[{"email": contact["email"], "name": contact.get("nom", "")}],
-        sender={"email": sender_email, "name": sender_name},
-        subject=email_content["sujet"],
-        text_content=email_content["corps"],
-        headers={"X-Mailin-Tag": "prospection-outbound"},
-    )
+    return result
 
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = api_instance.send_transac_email(send_smtp_email)
-            return {"sent": True, "message_id": response.message_id}
-        except ApiException as e:
-            if e.status == 429:  # Rate limit
-                time.sleep(RETRY_DELAY_BASE ** (attempt + 1))
-            elif attempt == MAX_RETRIES - 1:
-                return {"sent": False, "error": f"Brevo API error {e.status}: {e.reason}"}
-            else:
-                time.sleep(RETRY_DELAY_BASE)
 
-    return {"sent": False, "error": "Max retries Brevo"}
+# ============================================================
+# Orchestration campagne
+# ============================================================
 
 
 def run_email_campaign(
@@ -254,7 +384,7 @@ def run_email_campaign(
     use_ai: bool = True,
 ) -> dict:
     """
-    Point d'entrée. Génère et envoie les emails.
+    Point d'entrée. Génère et envoie les emails via HubSpot.
     dry_run=True : génère sans envoyer (par défaut, sécurité).
     """
     config = load_config()
@@ -291,6 +421,9 @@ def run_email_campaign(
         if api_key:
             ai_client = anthropic.Anthropic(api_key=api_key)
 
+    # Owner ID HubSpot (optionnel, depuis config)
+    owner_id = config.get("hubspot_owner_id", "")
+
     results = []
     for contact in contacts_batch:
         # Générer l'email
@@ -317,9 +450,9 @@ def run_email_campaign(
                 results.append(entry)
                 continue
 
-            # Envoi réel
-            send_result = send_via_brevo(
-                contact, email_content, sender_email, sender_name
+            # Envoi réel via HubSpot
+            send_result = send_via_hubspot(
+                contact, email_content, sender_email, sender_name, owner_id
             )
             entry.update(send_result)
 

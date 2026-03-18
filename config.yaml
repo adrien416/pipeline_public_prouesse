@@ -54,9 +54,10 @@ signaux_intention:
     - "Absence de plan de succession clair"
     - "Stagnation des recrutements"
 
-# --- Paramètres d'envoi Brevo ---
+# --- Paramètres d'envoi HubSpot ---
 envoi_par_jour: 15
 delai_entre_emails_min: 180
 delai_entre_emails_max: 420
 heure_debut_envoi: "09:00"
 heure_fin_envoi: "17:30"
+hubspot_owner_id: "87316613"

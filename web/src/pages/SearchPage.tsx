@@ -15,6 +15,7 @@ export function SearchPage({ onComplete }: Props) {
   const [headcountMin, setHeadcountMin] = useState("10");
   const [headcountMax, setHeadcountMax] = useState("500");
   const [secteur, setSecteur] = useState("");
+  const [limit, setLimit] = useState("100");
 
   const search = useMutation({
     mutationFn: (params: SearchParams) => launchSearch(params),
@@ -30,6 +31,7 @@ export function SearchPage({ onComplete }: Props) {
       headcount_max: parseInt(headcountMax) || undefined,
       location: location || undefined,
       secteur: secteur || undefined,
+      limit: parseInt(limit) || 100,
     });
   }
 
@@ -87,7 +89,7 @@ export function SearchPage({ onComplete }: Props) {
         </div>
 
         {/* Options */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Localisation</label>
             <input
@@ -122,6 +124,17 @@ export function SearchPage({ onComplete }: Props) {
               onChange={(e) => setSecteur(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm"
               placeholder="impact, fintech..."
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Nb resultats</label>
+            <input
+              type="number"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              min="1"
+              max="100"
             />
           </div>
         </div>

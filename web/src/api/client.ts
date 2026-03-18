@@ -37,6 +37,7 @@ export interface SearchParams {
   headcount_max?: number;
   location?: string;
   secteur?: string;
+  limit?: number;
 }
 
 export function launchSearch(params: SearchParams) {

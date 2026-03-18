@@ -16,6 +16,7 @@ interface SearchBody {
   headcount_max?: number;
   location?: string;
   secteur?: string;
+  limit?: number;
 }
 
 async function callClaude(description: string, mode: string): Promise<Record<string, unknown>> {
@@ -95,13 +96,13 @@ N'inclus que les filtres pertinents par rapport à la description.`;
   return JSON.parse(jsonMatch[0]);
 }
 
-async function searchFullenrich(filters: Record<string, unknown>): Promise<unknown[]> {
+async function searchFullenrich(filters: Record<string, unknown>, limit: number = 100): Promise<unknown[]> {
   const apiKey = process.env.FULLENRICH_API_KEY;
   if (!apiKey) throw new Error("FULLENRICH_API_KEY non définie");
 
   const body = {
     offset: 0,
-    limit: 100,
+    limit,
     ...filters,
   };
 
@@ -156,7 +157,7 @@ export default async (request: Request) => {
     }
 
     // 2. Call Fullenrich Search API
-    const results = await searchFullenrich(filters);
+    const results = await searchFullenrich(filters, body.limit ?? 100);
 
     // 3. Save search to Google Sheets
     const now = new Date().toISOString();

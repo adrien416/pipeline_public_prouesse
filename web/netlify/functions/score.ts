@@ -8,7 +8,7 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 2;
 const MAX_PER_CALL = 10;
 
 interface ScoreBody {
@@ -82,26 +82,37 @@ async function scoreContact(
   const model =
     mode === "cession" ? "claude-opus-4-6" : "claude-haiku-4-5-20251001";
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  let result: any;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+    if (response.status === 429) {
+      const wait = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s, 16s
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+    }
+
+    result = await response.json();
+    break;
   }
-
-  const result = await response.json();
+  if (!result) throw new Error("Anthropic API: trop de requêtes, réessaie dans quelques secondes");
   const text = result.content?.[0]?.text ?? "";
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);

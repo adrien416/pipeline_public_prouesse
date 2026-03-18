@@ -43,7 +43,11 @@ Description du site : ${metaDesc || "Non disponible"}
 2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable ?
    1=aucun impact, 5=transformateur
 
-IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié). Les entreprises d'éducation/formation SONT acceptées.
+IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
+- une association, charité, coopérative, organisme public, ONG
+- une banque d'affaires ou cabinet de conseil M&A
+- une filiale de grand groupe (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...)
+On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d'éducation/formation SONT acceptées.
 
 JSON uniquement :
 {"scalabilite": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
@@ -63,7 +67,11 @@ Description du site : ${metaDesc || "Non disponible"}
    consolidation du secteur, PE actif dans le secteur, stagnation recrutements.
    1=aucun signal, 5=signaux très forts
 
-IMPORTANT : Si l'entreprise est une association, charité, coopérative, organisme public, ONG, ou une banque d'affaires/cabinet de conseil M&A, donne un score total <= 3 (non qualifié). Les entreprises d'éducation/formation SONT acceptées.
+IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
+- une association, charité, coopérative, organisme public, ONG
+- une banque d'affaires ou cabinet de conseil M&A
+- une filiale de grand groupe (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...)
+On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d'éducation/formation SONT acceptées.
 
 JSON uniquement :
 {"impact_env": <1-5>, "signaux_vente": <1-5>, "raison": "<2-3 phrases>"}`;

@@ -62,6 +62,7 @@ Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exempl
 IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec "exclude": true) :
 - current_company_types: nonprofit, government agency (mais PAS educational — les entreprises d'éducation/formation sont OK)
 - current_company_industries qui correspondent à : charité, coopérative, organisme public, banque d'affaires, conseil en fusions-acquisitions, investment banking
+- Exclure aussi les filiales de grands groupes (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...). On cherche des entreprises indépendantes avec des fondateurs, pas des filiales.
 
 N'inclus que les filtres pertinents par rapport à la description.`;
 

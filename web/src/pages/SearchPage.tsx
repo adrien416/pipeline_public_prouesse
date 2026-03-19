@@ -166,8 +166,14 @@ export function SearchPage({ onComplete }: Props) {
 
       {/* Filtres IA */}
       {search.data?.filters && (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Filtres generes par l'IA</h3>
+        <div className={`rounded-xl p-4 ${search.data.retried ? "bg-green-50 border border-green-300" : "bg-gray-50 border border-gray-200"}`}>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            {search.data.retried ? (
+              <span className="text-green-700">Filtres elargis automatiquement (les filtres initiaux donnaient 0 resultats)</span>
+            ) : (
+              "Filtres generes par l'IA"
+            )}
+          </h3>
           <div className="flex flex-wrap gap-2">
             {Object.entries(search.data.filters).map(([key, value]) => (
               <div key={key} className="text-xs">

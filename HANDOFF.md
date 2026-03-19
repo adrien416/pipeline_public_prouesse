@@ -40,6 +40,7 @@
 │   │   ├── credits.ts            # GET /api/credits — solde credits Fullenrich
 │   │   ├── login.ts              # POST /api/login — authentification
 │   │   └── webhook-brevo.ts      # POST /api/webhook-brevo — webhook Brevo pour tracking (opens, clicks, bounces)
+│   ├── tests/                    # Tests vitest pour les Netlify Functions (102 tests)
 │   ├── netlify.toml              # Config Netlify (build command, publish dir)
 │   ├── package.json              # Dependances npm
 │   └── vite.config.ts            # Config Vite
@@ -97,20 +98,34 @@
 
 10. **Affichage des filtres IA** (`ae00587`) — Les filtres generes par Claude sont affiches sous forme de tags colores entre le formulaire et les resultats (bleu = inclus, rouge barre = exclus).
 
+11. **Suite de tests vitest pour le web** (`62bd490`) — 96 tests (maintenant 102) couvrant toutes les Netlify Functions : auth, sheets, contacts, score, search, enrich, campaign, analytics. Framework vitest ajoute au projet.
+
+12. **Suggestions IA quand 0 resultats** (`73adcf0`) — Quand Fullenrich ne trouve rien, l'IA propose 3-5 modifications concretes pour elargir la recherche. Affichees dans un bloc amber sous les filtres.
+
+13. **Amelioration majeure de la qualite des filtres + auto-retry** — Trois changements importants dans `search.ts` :
+    - **Prompt IA reecrit** : Le system prompt force maintenant l'IA a utiliser des termes anglais LinkedIn (Fullenrich utilise la taxonomie LinkedIn), a limiter a 2-3 industries larges, max 3 titres, et `exact_match: false` partout. Avant, l'IA generait des termes francais niches ("recyclage", "dechets electroniques") qui ne matchaient rien.
+    - **Auto-retry avec filtres elargis** : Quand la premiere recherche retourne 0 resultats, le systeme genere automatiquement des filtres plus larges (via un prompt specifique "RECHERCHE ELARGIE") et retente Fullenrich. Si le retry reussit, les filtres elargis sont utilises et l'UI affiche "Filtres elargis automatiquement".
+    - **Suggestions seulement en dernier recours** : Les suggestions IA ne sont affichees que si le retry a aussi echoue (0 resultats apres 2 tentatives).
+
 ### Decisions non evidentes
 - **Haiku pour la recherche, Opus pour le scoring cession** : La traduction description → JSON est triviale, Haiku suffit. Le scoring cession necessite une analyse plus fine (signaux de vente), donc Opus. Le scoring levee de fonds utilise Haiku car les criteres sont plus simples.
 - **1 contact par appel API** : Le rate limit Anthropic est de 5 req/min pour cette org. Avec le polling frontend toutes les 15s, ca fait ~4 req/min, juste sous la limite.
 - **Google Sheets comme BDD** : Choix delibere pour que le client puisse voir/editer les donnees directement. Pas prevu pour du volume > quelques milliers de contacts.
 - **Brevo plutot que HubSpot pour l'envoi** : Le code `send.ts` utilise Brevo SMTP. HubSpot est mentionne dans le pipeline Python original mais n'est pas integre dans la version web.
+- **Industries en anglais dans le prompt de recherche** : Fullenrich utilise la taxonomie LinkedIn qui est en anglais. Le prompt force explicitement l'IA a traduire les termes francais (ex: "recyclage de dechets" → "Environmental Services"). Sans ca, les recherches niches retournent 0 resultats.
+- **Auto-retry avec 2 prompts differents** : La fonction `buildSystemPrompt(mode, broad)` genere un prompt different selon que c'est le premier essai ou le retry. Le retry ajoute des instructions explicites pour elargir (1 seule industrie large, max 2 titres, pas de specialties).
+- **Tests vitest pour le backend** : 102 tests unitaires couvrent les Netlify Functions. Les tests mockent `fetch` (Anthropic, Fullenrich), `_sheets` (Google Sheets), et `_auth` (JWT). Les tests Python (177) couvrent le pipeline CLI original.
 
 ## 4. Etat actuel — EN COURS
 
 ### Tache en cours
-Aucune tache specifique en cours. Le dernier commit (`ae00587`) a ete pushe avec succes. L'app est fonctionnelle sur les 5 etapes.
+Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Tests : 177 Python + 102 TypeScript = 279 tests passent.
 
 ### Ce qui fonctionne
-- Recherche de prospects (description francais → filtres Fullenrich → resultats)
-- Affichage des filtres IA generes
+- Recherche de prospects (description francais → filtres Fullenrich en anglais LinkedIn → resultats)
+- Auto-retry avec filtres elargis quand 0 resultats (2 tentatives avant suggestions)
+- Suggestions IA concretes quand les 2 tentatives echouent
+- Affichage des filtres IA generes (vert si elargis automatiquement)
 - Exclusion manuelle de contacts avant validation
 - Scoring IA avec gestion du rate limit (skip + retry)
 - Enrichissement email via Fullenrich bulk
@@ -155,7 +170,6 @@ Aucune tache specifique en cours. Le dernier commit (`ae00587`) a ete pushe avec
 
 ### Cas limites non geres
 - Contacts sans domaine : le scoring marche mais la meta-description est vide, donc le score est moins precis.
-- Fullenrich qui retourne 0 resultats : pas de message explicatif pour l'utilisateur.
 - Contacts en double entre deux recherches differentes : pas de deduplication.
 
 ### Ce qui parait bizarre mais est intentionnel
@@ -185,6 +199,8 @@ Aucune tache specifique en cours. Le dernier commit (`ae00587`) a ete pushe avec
 cd web
 npm install
 npx netlify dev     # Lance le dev server local (frontend + functions)
+npm test            # Lance les 102 tests vitest (Netlify Functions)
+cd .. && python -m pytest tests/  # Lance les 177 tests Python (pipeline CLI)
 ```
 
 ### Variables d'env requises pour le dev local

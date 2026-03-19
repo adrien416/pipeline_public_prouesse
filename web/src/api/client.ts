@@ -47,6 +47,8 @@ export function launchSearch(params: SearchParams) {
     filters: Record<string, unknown>;
     explication: string;
     suggestions: string[];
+    retried: boolean;
+    originalFilters?: Record<string, unknown>;
   }>("/search", {
     method: "POST",
     body: JSON.stringify(params),

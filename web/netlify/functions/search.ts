@@ -19,11 +19,17 @@ interface SearchBody {
   limit?: number;
 }
 
-async function callClaude(description: string, mode: string): Promise<Record<string, unknown>> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
+function buildSystemPrompt(mode: string, broad: boolean): string {
+  const breadthInstruction = broad
+    ? `\n\nATTENTION — RECHERCHE ÉLARGIE : La recherche précédente a retourné 0 résultats. Tu DOIS élargir les filtres :
+- Utilise des industries TRÈS LARGES (1 seul terme générique, ex: "Environmental Services" au lieu de "Recycling" + "E-Waste")
+- NE METS PAS de filtre current_company_specialties (trop restrictif)
+- Mets MAXIMUM 2 titres de poste (ex: CEO et Founder uniquement)
+- Mets exact_match: false partout
+- Préfère un filtre d'industrie large + specialties vide plutôt que plusieurs industries niches`
+    : "";
 
-  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres de recherche JSON pour l'API Fullenrich v2.
+  return `Tu es un assistant qui traduit des descriptions de recherche en français en filtres de recherche JSON pour l'API Fullenrich v2.
 
 IMPORTANT : Chaque filtre est un ARRAY d'objets avec les propriétés "value" (string), "exact_match" (boolean), "exclude" (boolean).
 Les filtres numériques (headcounts, founded_years) utilisent "min" et "max" au lieu de "value".
@@ -48,23 +54,36 @@ PEOPLE :
 - past_position_titles: [{value, exact_match, exclude}]
 
 Le mode est "${mode}".
-- Pour "levee_de_fonds" : cible les décideurs (CEO, DG, Directeur Général, Founder, Managing Partner, Co-founder, CFO) dans des entreprises correspondant à la description.
-- Pour "cession" : cible les dirigeants/propriétaires (CEO, Gérant, Président, DG, Founder) dans des entreprises correspondant à la description.
+- Pour "levee_de_fonds" : cible les décideurs dans des entreprises correspondant à la description.
+- Pour "cession" : cible les dirigeants/propriétaires dans des entreprises correspondant à la description.
+
+RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
+1. **Industries EN ANGLAIS** : Fullenrich utilise la taxonomie LinkedIn. Traduis TOUJOURS les termes français en anglais standard LinkedIn (ex: "recyclage de déchets électroniques" → "Environmental Services", PAS "recyclage" ou "déchets électroniques").
+2. **Industries LARGES** : Maximum 2-3 industries, et utilise des termes LARGES (ex: "Environmental Services" plutôt que "E-Waste Recycling"). Plus c'est large, plus il y a de résultats.
+3. **exact_match: false PARTOUT** pour les inclusions. Seules les exclusions peuvent avoir exact_match: true.
+4. **Titres LIMITÉS** : Maximum 3 titres de poste. Préfère "CEO" et "Founder" qui couvrent la plupart des cas.
+5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
+6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
 
 Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exemple :
 {
-  "current_company_industries": [{"value": "Cleantech", "exact_match": false, "exclude": false}],
+  "current_company_industries": [{"value": "Environmental Services", "exact_match": false, "exclude": false}],
   "current_company_headquarters": [{"value": "France", "exact_match": false, "exclude": false}],
-  "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}],
-  "current_company_headcounts": [{"min": 20, "max": 200, "exclude": false}]
+  "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}, {"value": "Founder", "exact_match": false, "exclude": false}],
+  "current_company_headcounts": [{"min": 10, "max": 500, "exclude": false}]
 }
 
 IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec "exclude": true) :
 - current_company_types: nonprofit, government agency (mais PAS educational — les entreprises d'éducation/formation sont OK)
-- current_company_industries qui correspondent à : charité, coopérative, organisme public, banque d'affaires, conseil en fusions-acquisitions, investment banking
-- Exclure aussi les filiales de grands groupes (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...). On cherche des entreprises indépendantes avec des fondateurs, pas des filiales.
 
-N'inclus que les filtres pertinents par rapport à la description.`;
+N'inclus que les filtres pertinents par rapport à la description.${breadthInstruction}`;
+}
+
+async function callClaude(description: string, mode: string, broad = false): Promise<Record<string, unknown>> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
+
+  const systemPrompt = buildSystemPrompt(mode, broad);
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -206,29 +225,48 @@ export default async (request: Request) => {
     }
 
     // 1. Translate description to Fullenrich filters via Claude
-    const filters = await callClaude(body.description, body.mode);
+    let filters = await callClaude(body.description, body.mode);
 
     // Apply optional overrides in Fullenrich v2 format
-    if (body.headcount_min || body.headcount_max) {
-      filters.current_company_headcounts = [
-        { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
-      ];
+    function applyOverrides(f: Record<string, unknown>) {
+      if (body.headcount_min || body.headcount_max) {
+        f.current_company_headcounts = [
+          { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
+        ];
+      }
+      if (body.location) {
+        f.current_company_headquarters = [
+          { value: body.location, exact_match: false, exclude: false },
+        ];
+      }
+      if (body.secteur) {
+        const existing = (f.current_company_industries as unknown[]) ?? [];
+        existing.push({ value: body.secteur, exact_match: false, exclude: false });
+        f.current_company_industries = existing;
+      }
     }
-    if (body.location) {
-      filters.current_company_headquarters = [
-        { value: body.location, exact_match: false, exclude: false },
-      ];
-    }
-    if (body.secteur) {
-      const existing = (filters.current_company_industries as unknown[]) ?? [];
-      existing.push({ value: body.secteur, exact_match: false, exclude: false });
-      filters.current_company_industries = existing;
-    }
+
+    applyOverrides(filters);
 
     // 2. Call Fullenrich Search API
-    const results = await searchFullenrich(filters, body.limit ?? 100);
+    let results = await searchFullenrich(filters, body.limit ?? 100);
 
-    // 2b. If 0 results, ask AI for suggestions to broaden the search
+    // 2b. If 0 results, auto-retry with broader filters
+    let retried = false;
+    let originalFilters: Record<string, unknown> | undefined;
+    if (results.length === 0) {
+      originalFilters = { ...filters };
+      const broaderFilters = await callClaude(body.description, body.mode, true);
+      applyOverrides(broaderFilters);
+      const retryResults = await searchFullenrich(broaderFilters, body.limit ?? 100);
+      if (retryResults.length > 0) {
+        filters = broaderFilters;
+        results = retryResults;
+        retried = true;
+      }
+    }
+
+    // 2c. If still 0 results after retry, ask AI for suggestions
     let suggestions: string[] = [];
     if (results.length === 0) {
       suggestions = await suggestFilterChanges(body, filters);
@@ -287,6 +325,8 @@ export default async (request: Request) => {
       filters,
       total: contacts.length,
       suggestions,
+      retried,
+      originalFilters: retried ? originalFilters : undefined,
     });
   } catch (err) {
     console.error("search error:", err);

@@ -223,7 +223,7 @@ describe("score handler — exclusions", () => {
 // ─── Rate limit handling ───
 
 describe("score handler — rate limit", () => {
-  it("returns contacts even when rate limited (429)", async () => {
+  it("returns 500 error when rate limited after 3 retries", async () => {
     const unscored = makeContact();
     mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
     mockReadAll.mockResolvedValue([unscored]);
@@ -237,13 +237,10 @@ describe("score handler — rate limit", () => {
     }) as typeof fetch;
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
+    expect(res.status).toBe(500);
     const body = await res.json();
-
-    expect(body.done).toBe(false);
-    expect(body.contacts).toHaveLength(1);
-    // batchUpdateRows may be called for cleanup but NOT for saving 0 scores
-    // The important thing is done=false so the frontend retries
-  });
+    expect(body.error).toContain("rate limited");
+  }, 60000); // Higher timeout because of retry backoff waits (5s + 10s + 15s)
 
   it("cleans up corrupted '0' scores and re-scores contacts", async () => {
     // Contact with score_total="0" from a previous failed attempt

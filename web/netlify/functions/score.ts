@@ -90,11 +90,11 @@ async function scoreContact(
       ? buildCessionPrompt(contact, metaDesc)
       : buildLeveePrompt(contact, metaDesc);
 
-  const model =
-    mode === "cession" ? "claude-opus-4-6" : "claude-haiku-4-5-20251001";
+  // Use Haiku for both modes — fast, cheap, sufficient for scoring
+  const model = "claude-haiku-4-5-20251001";
 
   let result: any;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -110,8 +110,9 @@ async function scoreContact(
     });
 
     if (response.status === 429) {
-      // Return a skip signal — frontend will retry on next cycle
-      return { score_1: 0, score_2: 0, score_total: 0, raison: "" };
+      const wait = (attempt + 1) * 5000; // 5s, 10s, 15s
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
     }
 
     if (!response.ok) {
@@ -122,7 +123,7 @@ async function scoreContact(
     result = await response.json();
     break;
   }
-  if (!result) return { score_1: 0, score_2: 0, score_total: 0, raison: "" };
+  if (!result) throw new Error("Anthropic API: rate limited après 3 tentatives");
   const text = result.content?.[0]?.text ?? "";
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -217,8 +218,10 @@ export default async (request: Request) => {
     const metaDesc = await fetchMetaDescription(contact.domaine);
     const scores = await scoreContact(contact, mode, metaDesc);
 
-    // If scores are 0 (rate limited OR parse failure), skip saving — will retry next cycle
-    if (scores.score_total === 0) {
+    // scoreContact now throws on errors instead of returning 0 silently.
+    // A score_total of 0 means both sub-scores parsed as 0 (unlikely but possible).
+    // We skip saving truly empty results to avoid corrupting the sheet.
+    if (scores.score_total <= 0 && !scores.raison) {
       const alreadyScored = searchContacts.filter((c) => Number(c.score_total) > 0).length;
       return json({
         total: searchContacts.length,

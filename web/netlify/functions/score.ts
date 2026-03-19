@@ -162,7 +162,12 @@ async function scoreContact(
   }
 
   if (s1 === 0 && s2 === 0) {
-    throw new Error(`Scores parsés à 0 pour ${contact.entreprise} — réponse Claude: ${text.slice(0, 150)}`);
+    return {
+      score_1: 0,
+      score_2: 0,
+      score_total: 0,
+      raison: String(parsed.raison ?? "Non évaluable"),
+    };
   }
 
   return {
@@ -241,30 +246,8 @@ export default async (request: Request) => {
       return json({ error: errorMsg }, 404);
     }
 
-    // Clean up corrupted "0" scores from previous failed attempts
-    const corrupted = searchContacts.filter(
-      (c) => c.score_total === "0" || (c.score_total && Number(c.score_total) <= 0)
-    );
-    if (corrupted.length > 0) {
-      const cleanups: Array<{ rowIndex: number; values: string[] }> = [];
-      for (const c of corrupted) {
-        if (!c._rowIndex) continue;
-        const cleaned = { ...c, score_1: "", score_2: "", score_total: "", score_raison: "" };
-        cleanups.push({ rowIndex: Number(c._rowIndex), values: toRow(headers, cleaned) });
-        c.score_1 = "";
-        c.score_2 = "";
-        c.score_total = "";
-        c.score_raison = "";
-      }
-      if (cleanups.length > 0) {
-        await batchUpdateRows("Contacts", cleanups);
-      }
-    }
-
-    // Find unscored contacts
-    const unscored = searchContacts.filter(
-      (c) => !c.score_total || Number(c.score_total) <= 0
-    );
+    // Find unscored contacts (empty score_total = not yet scored)
+    const unscored = searchContacts.filter((c) => c.score_total === "");
 
     if (unscored.length === 0) {
       return json({
@@ -301,7 +284,7 @@ export default async (request: Request) => {
       c.id === contact.id ? updated : c
     );
 
-    const allScored = responseContacts.filter((c) => Number(c.score_total) > 0).length;
+    const allScored = responseContacts.filter((c) => c.score_total !== "").length;
     const qualified = responseContacts.filter((c) => Number(c.score_total) >= 7).length;
 
     return json({

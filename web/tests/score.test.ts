@@ -264,20 +264,17 @@ describe("score handler — rate limit", () => {
     expect(body.error).toContain("rate limited");
   }, 60000); // Higher timeout because of retry backoff waits (5s + 10s + 15s)
 
-  it("cleans up corrupted '0' scores and re-scores contacts", async () => {
-    // Contact with score_total="0" from a previous failed attempt
-    const corrupted = makeContact({ score_total: "0", score_1: "0", score_2: "0", score_raison: "" });
+  it("treats score_total='0' as already scored (not re-scored)", async () => {
+    const zeroScored = makeContact({ score_total: "0", score_1: "0", score_2: "0", score_raison: "Non évaluable" });
     mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
-    mockReadAll.mockResolvedValue([corrupted]);
+    mockReadAll.mockResolvedValue([zeroScored]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    // Should have cleaned up the corrupted score AND re-scored
-    expect(body.contacts[0].score_total).toBe("7"); // 4+3 from mock
+    expect(body.done).toBe(true);
     expect(body.scored).toBe(1);
-    // batchUpdateRows should be called at least for the new score
-    expect(mockBatchUpdateRows).toHaveBeenCalled();
+    expect(body.contacts[0].score_total).toBe("0");
   });
 });
 

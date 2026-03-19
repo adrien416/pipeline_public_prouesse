@@ -127,7 +127,7 @@ export default async (request: Request) => {
     const startResp = await fetch(`${FULLENRICH_BASE}/api/v1/contact/enrich/bulk`, {
       method: "POST",
       headers: fullenrichHeaders(),
-      body: JSON.stringify({ contacts }),
+      body: JSON.stringify({ name: `prouesse-${Date.now()}`, contacts }),
     });
 
     if (!startResp.ok) {

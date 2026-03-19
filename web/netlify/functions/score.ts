@@ -207,34 +207,35 @@ export default async (request: Request) => {
     if (searchContacts.length === 0) {
       const allRechercheIds = [...new Set(allContacts.map((c) => c.recherche_id).filter(Boolean))];
 
-      // Read raw data from the sheet to compare with readAll() mapping
-      const totalRows = allContacts.length + 1; // +1 for header row
-      const startRow = Math.max(2, totalRows - 4);
-      const rawHeaders = await readRawRange("Contacts!1:1");
-      const rawLastRows = await readRawRange(
-        `Contacts!A${startRow}:W${totalRows + 5}`
-      );
+      // Count empty vs non-empty entries
+      const emptyIdCount = allContacts.filter((c) => !c.id).length;
+      const emptyRechCount = allContacts.filter((c) => !c.recherche_id).length;
 
-      // Detect where recherche_id actually is in raw headers
+      // Read column A to get true row count in the sheet
+      const rawColA = await readRawRange("Contacts!A:A");
+      const trueRowCount = rawColA.length;
+
+      // Read raw headers
+      const rawHeaders = await readRawRange("Contacts!1:1");
       const rechercheIdColIndex = rawHeaders[0]?.indexOf("recherche_id") ?? -1;
 
-      // Build diagnostic string for frontend display (since client.ts only shows error field)
-      const lastRowsSummary = rawLastRows.slice(-3).map((row, i) =>
-        `row${i}: cols=${row.length}, id=${row[0]}, rech_idx16=${row[16] ?? "VIDE"}, rech_detected=${rechercheIdColIndex >= 0 ? (row[rechercheIdColIndex] ?? "VIDE") : "N/A"}`
-      ).join(" | ");
+      // Read last 10 raw rows using the TRUE row count
+      const rawStartRow = Math.max(2, trueRowCount - 9);
+      const rawLastRows = await readRawRange(
+        `Contacts!A${rawStartRow}:W${trueRowCount + 2}`
+      );
 
-      const lastContact = allContacts[allContacts.length - 1];
-      const lastContactInfo = lastContact
-        ? `last_readAll: id=${lastContact.id}, rech=${lastContact.recherche_id}, entreprise=${lastContact.entreprise}`
-        : "aucun";
+      // Build diagnostic string
+      const lastRowsSummary = rawLastRows.slice(-5).map((row, i) =>
+        `r${rawStartRow + rawLastRows.length - 5 + i}:[${row.length}c]id=${row[0] ?? "?"} rech=${rechercheIdColIndex >= 0 ? (row[rechercheIdColIndex] ?? "VIDE") : row[16] ?? "VIDE"}`
+      ).join(" | ");
 
       const errorMsg = [
         `0 contacts pour recherche_id=${body.recherche_id}`,
-        `Total: ${allContacts.length}`,
-        `IDs uniques: [${allRechercheIds.slice(0, 5).join(", ")}]${allRechercheIds.length > 5 ? "..." : ""}`,
-        `Headers: ${rawHeaders[0]?.length ?? 0} cols, rech_id@col${rechercheIdColIndex} (attendu: 16)`,
+        `readAll: ${allContacts.length} (${emptyIdCount} id_vide, ${emptyRechCount} rech_vide)`,
+        `IDs uniques: [${allRechercheIds.slice(0, 5).join(", ")}]`,
+        `Sheet: ${trueRowCount} vrais rows, ${rawHeaders[0]?.length ?? 0} cols, rech@col${rechercheIdColIndex}`,
         lastRowsSummary,
-        lastContactInfo,
       ].join(" — ");
 
       return json({ error: errorMsg }, 404);

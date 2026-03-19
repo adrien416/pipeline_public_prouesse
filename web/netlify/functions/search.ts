@@ -4,6 +4,7 @@ import { requireAuth, json } from "./_auth.js";
 import {
   appendRows,
   appendRow,
+  readRawRange,
   getHeadersForWrite,
   CONTACTS_HEADERS,
   RECHERCHES_HEADERS,
@@ -315,10 +316,26 @@ export default async (request: Request) => {
       date_modification: now,
     }));
 
+    let writeDebug: Record<string, unknown> = {};
     if (contacts.length > 0) {
       const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
       const rows = contacts.map((c) => toRow(headers, c));
+
+      // Log what we're about to write for debugging
+      writeDebug = {
+        headers_count: headers.length,
+        headers_sample: headers.slice(0, 5).join(",") + "..." + headers.slice(15, 18).join(","),
+        first_row_sample: rows[0]
+          ? `id=${rows[0][0]}, rech_idx16=${rows[0][16]}, cols=${rows[0].length}`
+          : "none",
+        rows_count: rows.length,
+      };
+
       await appendRows("Contacts", rows);
+
+      // Verify write by reading back the last rows
+      const verifyRange = await readRawRange("Contacts!A1:A");
+      writeDebug.total_rows_after_write = verifyRange.length;
     }
 
     return json({
@@ -329,6 +346,7 @@ export default async (request: Request) => {
       suggestions,
       retried,
       originalFilters: retried ? originalFilters : undefined,
+      _writeDebug: writeDebug,
     });
   } catch (err) {
     console.error("search error:", err);

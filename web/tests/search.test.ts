@@ -40,6 +40,7 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "email_status", "email_sent_at", "phrase_perso",
     "date_creation", "date_modification",
   ]),
+  readRawRange: vi.fn().mockResolvedValue([["header"], ["row1"]]),
 }));
 
 // ─── Mock _auth ───

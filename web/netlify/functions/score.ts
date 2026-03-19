@@ -8,10 +8,21 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const MAX_PER_CALL = 1; // 1 contact per call to respect Anthropic 5 req/min limit
+const MAX_PER_CALL = 1;
 
 interface ScoreBody {
   recherche_id: string;
+  mode?: string; // optional — frontend can send it to skip Recherches lookup
+}
+
+function safeDomain(domaine: string): string {
+  if (!domaine) return "";
+  try {
+    const url = domaine.startsWith("http") ? domaine : `https://${domaine}`;
+    return new URL(url).hostname;
+  } catch {
+    return domaine;
+  }
 }
 
 async function fetchMetaDescription(domain: string): Promise<string> {
@@ -19,22 +30,23 @@ async function fetchMetaDescription(domain: string): Promise<string> {
   const url = domain.startsWith("http") ? domain : `https://${domain}`;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
+    const timeout = setTimeout(() => controller.abort(), 1500);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     const html = await res.text();
     const match = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
       ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
-    return match?.[1]?.slice(0, 500) ?? "";
+    return match?.[1]?.slice(0, 300) ?? "";
   } catch {
     return "";
   }
 }
 
 function buildLeveePrompt(contact: Record<string, string>, metaDesc: string): string {
+  const host = safeDomain(contact.domaine);
   return `Tu es un analyste spécialisé en levées de fonds pour des entreprises à impact.
 
-Entreprise : ${contact.entreprise} (${contact.secteur}, ${contact.entreprise ? "taille inconnue" : "taille inconnue"} employés, ${contact.domaine ? new URL(contact.domaine.startsWith("http") ? contact.domaine : `https://${contact.domaine}`).hostname : "pays inconnu"})
+Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
 Description du site : ${metaDesc || "Non disponible"}
 
 Évalue sur 2 critères :
@@ -54,9 +66,10 @@ JSON uniquement :
 }
 
 function buildCessionPrompt(contact: Record<string, string>, metaDesc: string): string {
+  const host = safeDomain(contact.domaine);
   return `Tu es un analyste M&A spécialisé en cessions d'entreprises.
 
-Entreprise : ${contact.entreprise} (${contact.secteur}, taille inconnue employés, ${contact.domaine ? new URL(contact.domaine.startsWith("http") ? contact.domaine : `https://${contact.domaine}`).hostname : "pays inconnu"})
+Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
 Description du site : ${metaDesc || "Non disponible"}
 
 Évalue sur 2 critères :
@@ -83,14 +96,13 @@ async function scoreContact(
   metaDesc: string
 ): Promise<{ score_1: number; score_2: number; score_total: number; raison: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie — ajoute-la dans les variables d'environnement Netlify");
 
   const prompt =
     mode === "cession"
       ? buildCessionPrompt(contact, metaDesc)
       : buildLeveePrompt(contact, metaDesc);
 
-  // Use Haiku for both modes — fast, cheap, sufficient for scoring
   const model = "claude-haiku-4-5-20251001";
 
   let result: any;
@@ -104,34 +116,39 @@ async function scoreContact(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 512,
+        max_tokens: 300,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (response.status === 429) {
-      const wait = (attempt + 1) * 5000; // 5s, 10s, 15s
+      const wait = (attempt + 1) * 2000; // 2s, 4s, 6s — fast enough for Netlify timeout
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+      throw new Error(`Anthropic ${response.status}: ${errText.slice(0, 200)}`);
     }
 
     result = await response.json();
     break;
   }
-  if (!result) throw new Error("Anthropic API: rate limited après 3 tentatives");
+  if (!result) throw new Error("Anthropic API rate limited après 3 tentatives — réessaie dans 1 minute");
   const text = result.content?.[0]?.text ?? "";
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return { score_1: 0, score_2: 0, score_total: 0, raison: "Erreur de scoring" };
+    throw new Error(`Claude n'a pas retourné de JSON pour ${contact.entreprise}: ${text.slice(0, 100)}`);
   }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error(`JSON invalide pour ${contact.entreprise}: ${jsonMatch[0].slice(0, 100)}`);
+  }
 
   let s1: number, s2: number;
   if (mode === "cession") {
@@ -142,11 +159,15 @@ async function scoreContact(
     s2 = Number(parsed.impact) || 0;
   }
 
+  if (s1 === 0 && s2 === 0) {
+    throw new Error(`Scores parsés à 0 pour ${contact.entreprise} — réponse Claude: ${text.slice(0, 150)}`);
+  }
+
   return {
     score_1: s1,
     score_2: s2,
     score_total: s1 + s2,
-    raison: parsed.raison ?? "",
+    raison: String(parsed.raison ?? ""),
   };
 }
 
@@ -162,32 +183,45 @@ export default async (request: Request) => {
       return json({ error: "recherche_id requis" }, 400);
     }
 
-    // Get the search to find the mode
-    const recherche = await findRowById("Recherches", body.recherche_id);
-    if (!recherche) {
-      return json({ error: "Recherche introuvable" }, 404);
+    // Get mode: prefer from body (skips a Sheets API call), fallback to Recherches lookup
+    let mode = body.mode;
+    if (!mode) {
+      const recherche = await findRowById("Recherches", body.recherche_id);
+      if (!recherche) {
+        return json({ error: `Recherche ${body.recherche_id} introuvable dans la feuille Recherches` }, 404);
+      }
+      mode = recherche.data.mode || "levee_de_fonds";
     }
-    const mode = recherche.data.mode || "levee_de_fonds";
 
     // Read all contacts and filter by recherche_id
     const allContacts = await readAll("Contacts");
     const headers = CONTACTS_HEADERS;
 
-    // All contacts for this search (used in response)
-    const searchContacts = allContacts.filter((c) => c.recherche_id === body.recherche_id && c.statut !== "exclu");
+    const searchContacts = allContacts.filter(
+      (c) => c.recherche_id === body.recherche_id && c.statut !== "exclu"
+    );
 
-    // Clean up any contacts with invalid "0" scores from previous failed attempts
-    const corruptedContacts = searchContacts.filter(
+    // DIAGNOSTIC: if 0 contacts found, return helpful error
+    if (searchContacts.length === 0) {
+      const allRechercheIds = [...new Set(allContacts.map((c) => c.recherche_id).filter(Boolean))];
+      return json({
+        error: `0 contacts trouvés pour recherche_id=${body.recherche_id}. ` +
+          `Total contacts en base: ${allContacts.length}. ` +
+          `recherche_ids existants: ${allRechercheIds.slice(0, 5).join(", ")}${allRechercheIds.length > 5 ? "..." : ""}`,
+      }, 404);
+    }
+
+    // Clean up corrupted "0" scores from previous failed attempts
+    const corrupted = searchContacts.filter(
       (c) => c.score_total === "0" || (c.score_total && Number(c.score_total) <= 0)
     );
-    if (corruptedContacts.length > 0) {
+    if (corrupted.length > 0) {
       const cleanups: Array<{ rowIndex: number; values: string[] }> = [];
-      for (const c of corruptedContacts) {
+      for (const c of corrupted) {
         const idx = allContacts.findIndex((ac) => ac.id === c.id);
         if (idx === -1) continue;
         const cleaned = { ...c, score_1: "", score_2: "", score_total: "", score_raison: "" };
         cleanups.push({ rowIndex: idx + 2, values: toRow(headers, cleaned) });
-        // Update in-place for accurate filtering below
         c.score_1 = "";
         c.score_2 = "";
         c.score_total = "";
@@ -198,14 +232,12 @@ export default async (request: Request) => {
       }
     }
 
-    // Find contacts for this search that haven't been scored yet
+    // Find unscored contacts
     const unscored = searchContacts.filter(
       (c) => !c.score_total || Number(c.score_total) <= 0
     );
 
-    // Process 1 contact per call (Anthropic rate limit: 5 req/min)
-    const contact = unscored[0];
-    if (!contact) {
+    if (unscored.length === 0) {
       return json({
         total: searchContacts.length,
         scored: searchContacts.length,
@@ -215,22 +247,10 @@ export default async (request: Request) => {
       });
     }
 
+    // Score one contact
+    const contact = unscored[0];
     const metaDesc = await fetchMetaDescription(contact.domaine);
     const scores = await scoreContact(contact, mode, metaDesc);
-
-    // scoreContact now throws on errors instead of returning 0 silently.
-    // A score_total of 0 means both sub-scores parsed as 0 (unlikely but possible).
-    // We skip saving truly empty results to avoid corrupting the sheet.
-    if (scores.score_total <= 0 && !scores.raison) {
-      const alreadyScored = searchContacts.filter((c) => Number(c.score_total) > 0).length;
-      return json({
-        total: searchContacts.length,
-        scored: alreadyScored,
-        qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
-        done: false,
-        contacts: searchContacts,
-      });
-    }
 
     const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
     const rowIndex = contactIndex + 2;
@@ -246,7 +266,6 @@ export default async (request: Request) => {
 
     await batchUpdateRows("Contacts", [{ rowIndex, values: toRow(headers, updated) }]);
 
-    // Build response contacts with the just-scored contact updated
     const responseContacts = searchContacts.map((c) =>
       c.id === contact.id ? updated : c
     );

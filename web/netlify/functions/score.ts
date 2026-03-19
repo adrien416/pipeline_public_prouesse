@@ -172,13 +172,35 @@ export default async (request: Request) => {
     const allContacts = await readAll("Contacts");
     const headers = CONTACTS_HEADERS;
 
-    // Find contacts for this search that haven't been scored yet
-    const unscored = allContacts.filter(
-      (c) => c.recherche_id === body.recherche_id && !c.score_total && c.statut !== "exclu"
-    );
-
     // All contacts for this search (used in response)
     const searchContacts = allContacts.filter((c) => c.recherche_id === body.recherche_id && c.statut !== "exclu");
+
+    // Clean up any contacts with invalid "0" scores from previous failed attempts
+    const corruptedContacts = searchContacts.filter(
+      (c) => c.score_total === "0" || (c.score_total && Number(c.score_total) <= 0)
+    );
+    if (corruptedContacts.length > 0) {
+      const cleanups: Array<{ rowIndex: number; values: string[] }> = [];
+      for (const c of corruptedContacts) {
+        const idx = allContacts.findIndex((ac) => ac.id === c.id);
+        if (idx === -1) continue;
+        const cleaned = { ...c, score_1: "", score_2: "", score_total: "", score_raison: "" };
+        cleanups.push({ rowIndex: idx + 2, values: toRow(headers, cleaned) });
+        // Update in-place for accurate filtering below
+        c.score_1 = "";
+        c.score_2 = "";
+        c.score_total = "";
+        c.score_raison = "";
+      }
+      if (cleanups.length > 0) {
+        await batchUpdateRows("Contacts", cleanups);
+      }
+    }
+
+    // Find contacts for this search that haven't been scored yet
+    const unscored = searchContacts.filter(
+      (c) => !c.score_total || Number(c.score_total) <= 0
+    );
 
     // Process 1 contact per call (Anthropic rate limit: 5 req/min)
     const contact = unscored[0];
@@ -195,9 +217,9 @@ export default async (request: Request) => {
     const metaDesc = await fetchMetaDescription(contact.domaine);
     const scores = await scoreContact(contact, mode, metaDesc);
 
-    // If rate limited (scores all 0), skip saving — will retry next cycle
-    if (scores.score_total === 0 && !scores.raison) {
-      const alreadyScored = searchContacts.filter((c) => c.score_total).length;
+    // If scores are 0 (rate limited OR parse failure), skip saving — will retry next cycle
+    if (scores.score_total === 0) {
+      const alreadyScored = searchContacts.filter((c) => Number(c.score_total) > 0).length;
       return json({
         total: searchContacts.length,
         scored: alreadyScored,
@@ -226,7 +248,7 @@ export default async (request: Request) => {
       c.id === contact.id ? updated : c
     );
 
-    const allScored = responseContacts.filter((c) => c.score_total).length;
+    const allScored = responseContacts.filter((c) => Number(c.score_total) > 0).length;
     const qualified = responseContacts.filter((c) => Number(c.score_total) >= 7).length;
 
     return json({

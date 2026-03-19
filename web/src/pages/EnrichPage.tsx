@@ -152,6 +152,7 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
               <tr>
                 <th className="px-3 py-2 text-left">Nom</th>
                 <th className="px-3 py-2 text-left">Entreprise</th>
+                <th className="px-3 py-2 text-center">LinkedIn</th>
                 <th className="px-3 py-2 text-center">Score</th>
                 <th className="px-3 py-2 text-left">Email</th>
                 <th className="px-3 py-2 text-left">Statut</th>
@@ -164,6 +165,20 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
                     {c.prenom} {c.nom}
                   </td>
                   <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
+                  <td className="px-3 py-2 text-center">
+                    {c.linkedin ? (
+                      <a
+                        href={c.linkedin}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline text-xs"
+                      >
+                        Profil
+                      </a>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-center">
                     <TotalScoreBadge total={parseInt(c.score_total) || 0} />
                   </td>

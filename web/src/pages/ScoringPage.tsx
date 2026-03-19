@@ -155,6 +155,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                 <th className="px-3 py-2 text-left">Nom</th>
                 <th className="px-3 py-2 text-left">Entreprise</th>
                 <th className="px-3 py-2 text-left">Site</th>
+                <th className="px-3 py-2 text-center">LinkedIn</th>
                 <th className="px-3 py-2 text-center">
                   {mode === "levee_de_fonds" ? "Scalabilite" : "Impact env."}
                 </th>
@@ -198,6 +199,20 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                         </a>
                       ) : (
                         <span className="text-gray-300 text-xs">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {c.linkedin ? (
+                        <a
+                          href={c.linkedin}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          Profil
+                        </a>
+                      ) : (
+                        <span className="text-gray-300">-</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">

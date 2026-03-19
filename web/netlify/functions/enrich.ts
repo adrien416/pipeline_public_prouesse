@@ -115,7 +115,7 @@ export default async (request: Request) => {
 
     const batch = toEnrich.slice(0, BATCH_SIZE);
 
-    const contacts = batch.map((c) => ({
+    const data = batch.map((c) => ({
       firstname: c.prenom || "",
       lastname: c.nom || "",
       ...(c.domaine && { domain: c.domaine }),
@@ -127,7 +127,7 @@ export default async (request: Request) => {
     const startResp = await fetch(`${FULLENRICH_BASE}/api/v1/contact/enrich/bulk`, {
       method: "POST",
       headers: fullenrichHeaders(),
-      body: JSON.stringify({ name: `prouesse-${Date.now()}`, contacts }),
+      body: JSON.stringify({ name: `prouesse-${Date.now()}`, data }),
     });
 
     if (!startResp.ok) {

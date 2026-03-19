@@ -20,6 +20,15 @@ token.json
 web/node_modules/
 web/dist/
 
+# Root node_modules (Husky)
+/node_modules/
+/package-lock.json
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+
 # OS
 .DS_Store
 Thumbs.db

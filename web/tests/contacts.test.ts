@@ -27,6 +27,24 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "date_creation", "date_modification",
   ],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
+  readHeaders: vi.fn().mockResolvedValue([
+    "id", "nom", "prenom", "email", "entreprise", "titre",
+    "domaine", "secteur", "linkedin", "telephone",
+    "statut", "enrichissement_status",
+    "score_1", "score_2", "score_total", "score_raison",
+    "recherche_id", "campagne_id",
+    "email_status", "email_sent_at", "phrase_perso",
+    "date_creation", "date_modification",
+  ]),
+  getHeadersForWrite: vi.fn().mockResolvedValue([
+    "id", "nom", "prenom", "email", "entreprise", "titre",
+    "domaine", "secteur", "linkedin", "telephone",
+    "statut", "enrichissement_status",
+    "score_1", "score_2", "score_total", "score_raison",
+    "recherche_id", "campagne_id",
+    "email_status", "email_sent_at", "phrase_perso",
+    "date_creation", "date_modification",
+  ]),
 }));
 
 // ─── Mock _auth ───

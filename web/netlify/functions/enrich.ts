@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
-import { readAll, batchUpdateRows, CONTACTS_HEADERS, toRow } from "./_sheets.js";
+import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 
 const FULLENRICH_BASE = "https://app.fullenrich.com";
 const BATCH_SIZE = 3;
@@ -22,6 +22,7 @@ export default async (request: Request) => {
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     const allContacts = await readAll("Contacts");
+    const sheetHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const qualified = allContacts.filter(
       (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
     );
@@ -78,7 +79,7 @@ export default async (request: Request) => {
 
             updates.push({
               rowIndex: rowIdx + 2,
-              values: toRow(CONTACTS_HEADERS, {
+              values: toRow(sheetHeaders, {
                 ...contact,
                 enrichissement_status: email ? "ok" : "pas_de_resultat",
                 ...(email && { email }),
@@ -149,7 +150,7 @@ export default async (request: Request) => {
       if (rowIdx === -1) continue;
       updates.push({
         rowIndex: rowIdx + 2,
-        values: toRow(CONTACTS_HEADERS, {
+        values: toRow(sheetHeaders, {
           ...contact,
           enrichissement_status: `pending:${enrichmentId}`,
           date_modification: new Date().toISOString(),

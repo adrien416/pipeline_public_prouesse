@@ -7,6 +7,7 @@ import {
   findRowById,
   updateRow,
   batchUpdateRows,
+  getHeadersForWrite,
   CAMPAGNES_HEADERS,
   CONTACTS_HEADERS,
   toRow,
@@ -81,13 +82,14 @@ export default async (request: Request) => {
     await appendRow("Campagnes", toRow(CAMPAGNES_HEADERS, campaign));
 
     // Update contacts with campagne_id and email_status = queued
+    const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const contactUpdates: Array<{ rowIndex: number; values: string[] }> = [];
     for (const contact of enriched) {
       const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
       if (rowIdx !== -1) {
         contactUpdates.push({
           rowIndex: rowIdx + 2,
-          values: toRow(CONTACTS_HEADERS, {
+          values: toRow(contactHeaders, {
             ...contact,
             campagne_id: campaign.id,
             email_status: "queued",

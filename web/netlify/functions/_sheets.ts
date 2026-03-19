@@ -157,6 +157,35 @@ export async function batchUpdateRows(
   });
 }
 
+/**
+ * Lit uniquement la 1ère ligne (headers) d'un onglet.
+ */
+export async function readHeaders(tabName: string): Promise<string[]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: getSpreadsheetId(),
+    range: `${tabName}!1:1`,
+  });
+  return res.data.values?.[0] ?? [];
+}
+
+/**
+ * Retourne les headers réels de la sheet pour écrire dans le bon ordre.
+ * Cache le résultat pour éviter des appels multiples dans une même requête.
+ * Si la sheet est vide, utilise le fallback (headers hardcodés).
+ */
+const _headerCache = new Map<string, string[]>();
+export async function getHeadersForWrite(
+  tabName: string,
+  fallback: string[]
+): Promise<string[]> {
+  if (_headerCache.has(tabName)) return _headerCache.get(tabName)!;
+  const h = await readHeaders(tabName);
+  const headers = h.length > 0 ? h : fallback;
+  _headerCache.set(tabName, headers);
+  return headers;
+}
+
 /** Headers des onglets pour construire les valeurs dans le bon ordre. */
 export const CONTACTS_HEADERS = [
   "id", "nom", "prenom", "email", "entreprise", "titre",

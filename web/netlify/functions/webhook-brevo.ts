@@ -2,6 +2,7 @@ import type { Config } from "@netlify/functions";
 import {
   readAll,
   batchUpdateRows,
+  getHeadersForWrite,
   CONTACTS_HEADERS,
   EMAILLOG_HEADERS,
   CAMPAGNES_HEADERS,
@@ -93,7 +94,7 @@ export default async (request: Request) => {
           };
           contactUpdates.push({
             rowIndex: contactIdx + 2,
-            values: toRow(CONTACTS_HEADERS, updatedContact),
+            values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), updatedContact),
           });
         }
       }

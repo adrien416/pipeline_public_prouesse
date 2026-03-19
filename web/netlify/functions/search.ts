@@ -4,6 +4,7 @@ import { requireAuth, json } from "./_auth.js";
 import {
   appendRows,
   appendRow,
+  getHeadersForWrite,
   CONTACTS_HEADERS,
   RECHERCHES_HEADERS,
   toRow,
@@ -315,7 +316,8 @@ export default async (request: Request) => {
     }));
 
     if (contacts.length > 0) {
-      const rows = contacts.map((c) => toRow(CONTACTS_HEADERS, c));
+      const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+      const rows = contacts.map((c) => toRow(headers, c));
       await appendRows("Contacts", rows);
     }
 

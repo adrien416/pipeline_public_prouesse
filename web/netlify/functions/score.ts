@@ -4,6 +4,7 @@ import {
   readAll,
   findRowById,
   batchUpdateRows,
+  getHeadersForWrite,
   CONTACTS_HEADERS,
   toRow,
 } from "./_sheets.js";
@@ -195,7 +196,7 @@ export default async (request: Request) => {
 
     // Read all contacts and filter by recherche_id
     const allContacts = await readAll("Contacts");
-    const headers = CONTACTS_HEADERS;
+    const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
 
     const searchContacts = allContacts.filter(
       (c) => c.recherche_id === body.recherche_id && c.statut !== "exclu"

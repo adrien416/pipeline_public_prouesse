@@ -7,6 +7,7 @@ import {
   updateRow,
   appendRow,
   batchUpdateRows,
+  getHeadersForWrite,
   CONTACTS_HEADERS,
   CAMPAGNES_HEADERS,
   EMAILLOG_HEADERS,
@@ -133,7 +134,7 @@ export default async (request: Request) => {
       if (rowIdx !== -1) {
         await batchUpdateRows("Contacts", [{
           rowIndex: rowIdx + 2,
-          values: toRow(CONTACTS_HEADERS, {
+          values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), {
             ...contact,
             email_status: "sent",
             email_sent_at: now,

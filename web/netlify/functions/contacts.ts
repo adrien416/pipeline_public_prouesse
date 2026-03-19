@@ -7,6 +7,7 @@ import {
   findRowById,
   updateRow,
   batchUpdateRows,
+  getHeadersForWrite,
   CONTACTS_HEADERS,
   toRow,
 } from "./_sheets.js";
@@ -63,7 +64,8 @@ async function handlePost(request: Request) {
     date_modification: now,
   };
 
-  await appendRow("Contacts", toRow(CONTACTS_HEADERS, contact));
+  const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+  await appendRow("Contacts", toRow(headers, contact));
   return json({ contact }, 201);
 }
 
@@ -74,6 +76,7 @@ async function handlePut(request: Request) {
   // Bulk exclude contacts
   if (body.exclude_ids && Array.isArray(body.exclude_ids)) {
     const allContacts = await readAll("Contacts");
+    const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const updates: Array<{ rowIndex: number; values: string[] }> = [];
 
     for (const id of body.exclude_ids) {
@@ -81,7 +84,7 @@ async function handlePut(request: Request) {
       if (idx === -1) continue;
       const contact = allContacts[idx];
       const updated = { ...contact, statut: "exclu", date_modification: new Date().toISOString() };
-      updates.push({ rowIndex: idx + 2, values: toRow(CONTACTS_HEADERS, updated) });
+      updates.push({ rowIndex: idx + 2, values: toRow(headers, updated) });
     }
 
     if (updates.length > 0) {
@@ -97,7 +100,8 @@ async function handlePut(request: Request) {
   if (!found) return json({ error: "Contact introuvable" }, 404);
 
   const updated = { ...found.data, ...updates, date_modification: new Date().toISOString() };
-  await updateRow("Contacts", found.rowIndex, toRow(CONTACTS_HEADERS, updated));
+  const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+  await updateRow("Contacts", found.rowIndex, toRow(headers, updated));
   return json({ contact: updated });
 }
 

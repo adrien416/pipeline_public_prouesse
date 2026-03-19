@@ -66,32 +66,43 @@ IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec
 
 N'inclus que les filtres pertinents par rapport à la description.`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-opus-4-6",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Description de recherche : "${description}"`,
-        },
-      ],
-    }),
-  });
+  let result: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `Description de recherche : "${description}"`,
+          },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+    if (response.status === 429) {
+      const wait = (attempt + 1) * 5000; // 5s, 10s, 15s
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Anthropic API error ${response.status}: ${errText}`);
+    }
+
+    result = await response.json();
+    break;
   }
-
-  const result = await response.json();
+  if (!result) throw new Error("Anthropic API: rate limited, réessaie dans quelques secondes");
   const text = result.content?.[0]?.text ?? "";
 
   // Extract JSON from response (handle potential markdown wrapping)

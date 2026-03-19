@@ -23,7 +23,7 @@ function AppContent() {
   const { authenticated, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("search");
   const [rechercheId, setRechercheId] = useState<string | null>(null);
-  const [searchMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
+  const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
   if (loading) {
@@ -40,8 +40,9 @@ function AppContent() {
     <Layout activeTab={tab} onTabChange={setTab}>
       {tab === "search" && (
         <SearchPage
-          onComplete={(id) => {
+          onComplete={(id, mode) => {
             setRechercheId(id);
+            setSearchMode(mode);
             setTab("scoring");
           }}
         />

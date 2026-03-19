@@ -5,7 +5,7 @@ import type { SearchParams } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
-  onComplete: (rechercheId: string) => void;
+  onComplete: (rechercheId: string, mode: "levee_de_fonds" | "cession") => void;
 }
 
 export function SearchPage({ onComplete }: Props) {
@@ -181,7 +181,7 @@ export function SearchPage({ onComplete }: Props) {
                 if (excluded.size > 0) {
                   await excludeContacts(Array.from(excluded));
                 }
-                onComplete(search.data!.recherche.id);
+                onComplete(search.data!.recherche.id, mode);
               }}
               className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700"
             >

@@ -163,6 +163,36 @@ export function SearchPage({ onComplete }: Props) {
         </div>
       )}
 
+      {/* Filtres IA */}
+      {search.data?.filters && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Filtres generes par l'IA</h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(search.data.filters).map(([key, value]) => (
+              <div key={key} className="text-xs">
+                {(Array.isArray(value) ? value : [value]).map((v: any, i: number) => {
+                  const label = v.value ?? (v.min != null ? `${v.min}–${v.max}` : JSON.stringify(v));
+                  const isExclude = v.exclude === true;
+                  return (
+                    <span
+                      key={i}
+                      className={`inline-block mr-1 mb-1 px-2 py-1 rounded-full ${
+                        isExclude
+                          ? "bg-red-100 text-red-700 line-through"
+                          : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      <span className="font-medium">{key.replace(/current_company_|current_position_|person_/g, "").replace(/_/g, " ")}:</span>{" "}
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Results */}
       {search.data && (
         <div className="bg-white rounded-xl shadow-sm border">

@@ -44,7 +44,7 @@ export function launchSearch(params: SearchParams) {
   return request<{
     contacts: Array<Record<string, string>>;
     recherche: Record<string, string>;
-    filtres_utilises: Record<string, unknown>;
+    filters: Record<string, unknown>;
     explication: string;
   }>("/search", {
     method: "POST",

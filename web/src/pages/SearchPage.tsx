@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { launchSearch, excludeContacts } from "../api/client";
 import type { SearchParams } from "../api/client";
 import { Spinner } from "../components/Spinner";
@@ -9,6 +9,7 @@ interface Props {
 }
 
 export function SearchPage({ onComplete }: Props) {
+  const queryClient = useQueryClient();
   const [description, setDescription] = useState("");
   const [mode, setMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
   const [location, setLocation] = useState("France");
@@ -211,7 +212,11 @@ export function SearchPage({ onComplete }: Props) {
                 if (excluded.size > 0) {
                   await excludeContacts(Array.from(excluded));
                 }
-                onComplete(search.data!.recherche.id, mode);
+                const rechId = search.data!.recherche.id;
+                // Pre-populate contacts cache so ScoringPage has data immediately
+                const nonExcluded = search.data!.contacts.filter(c => !excluded.has(c.id));
+                queryClient.setQueryData(["contacts", rechId], { contacts: nonExcluded });
+                onComplete(rechId, mode);
               }}
               className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700"
             >

@@ -67,7 +67,12 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
       {/* Controls */}
       <div className="bg-white rounded-xl shadow-sm border p-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {scoring && <Spinner className="h-5 w-5" />}
+          {(scoring || contacts.isLoading) && <Spinner className="h-5 w-5" />}
+          {contacts.isError && !scoring && (
+            <div className="text-sm text-red-600">
+              Erreur de chargement des contacts. <button onClick={() => contacts.refetch()} className="underline">Reessayer</button>
+            </div>
+          )}
           {progress.total > 0 && (
             <div className="text-sm">
               <span className="font-semibold">{progress.scored}/{progress.total}</span>
@@ -76,7 +81,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
               <span className="text-gray-500">{" qualifies (>= 7)"}</span>
             </div>
           )}
-          {!scoring && progress.total === 0 && (
+          {!scoring && !contacts.isLoading && !contacts.isError && progress.total === 0 && (
             <div className="text-sm">
               <span className="text-gray-500">{contactsList.length} contacts a scorer</span>
               {contactsList.length > 0 && (
@@ -88,6 +93,9 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                 </span>
               )}
             </div>
+          )}
+          {contacts.isLoading && !scoring && progress.total === 0 && (
+            <div className="text-sm text-gray-500">Chargement des contacts...</div>
           )}
         </div>
         <div className="flex gap-2">

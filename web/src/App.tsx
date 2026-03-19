@@ -49,6 +49,7 @@ function AppContent() {
       )}
       {tab === "scoring" && rechercheId && (
         <ScoringPage
+          key={rechercheId}
           rechercheId={rechercheId}
           mode={searchMode}
           onComplete={() => setTab("enrich")}

@@ -140,6 +140,59 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
   return data.results ?? data.people ?? data.data ?? [];
 }
 
+async function suggestFilterChanges(
+  body: SearchBody,
+  filters: Record<string, unknown>
+): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const prompt = `La recherche Fullenrich suivante a retourné 0 résultats.
+
+Description utilisateur : "${body.description}"
+Mode : ${body.mode}
+Localisation : ${body.location || "non spécifiée"}
+Employés min : ${body.headcount_min ?? "non spécifié"}
+Employés max : ${body.headcount_max ?? "non spécifié"}
+Secteur : ${body.secteur || "non spécifié"}
+Limite : ${body.limit ?? 100}
+
+Filtres générés et envoyés à l'API :
+${JSON.stringify(filters, null, 2)}
+
+Analyse pourquoi la recherche n'a rien donné et propose 3 à 5 modifications concrètes des critères pour obtenir des résultats. Chaque suggestion doit être actionnable (ex: "Élargir la fourchette d'employés à 5-1000", "Remplacer le secteur 'insertion' par 'staffing' ou 'human resources'", "Retirer le filtre de localisation").
+
+Réponds UNIQUEMENT avec un JSON : {"suggestions": ["suggestion 1", "suggestion 2", ...]}`;
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) return [];
+
+    const result = await response.json();
+    const text = result.content?.[0]?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    return Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+  } catch {
+    return [];
+  }
+}
+
 export default async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
 
@@ -174,6 +227,12 @@ export default async (request: Request) => {
 
     // 2. Call Fullenrich Search API
     const results = await searchFullenrich(filters, body.limit ?? 100);
+
+    // 2b. If 0 results, ask AI for suggestions to broaden the search
+    let suggestions: string[] = [];
+    if (results.length === 0) {
+      suggestions = await suggestFilterChanges(body, filters);
+    }
 
     // 3. Save search to Google Sheets
     const now = new Date().toISOString();
@@ -227,6 +286,7 @@ export default async (request: Request) => {
       contacts,
       filters,
       total: contacts.length,
+      suggestions,
     });
   } catch (err) {
     console.error("search error:", err);

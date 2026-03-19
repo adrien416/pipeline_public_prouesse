@@ -172,7 +172,10 @@ describe("search handler — success", () => {
           content: [{ text: '{"current_company_industries": [{"value": "Cleantech"}]}' }],
         }));
       }
-      return new Response(JSON.stringify({ results: [] }));
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [] }));
+      }
+      return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
     const res = await searchHandler(
@@ -250,6 +253,127 @@ describe("search handler — filter overrides", () => {
 
     const callBody = JSON.parse(fullenrichCall![1].body);
     expect(callBody.limit).toBe(25);
+  });
+});
+
+// ─── AI Suggestions on 0 results ───
+
+describe("search handler — suggestions on 0 results", () => {
+  it("returns suggestions when Fullenrich returns 0 results", async () => {
+    let anthropicCallCount = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        anthropicCallCount++;
+        if (anthropicCallCount === 1) {
+          // First call: generate filters
+          return new Response(JSON.stringify({
+            content: [{ text: '{"current_company_industries": [{"value": "insertion"}]}' }],
+          }));
+        }
+        // Second call: generate suggestions
+        return new Response(JSON.stringify({
+          content: [{
+            text: '{"suggestions": ["Elargir le secteur a staffing ou human resources", "Retirer le filtre de localisation", "Augmenter la fourchette d\'employes"]}',
+          }],
+        }));
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(
+      makeRequest({ description: "societes insertion", mode: "levee_de_fonds", location: "France" })
+    );
+    const body = await res.json();
+
+    expect(body.contacts).toHaveLength(0);
+    expect(body.suggestions).toHaveLength(3);
+    expect(body.suggestions[0]).toContain("staffing");
+    expect(anthropicCallCount).toBe(2); // filters + suggestions
+  });
+
+  it("returns empty suggestions when results > 0", async () => {
+    const res = await searchHandler(
+      makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
+    );
+    const body = await res.json();
+
+    expect(body.contacts).toHaveLength(1);
+    expect(body.suggestions).toEqual([]);
+  });
+
+  it("returns empty suggestions if suggestion API call fails", async () => {
+    let anthropicCallCount = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        anthropicCallCount++;
+        if (anthropicCallCount === 1) {
+          return new Response(JSON.stringify({
+            content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
+          }));
+        }
+        // Suggestion call fails
+        return new Response("Server error", { status: 500 });
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(
+      makeRequest({ description: "test", mode: "levee_de_fonds" })
+    );
+    const body = await res.json();
+
+    expect(body.contacts).toHaveLength(0);
+    expect(body.suggestions).toEqual([]);
+  });
+
+  it("includes search params context in suggestion call", async () => {
+    let suggestionCallBody = "";
+    let anthropicCallCount = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        anthropicCallCount++;
+        if (anthropicCallCount === 1) {
+          return new Response(JSON.stringify({
+            content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
+          }));
+        }
+        suggestionCallBody = init?.body as string ?? "";
+        return new Response(JSON.stringify({
+          content: [{ text: '{"suggestions": ["Suggestion A"]}' }],
+        }));
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    await searchHandler(
+      makeRequest({
+        description: "insertion professionnelle",
+        mode: "levee_de_fonds",
+        location: "Paris",
+        headcount_min: 10,
+        headcount_max: 200,
+      })
+    );
+
+    // Verify the suggestion prompt includes the search context
+    const parsed = JSON.parse(suggestionCallBody);
+    const promptText = parsed.messages[0].content;
+    expect(promptText).toContain("insertion professionnelle");
+    expect(promptText).toContain("Paris");
+    expect(promptText).toContain("10");
+    expect(promptText).toContain("200");
   });
 });
 

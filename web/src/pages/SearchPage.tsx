@@ -194,6 +194,31 @@ export function SearchPage({ onComplete }: Props) {
         </div>
       )}
 
+      {/* AI Suggestions when 0 results */}
+      {search.data && search.data.contacts.length === 0 && search.data.suggestions?.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-5">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl flex-shrink-0">💡</span>
+            <div>
+              <h3 className="font-semibold text-amber-900 text-sm">
+                Aucun resultat — Suggestions de l'IA pour elargir la recherche
+              </h3>
+              <ul className="mt-3 space-y-2">
+                {search.data.suggestions.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-amber-800">
+                    <span className="text-amber-500 font-bold mt-0.5">→</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-amber-600">
+                Modifie les criteres ci-dessus puis relance la recherche.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Results */}
       {search.data && (
         <div className="bg-white rounded-xl shadow-sm border">
@@ -207,6 +232,7 @@ export function SearchPage({ onComplete }: Props) {
                 <p className="text-xs text-gray-500 mt-1">{search.data.explication}</p>
               )}
             </div>
+            {search.data.contacts.length > 0 && (
             <button
               onClick={async () => {
                 if (excluded.size > 0) {
@@ -222,6 +248,7 @@ export function SearchPage({ onComplete }: Props) {
             >
               Valider et passer au scoring →
             </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">

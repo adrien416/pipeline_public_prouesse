@@ -223,6 +223,19 @@ export const SCORING_HEADERS = [
 ];
 
 /**
+ * Lit une plage brute de cellules (sans mapping objet).
+ * Utile pour les diagnostics.
+ */
+export async function readRawRange(range: string): Promise<string[][]> {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: getSpreadsheetId(),
+    range,
+  });
+  return res.data.values ?? [];
+}
+
+/**
  * Convertit un objet en tableau de valeurs selon l'ordre des headers.
  */
 export function toRow(headers: string[], obj: Record<string, string>): string[] {

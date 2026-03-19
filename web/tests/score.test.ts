@@ -11,6 +11,7 @@ const mockBatchUpdateRows = vi.fn();
 
 vi.mock("../netlify/functions/_sheets.js", () => ({
   readAll: (...args: unknown[]) => mockReadAll(...args),
+  readRawRange: vi.fn().mockResolvedValue([]),
   findRowById: (...args: unknown[]) => mockFindRowById(...args),
   batchUpdateRows: (...args: unknown[]) => mockBatchUpdateRows(...args),
   CONTACTS_HEADERS: [

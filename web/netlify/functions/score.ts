@@ -2,6 +2,7 @@ import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
 import {
   readAll,
+  readRawRange,
   findRowById,
   batchUpdateRows,
   getHeadersForWrite,
@@ -202,13 +203,41 @@ export default async (request: Request) => {
       (c) => c.recherche_id === body.recherche_id && c.statut !== "exclu"
     );
 
-    // DIAGNOSTIC: if 0 contacts found, return helpful error
+    // DIAGNOSTIC: if 0 contacts found, return raw sheet data for debugging
     if (searchContacts.length === 0) {
       const allRechercheIds = [...new Set(allContacts.map((c) => c.recherche_id).filter(Boolean))];
+
+      // Read raw data from the sheet to compare with readAll() mapping
+      const totalRows = allContacts.length + 1; // +1 for header row
+      const startRow = Math.max(2, totalRows - 4);
+      const rawHeaders = await readRawRange("Contacts!1:1");
+      const rawLastRows = await readRawRange(
+        `Contacts!A${startRow}:W${totalRows + 5}`
+      );
+
+      // Detect where recherche_id actually is in raw headers
+      const rechercheIdColIndex = rawHeaders[0]?.indexOf("recherche_id") ?? -1;
+
       return json({
-        error: `0 contacts trouvés pour recherche_id=${body.recherche_id}. ` +
-          `Total contacts en base: ${allContacts.length}. ` +
-          `recherche_ids existants: ${allRechercheIds.slice(0, 5).join(", ")}${allRechercheIds.length > 5 ? "..." : ""}`,
+        error: `0 contacts trouvés pour recherche_id=${body.recherche_id}`,
+        diagnostic: {
+          total_contacts: allContacts.length,
+          unique_recherche_ids: allRechercheIds.slice(0, 10),
+          raw_headers: rawHeaders[0],
+          raw_headers_length: rawHeaders[0]?.length,
+          recherche_id_col_index: rechercheIdColIndex,
+          expected_col_index: 16,
+          raw_last_rows: rawLastRows.map((row) => ({
+            id: row[0],
+            cols_count: row.length,
+            recherche_id_at_idx16: row[16],
+            recherche_id_at_detected: rechercheIdColIndex >= 0 ? row[rechercheIdColIndex] : "N/A",
+            all_values: row,
+          })),
+          // Also show first readAll() contact for comparison
+          first_contact_via_readAll: allContacts[0],
+          last_contact_via_readAll: allContacts[allContacts.length - 1],
+        },
       }, 404);
     }
 

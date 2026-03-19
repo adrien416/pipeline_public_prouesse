@@ -69,6 +69,8 @@ vi.mock("uuid", () => ({
 
 import campaignHandler from "../netlify/functions/campaign.js";
 
+let _nextRowIndex = 2;
+
 function makeContact(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
   return {
     id: "c1", nom: "Dupont", prenom: "Jean", email: "jean@acme.fr",
@@ -77,12 +79,14 @@ function makeContact(overrides: Partial<Record<string, string>> = {}): Record<st
     score_1: "4", score_2: "4", score_total: "8", score_raison: "Good",
     recherche_id: "r1", campagne_id: "", email_status: "", email_sent_at: "",
     phrase_perso: "", date_creation: "2024-01-01", date_modification: "2024-01-01",
+    _rowIndex: String(_nextRowIndex++),
     ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _nextRowIndex = 2;
   mockAppendRow.mockResolvedValue(undefined);
   mockUpdateRow.mockResolvedValue(undefined);
   mockBatchUpdateRows.mockResolvedValue(undefined);

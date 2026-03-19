@@ -85,10 +85,9 @@ export default async (request: Request) => {
     const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const contactUpdates: Array<{ rowIndex: number; values: string[] }> = [];
     for (const contact of enriched) {
-      const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-      if (rowIdx !== -1) {
+      if (contact._rowIndex) {
         contactUpdates.push({
-          rowIndex: rowIdx + 2,
+          rowIndex: Number(contact._rowIndex),
           values: toRow(contactHeaders, {
             ...contact,
             campagne_id: campaign.id,

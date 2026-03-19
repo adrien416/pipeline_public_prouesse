@@ -49,13 +49,18 @@ export async function readAll(tabName: string): Promise<Record<string, string>[]
   if (!rows || rows.length < 2) return [];
 
   const headers = rows[0];
-  return rows.slice(1).map((row) => {
+  const result: Record<string, string>[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length === 0 || !row.some((cell) => cell !== "")) continue;
     const obj: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      obj[h] = row[i] ?? "";
+    headers.forEach((h, j) => {
+      obj[h] = row[j] ?? "";
     });
-    return obj;
-  });
+    obj._rowIndex = String(i + 1); // 1-indexed sheet row
+    result.push(obj);
+  }
+  return result;
 }
 
 /**
@@ -64,9 +69,15 @@ export async function readAll(tabName: string): Promise<Record<string, string>[]
  */
 export async function appendRow(tabName: string, values: string[]): Promise<void> {
   const sheets = getSheets();
-  await sheets.spreadsheets.values.append({
+
+  // Find the true last row by reading column A
+  const colA = await readRawRange(`${tabName}!A:A`);
+  const targetRow = colA.length + 1;
+  const endCol = String.fromCharCode(64 + values.length);
+
+  await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
-    range: tabName,
+    range: `${tabName}!A${targetRow}:${endCol}${targetRow}`,
     valueInputOption: "RAW",
     requestBody: { values: [values] },
   });
@@ -123,13 +134,22 @@ export async function findRowById(
 
 /**
  * Ajoute plusieurs lignes à la fin d'un onglet (batch).
+ * Uses explicit row positioning instead of values.append to avoid
+ * phantom-row issues where Google Sheets appends beyond readable range.
  */
 export async function appendRows(tabName: string, rows: string[][]): Promise<void> {
   if (rows.length === 0) return;
   const sheets = getSheets();
-  await sheets.spreadsheets.values.append({
+
+  // Find the true last row by reading column A
+  const colA = await readRawRange(`${tabName}!A:A`);
+  const startRow = colA.length + 1; // 1-indexed, after last data row
+  const endRow = startRow + rows.length - 1;
+  const endCol = String.fromCharCode(64 + rows[0].length); // W for 23 cols
+
+  await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
-    range: tabName,
+    range: `${tabName}!A${startRow}:${endCol}${endRow}`,
     valueInputOption: "RAW",
     requestBody: { values: rows },
   });

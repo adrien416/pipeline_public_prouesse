@@ -71,14 +71,13 @@ export default async (request: Request) => {
 
           for (let i = 0; i < pending.length; i++) {
             const contact = pending[i];
-            const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-            if (rowIdx === -1) continue;
+            if (!contact._rowIndex) continue;
 
             const resultContact = results?.[i];
             const email = resultContact?.email ?? resultContact?.professional_email ?? "";
 
             updates.push({
-              rowIndex: rowIdx + 2,
+              rowIndex: Number(contact._rowIndex),
               values: toRow(sheetHeaders, {
                 ...contact,
                 enrichissement_status: email ? "ok" : "pas_de_resultat",
@@ -146,10 +145,9 @@ export default async (request: Request) => {
     // Mark batch as pending with enrichment_id
     const updates: Array<{ rowIndex: number; values: string[] }> = [];
     for (const contact of batch) {
-      const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-      if (rowIdx === -1) continue;
+      if (!contact._rowIndex) continue;
       updates.push({
-        rowIndex: rowIdx + 2,
+        rowIndex: Number(contact._rowIndex),
         values: toRow(sheetHeaders, {
           ...contact,
           enrichissement_status: `pending:${enrichmentId}`,

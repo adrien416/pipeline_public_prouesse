@@ -248,10 +248,9 @@ export default async (request: Request) => {
     if (corrupted.length > 0) {
       const cleanups: Array<{ rowIndex: number; values: string[] }> = [];
       for (const c of corrupted) {
-        const idx = allContacts.findIndex((ac) => ac.id === c.id);
-        if (idx === -1) continue;
+        if (!c._rowIndex) continue;
         const cleaned = { ...c, score_1: "", score_2: "", score_total: "", score_raison: "" };
-        cleanups.push({ rowIndex: idx + 2, values: toRow(headers, cleaned) });
+        cleanups.push({ rowIndex: Number(c._rowIndex), values: toRow(headers, cleaned) });
         c.score_1 = "";
         c.score_2 = "";
         c.score_total = "";
@@ -282,8 +281,10 @@ export default async (request: Request) => {
     const metaDesc = await fetchMetaDescription(contact.domaine);
     const scores = await scoreContact(contact, mode, metaDesc);
 
-    const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
-    const rowIndex = contactIndex + 2;
+    const rowIndex = Number(contact._rowIndex);
+    if (!rowIndex || rowIndex < 2) {
+      return json({ error: `rowIndex invalide pour contact ${contact.id}` }, 500);
+    }
 
     const updated: Record<string, string> = {
       ...contact,

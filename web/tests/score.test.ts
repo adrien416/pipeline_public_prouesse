@@ -59,6 +59,7 @@ const originalFetch = globalThis.fetch;
 
 import scoreHandler from "../netlify/functions/score.js";
 
+let _nextRowIndex = 2;
 function makeContact(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
   return {
     id: "c1",
@@ -84,6 +85,7 @@ function makeContact(overrides: Partial<Record<string, string>> = {}): Record<st
     phrase_perso: "",
     date_creation: "2024-01-01",
     date_modification: "2024-01-01",
+    _rowIndex: String(_nextRowIndex++),
     ...overrides,
   };
 }
@@ -98,6 +100,7 @@ function makeRequest(body: object): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _nextRowIndex = 2;
   mockBatchUpdateRows.mockResolvedValue(undefined);
 
   // Mock fetch for both meta description scraping and Anthropic API

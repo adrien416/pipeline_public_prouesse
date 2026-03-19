@@ -80,11 +80,10 @@ async function handlePut(request: Request) {
     const updates: Array<{ rowIndex: number; values: string[] }> = [];
 
     for (const id of body.exclude_ids) {
-      const idx = allContacts.findIndex((c) => c.id === id);
-      if (idx === -1) continue;
-      const contact = allContacts[idx];
+      const contact = allContacts.find((c) => c.id === id);
+      if (!contact || !contact._rowIndex) continue;
       const updated = { ...contact, statut: "exclu", date_modification: new Date().toISOString() };
-      updates.push({ rowIndex: idx + 2, values: toRow(headers, updated) });
+      updates.push({ rowIndex: Number(contact._rowIndex), values: toRow(headers, updated) });
     }
 
     if (updates.length > 0) {

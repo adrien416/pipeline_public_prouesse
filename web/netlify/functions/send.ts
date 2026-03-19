@@ -130,10 +130,9 @@ export default async (request: Request) => {
     const now = new Date().toISOString();
 
     if (brevoResp.ok) {
-      const rowIdx = allContacts.findIndex((r) => r.id === contact.id);
-      if (rowIdx !== -1) {
+      if (contact._rowIndex) {
         await batchUpdateRows("Contacts", [{
-          rowIndex: rowIdx + 2,
+          rowIndex: Number(contact._rowIndex),
           values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), {
             ...contact,
             email_status: "sent",

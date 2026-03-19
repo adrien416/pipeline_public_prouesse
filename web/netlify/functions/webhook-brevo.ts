@@ -72,14 +72,13 @@ export default async (request: Request) => {
 
       updatedLog.status = newStatus;
       logUpdates.push({
-        rowIndex: logIdx + 2,
+        rowIndex: Number(updatedLog._rowIndex),
         values: toRow(EMAILLOG_HEADERS, updatedLog),
       });
 
       // Update contact email_status
-      const contactIdx = allContacts.findIndex((c) => c.id === log.contact_id);
-      if (contactIdx !== -1) {
-        const contact = allContacts[contactIdx];
+      const contact = allContacts.find((c) => c.id === log.contact_id);
+      if (contact && contact._rowIndex) {
         // Only upgrade status (sent → opened → clicked → replied)
         const statusRank: Record<string, number> = {
           queued: 0, sent: 1, opened: 2, clicked: 3, replied: 4, bounced: -1,
@@ -93,7 +92,7 @@ export default async (request: Request) => {
             ...(newStatus === "replied" && { statut: "repondu" }),
           };
           contactUpdates.push({
-            rowIndex: contactIdx + 2,
+            rowIndex: Number(contact._rowIndex),
             values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), updatedContact),
           });
         }

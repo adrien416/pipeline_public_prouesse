@@ -331,11 +331,20 @@ export default async (request: Request) => {
         rows_count: rows.length,
       };
 
+      // Read current row count BEFORE writing (appendRows also does this internally)
+      const preWriteColA = await readRawRange("Contacts!A1:A");
+      writeDebug.rows_before_write = preWriteColA.length;
+
       await appendRows("Contacts", rows);
 
-      // Verify write by reading back the last rows
+      // Verify write by reading back
       const verifyRange = await readRawRange("Contacts!A1:A");
       writeDebug.total_rows_after_write = verifyRange.length;
+
+      // Verify recherche_id in last written row
+      const lastRow = writeDebug.total_rows_after_write as number;
+      const verifyLast = await readRawRange(`Contacts!A${lastRow}:W${lastRow}`);
+      writeDebug.last_row_rech = verifyLast[0]?.[16] ?? "MISSING";
     }
 
     return json({

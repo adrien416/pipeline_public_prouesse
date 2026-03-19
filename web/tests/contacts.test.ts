@@ -64,6 +64,8 @@ vi.mock("uuid", () => ({
 
 import contactsHandler from "../netlify/functions/contacts.js";
 
+let _nextRowIndex = 2;
+
 function makeContact(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
   return {
     id: "c1",
@@ -89,6 +91,7 @@ function makeContact(overrides: Partial<Record<string, string>> = {}): Record<st
     phrase_perso: "",
     date_creation: "2024-01-01",
     date_modification: "2024-01-01",
+    _rowIndex: String(_nextRowIndex++),
     ...overrides,
   };
 }
@@ -99,6 +102,7 @@ function fakeContext(): any {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _nextRowIndex = 2;
   mockAppendRow.mockResolvedValue(undefined);
   mockUpdateRow.mockResolvedValue(undefined);
   mockBatchUpdateRows.mockResolvedValue(undefined);

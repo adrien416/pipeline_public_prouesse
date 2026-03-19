@@ -45,7 +45,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
   const contacts = useQuery({
-    queryKey: ["contacts-enriched", rechercheId],
+    queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
     select: (data) => data.contacts.filter((c) => c.email && parseInt(c.score_total) >= 7),
   });

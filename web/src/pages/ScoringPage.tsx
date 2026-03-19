@@ -14,18 +14,19 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
-  const [done, setDone] = useState(false);
+  /** true only after the scoring loop completed successfully with done=true from backend */
+  const [scoringComplete, setScoringComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
-    // No refetchInterval — cache is updated directly from scoring responses
   });
 
   const runScoring = useCallback(async () => {
     setScoring(true);
+    setScoringComplete(false);
     setError(null);
     try {
       let isDone = false;
@@ -41,7 +42,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           await new Promise((r) => setTimeout(r, 15000)); // 5 req/min limit on Anthropic
         }
       }
-      setDone(true);
+      setScoringComplete(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
     } finally {
@@ -53,6 +54,9 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const qualifiedCount = contactsList.filter(
     (c) => parseInt(c.score_total) >= 7
   ).length;
+
+  // Derive whether we already have scored contacts (e.g. from a previous run, loaded from sheet)
+  const hasAnyScored = contactsList.some((c) => Number(c.score_total) > 0);
 
   return (
     <div className="space-y-6">
@@ -103,20 +107,26 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </div>
         <div className="flex gap-2">
-          {!done ? (
-            <button
-              onClick={runScoring}
-              disabled={scoring}
-              className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
-            >
-              {scoring ? "Scoring en cours..." : "Lancer le scoring IA"}
-            </button>
-          ) : (
+          {/* Always allow (re-)running the scoring */}
+          <button
+            onClick={runScoring}
+            disabled={scoring || contactsList.length === 0}
+            className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {scoring
+              ? "Scoring en cours..."
+              : hasAnyScored
+              ? "Re-scorer"
+              : "Lancer le scoring IA"}
+          </button>
+          {/* "Next step" button appears only after scoring actually completed OR if data already has scores */}
+          {(scoringComplete || hasAnyScored) && !scoring && (
             <button
               onClick={onComplete}
-              className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700"
+              disabled={qualifiedCount === 0}
+              className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700 disabled:opacity-50"
             >
-              Passer a l'enrichissement → ({qualifiedCount} qualifies)
+              Enrichissement → ({qualifiedCount} qualifies)
             </button>
           )}
         </div>

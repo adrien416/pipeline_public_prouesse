@@ -19,12 +19,36 @@ const queryClient = new QueryClient({
   },
 });
 
+/** Maps each tab to its 0-based step index. */
+const TAB_INDEX: Record<Tab, number> = {
+  search: 0,
+  scoring: 1,
+  enrich: 2,
+  campaign: 3,
+  analytics: 4,
+};
+
 function AppContent() {
   const { authenticated, loading } = useAuth();
   const [tab, setTab] = useState<Tab>("search");
   const [rechercheId, setRechercheId] = useState<string | null>(null);
   const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
   const [campaignId, setCampaignId] = useState<string | null>(null);
+  /**
+   * Tracks the highest step the user has unlocked.
+   * 0 = search always available
+   * 1 = scoring unlocked after search
+   * 2 = enrich unlocked after scoring
+   * etc.
+   */
+  const [maxReachedStep, setMaxReachedStep] = useState(0);
+
+  /** Advance to a tab AND unlock it (and all previous tabs). */
+  function goTo(target: Tab) {
+    const idx = TAB_INDEX[target];
+    setMaxReachedStep((prev) => Math.max(prev, idx));
+    setTab(target);
+  }
 
   if (loading) {
     return (
@@ -37,13 +61,13 @@ function AppContent() {
   if (!authenticated) return <LoginPage />;
 
   return (
-    <Layout activeTab={tab} onTabChange={setTab}>
+    <Layout activeTab={tab} onTabChange={setTab} maxReachedStep={maxReachedStep}>
       {tab === "search" && (
         <SearchPage
           onComplete={(id, mode) => {
             setRechercheId(id);
             setSearchMode(mode);
-            setTab("scoring");
+            goTo("scoring");
           }}
         />
       )}
@@ -52,14 +76,14 @@ function AppContent() {
           key={rechercheId}
           rechercheId={rechercheId}
           mode={searchMode}
-          onComplete={() => setTab("enrich")}
+          onComplete={() => goTo("enrich")}
         />
       )}
       {tab === "scoring" && !rechercheId && (
         <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
       )}
       {tab === "enrich" && rechercheId && (
-        <EnrichPage rechercheId={rechercheId} onComplete={() => setTab("campaign")} />
+        <EnrichPage rechercheId={rechercheId} onComplete={() => goTo("campaign")} />
       )}
       {tab === "enrich" && !rechercheId && (
         <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
@@ -70,7 +94,7 @@ function AppContent() {
           mode={searchMode}
           onComplete={(cId) => {
             setCampaignId(cId);
-            setTab("analytics");
+            goTo("analytics");
           }}
         />
       )}

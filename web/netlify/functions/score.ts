@@ -218,27 +218,26 @@ export default async (request: Request) => {
       // Detect where recherche_id actually is in raw headers
       const rechercheIdColIndex = rawHeaders[0]?.indexOf("recherche_id") ?? -1;
 
-      return json({
-        error: `0 contacts trouvés pour recherche_id=${body.recherche_id}`,
-        diagnostic: {
-          total_contacts: allContacts.length,
-          unique_recherche_ids: allRechercheIds.slice(0, 10),
-          raw_headers: rawHeaders[0],
-          raw_headers_length: rawHeaders[0]?.length,
-          recherche_id_col_index: rechercheIdColIndex,
-          expected_col_index: 16,
-          raw_last_rows: rawLastRows.map((row) => ({
-            id: row[0],
-            cols_count: row.length,
-            recherche_id_at_idx16: row[16],
-            recherche_id_at_detected: rechercheIdColIndex >= 0 ? row[rechercheIdColIndex] : "N/A",
-            all_values: row,
-          })),
-          // Also show first readAll() contact for comparison
-          first_contact_via_readAll: allContacts[0],
-          last_contact_via_readAll: allContacts[allContacts.length - 1],
-        },
-      }, 404);
+      // Build diagnostic string for frontend display (since client.ts only shows error field)
+      const lastRowsSummary = rawLastRows.slice(-3).map((row, i) =>
+        `row${i}: cols=${row.length}, id=${row[0]}, rech_idx16=${row[16] ?? "VIDE"}, rech_detected=${rechercheIdColIndex >= 0 ? (row[rechercheIdColIndex] ?? "VIDE") : "N/A"}`
+      ).join(" | ");
+
+      const lastContact = allContacts[allContacts.length - 1];
+      const lastContactInfo = lastContact
+        ? `last_readAll: id=${lastContact.id}, rech=${lastContact.recherche_id}, entreprise=${lastContact.entreprise}`
+        : "aucun";
+
+      const errorMsg = [
+        `0 contacts pour recherche_id=${body.recherche_id}`,
+        `Total: ${allContacts.length}`,
+        `IDs uniques: [${allRechercheIds.slice(0, 5).join(", ")}]${allRechercheIds.length > 5 ? "..." : ""}`,
+        `Headers: ${rawHeaders[0]?.length ?? 0} cols, rech_id@col${rechercheIdColIndex} (attendu: 16)`,
+        lastRowsSummary,
+        lastContactInfo,
+      ].join(" — ");
+
+      return json({ error: errorMsg }, 404);
     }
 
     // Clean up corrupted "0" scores from previous failed attempts

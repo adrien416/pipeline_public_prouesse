@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { launchScoring, fetchContacts } from "../api/client";
 import { ScoreBadge, TotalScoreBadge } from "../components/ScoreBadge";
 import { Spinner } from "../components/Spinner";
@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
+  const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
   const [done, setDone] = useState(false);
@@ -20,7 +21,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
-    refetchInterval: scoring ? 3000 : false,
+    // No refetchInterval — cache is updated directly from scoring responses
   });
 
   const runScoring = useCallback(async () => {
@@ -31,19 +32,22 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
       while (!isDone) {
         const result = await launchScoring(rechercheId);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
+        // Update contacts cache with scored data from response
+        if (result.contacts?.length) {
+          queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
+        }
         isDone = result.done;
         if (!isDone) {
           await new Promise((r) => setTimeout(r, 15000)); // 5 req/min limit on Anthropic
         }
       }
       setDone(true);
-      contacts.refetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
     } finally {
       setScoring(false);
     }
-  }, [rechercheId, contacts]);
+  }, [rechercheId, queryClient]);
 
   const contactsList = contacts.data?.contacts || [];
   const qualifiedCount = contactsList.filter(

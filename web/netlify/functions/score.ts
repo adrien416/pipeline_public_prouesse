@@ -177,10 +177,19 @@ export default async (request: Request) => {
       (c) => c.recherche_id === body.recherche_id && !c.score_total && c.statut !== "exclu"
     );
 
+    // All contacts for this search (used in response)
+    const searchContacts = allContacts.filter((c) => c.recherche_id === body.recherche_id && c.statut !== "exclu");
+
     // Process 1 contact per call (Anthropic rate limit: 5 req/min)
     const contact = unscored[0];
     if (!contact) {
-      return json({ total: allContacts.filter((c) => c.recherche_id === body.recherche_id).length, scored: allContacts.filter((c) => c.recherche_id === body.recherche_id).length, qualified: allContacts.filter((c) => c.recherche_id === body.recherche_id && Number(c.score_total) >= 7).length, done: true });
+      return json({
+        total: searchContacts.length,
+        scored: searchContacts.length,
+        qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
+        done: true,
+        contacts: searchContacts,
+      });
     }
 
     const metaDesc = await fetchMetaDescription(contact.domaine);
@@ -188,9 +197,14 @@ export default async (request: Request) => {
 
     // If rate limited (scores all 0), skip saving — will retry next cycle
     if (scores.score_total === 0 && !scores.raison) {
-      const totalForSearch = allContacts.filter((c) => c.recherche_id === body.recherche_id).length;
-      const alreadyScored = allContacts.filter((c) => c.recherche_id === body.recherche_id && c.score_total).length;
-      return json({ total: totalForSearch, scored: alreadyScored, qualified: allContacts.filter((c) => c.recherche_id === body.recherche_id && Number(c.score_total) >= 7).length, done: false });
+      const alreadyScored = searchContacts.filter((c) => c.score_total).length;
+      return json({
+        total: searchContacts.length,
+        scored: alreadyScored,
+        qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
+        done: false,
+        contacts: searchContacts,
+      });
     }
 
     const contactIndex = allContacts.findIndex((c) => c.id === contact.id);
@@ -205,42 +219,22 @@ export default async (request: Request) => {
       date_modification: new Date().toISOString(),
     };
 
-    const updates = [{ rowIndex, values: toRow(headers, updated) }];
-    const toProcess = [contact];
+    await batchUpdateRows("Contacts", [{ rowIndex, values: toRow(headers, updated) }]);
 
-    // Batch update all scored contacts
-    if (updates.length > 0) {
-      await batchUpdateRows("Contacts", updates);
-    }
+    // Build response contacts with the just-scored contact updated
+    const responseContacts = searchContacts.map((c) =>
+      c.id === contact.id ? updated : c
+    );
 
-    // Calculate totals
-    const totalForSearch = allContacts.filter(
-      (c) => c.recherche_id === body.recherche_id
-    ).length;
-    const scored =
-      totalForSearch - unscored.length + toProcess.length;
-    const allScored = allContacts
-      .filter((c) => c.recherche_id === body.recherche_id && c.score_total)
-      .length + toProcess.length;
-
-    // Count qualified (score_total >= 7), including just-scored
-    let qualified = allContacts.filter(
-      (c) =>
-        c.recherche_id === body.recherche_id &&
-        c.score_total &&
-        Number(c.score_total) >= 7
-    ).length;
-    // Add newly qualified from this batch
-    qualified += updates.filter((u) => {
-      const scoreIdx = headers.indexOf("score_total");
-      return Number(u.values[scoreIdx]) >= 7;
-    }).length;
+    const allScored = responseContacts.filter((c) => c.score_total).length;
+    const qualified = responseContacts.filter((c) => Number(c.score_total) >= 7).length;
 
     return json({
-      total: totalForSearch,
+      total: searchContacts.length,
       scored: allScored,
       qualified,
       done: unscored.length <= MAX_PER_CALL,
+      contacts: responseContacts,
     });
   } catch (err) {
     console.error("score error:", err);

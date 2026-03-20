@@ -48,6 +48,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     count: number;
     domains: string[];
   } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[] });
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -158,10 +160,45 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaign"] }),
   });
 
-  const send = useMutation({
-    mutationFn: () => triggerSend(campaignId!),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaign"] }),
-  });
+  async function doSendAll() {
+    if (!campaignId || sending) return;
+    setSending(true);
+    const total = parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0");
+    setSendProgress({ sent: 0, total, errors: [] });
+    try {
+      let remaining = total;
+      let sentCount = 0;
+      while (remaining > 0) {
+        const r = await triggerSend(campaignId);
+        if (r.sent > 0) {
+          sentCount += r.sent;
+          setSendProgress((p) => ({ ...p, sent: sentCount }));
+        }
+        remaining = r.remaining ?? 0;
+        setSendProgress((p) => ({ ...p, total: sentCount + remaining }));
+        if (r.skipped_domain) {
+          setSendProgress((p) => ({ ...p, errors: [...p.errors, `Doublon: ${r.skipped_domain}`] }));
+        }
+        if (r.sent === 0 && !r.skipped_domain) {
+          // Daily limit reached or error — stop
+          if (r.error) {
+            setSendProgress((p) => ({ ...p, errors: [...p.errors, r.error!] }));
+          }
+          break;
+        }
+        // Wait interval between sends (minimum 5s to avoid hammering)
+        if (remaining > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    } catch (err) {
+      setSendProgress((p) => ({ ...p, errors: [...p.errors, String(err)] }));
+    } finally {
+      setSending(false);
+    }
+  }
 
   function toggleDay(day: string) {
     setJours((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
@@ -232,7 +269,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       {/* Campaign status banner */}
       {campaignData && (
         <div
-          className={`rounded-lg px-4 py-3 flex items-center justify-between ${
+          className={`rounded-lg px-4 py-3 space-y-3 ${
             campaignStatus === "active"
               ? "bg-green-50 border border-green-200"
               : campaignStatus === "paused"
@@ -240,46 +277,74 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
               : "bg-gray-50 border border-gray-200"
           }`}
         >
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                campaignStatus === "active" ? "bg-green-500" : "bg-orange-500"
-              }`}
-            />
-            <span className="text-sm font-medium">
-              {campaignData.nom || (campaignStatus === "active" ? "Campagne active" : "Campagne en pause")}
-            </span>
-            <span className="text-xs text-gray-500">
-              {campaignData.sent || 0}/{campaignData.total_leads || 0} envoyes
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => toggleStatus.mutate()}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                campaignStatus === "active"
-                  ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                  : "bg-green-100 text-green-700 hover:bg-green-200"
-              }`}
-            >
-              {campaignStatus === "active" ? "Pause" : "Reprendre"}
-            </button>
-            {campaignStatus === "active" && (
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                  campaignStatus === "active" ? "bg-green-500" : "bg-orange-500"
+                }`}
+              />
+              <span className="text-sm font-medium">
+                {campaignData.nom || (campaignStatus === "active" ? "Campagne active" : "Campagne en pause")}
+              </span>
+              <span className="text-xs text-gray-500">
+                {campaignData.sent || 0}/{campaignData.total_leads || 0} envoyes
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => send.mutate()}
-                disabled={send.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
+                onClick={() => toggleStatus.mutate()}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                  campaignStatus === "active"
+                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                    : "bg-green-100 text-green-700 hover:bg-green-200"
+                }`}
               >
-                {send.isPending ? "Envoi..." : "Envoyer maintenant"}
+                {campaignStatus === "active" ? "Pause" : "Reprendre"}
               </button>
-            )}
-            <button
-              onClick={() => onComplete(campaignId!)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              Analytics →
-            </button>
+              {campaignStatus === "active" && (
+                <button
+                  onClick={doSendAll}
+                  disabled={sending}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
+                >
+                  {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
+                </button>
+              )}
+              <button
+                onClick={() => onComplete(campaignId!)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Analytics
+              </button>
+            </div>
           </div>
+
+          {/* Send progress */}
+          {sending && (
+            <div className="flex items-center gap-3">
+              <Spinner className="h-4 w-4 text-blue-600" />
+              <div className="flex-1">
+                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                  <span>Envoi en cours...</span>
+                  <span>{sendProgress.sent}/{sendProgress.total}</span>
+                </div>
+                <div className="w-full bg-white rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all"
+                    style={{ width: `${sendProgress.total > 0 ? (sendProgress.sent / sendProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Send errors */}
+          {sendProgress.errors.length > 0 && !sending && (
+            <div className="text-xs text-amber-700">
+              {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
+            </div>
+          )}
         </div>
       )}
 

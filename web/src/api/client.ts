@@ -167,7 +167,7 @@ export function fetchCampaigns(recherche_id?: string) {
 
 // ─── Send ───
 export function triggerSend(campagne_id: string) {
-  return request<{ sent: number; remaining: number }>("/send", {
+  return request<{ sent: number; remaining: number; error?: string; skipped_domain?: string }>("/send", {
     method: "POST",
     body: JSON.stringify({ campagne_id }),
   });

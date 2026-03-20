@@ -82,6 +82,31 @@ export default async (request: Request) => {
       return json({ error: "Campagne non active", sent: 0, remaining: 0 });
     }
 
+    // Check day-of-week and time window
+    const now = new Date();
+    const dayMap: Record<number, string> = { 0: "dim", 1: "lun", 2: "mar", 3: "mer", 4: "jeu", 5: "ven", 6: "sam" };
+    const todayDay = dayMap[now.getDay()];
+    const joursActifs: string[] = (() => {
+      try { return JSON.parse(campaign.jours_semaine || "[]"); }
+      catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
+    })();
+
+    if (!joursActifs.includes(todayDay)) {
+      return json({ error: `Pas d'envoi le ${todayDay}`, sent: 0, remaining: 0 });
+    }
+
+    const heureDebut = campaign.heure_debut || "08:30";
+    const heureFin = campaign.heure_fin || "18:30";
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const [dH, dM] = heureDebut.split(":").map(Number);
+    const [fH, fM] = heureFin.split(":").map(Number);
+    const debutMinutes = dH * 60 + dM;
+    const finMinutes = fH * 60 + fM;
+
+    if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
+      return json({ error: `Hors plage horaire (${heureDebut}-${heureFin})`, sent: 0, remaining: 0 });
+    }
+
     const allContacts = await readAll("Contacts");
     const queued = allContacts.filter(
       (c) => c.campagne_id === campagne_id && c.email_status === "queued" && c.email

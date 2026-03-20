@@ -151,7 +151,7 @@ describe("campaign POST", () => {
     const body = await res.json();
 
     expect(body.campaign.id).toBe("camp-uuid");
-    expect(body.campaign.status).toBe("draft");
+    expect(body.campaign.status).toBe("active");
     expect(body.campaign.total_leads).toBe("1");
     expect(mockAppendRow).toHaveBeenCalledWith("Campagnes", expect.any(Array));
     expect(mockBatchUpdateRows).toHaveBeenCalledWith("Contacts", expect.any(Array));

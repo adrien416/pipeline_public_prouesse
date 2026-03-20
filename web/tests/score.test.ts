@@ -282,18 +282,34 @@ describe("score handler — rate limit", () => {
 // ─── Multiple contacts — done flag ───
 
 describe("score handler — multiple contacts", () => {
-  it("returns done=false when more unscored contacts remain", async () => {
-    const c1 = makeContact({ id: "c1" });
-    const c2 = makeContact({ id: "c2" });
+  it("returns done=false when more unscored contacts from different companies remain", async () => {
+    const c1 = makeContact({ id: "c1", domaine: "greentech.fr" });
+    const c2 = makeContact({ id: "c2", domaine: "othercompany.com", entreprise: "Other Co" });
     mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
     mockReadAll.mockResolvedValue([c1, c2]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    expect(body.done).toBe(false); // 2 unscored, only 1 processed per call
+    expect(body.done).toBe(false); // 2 different companies, only 1 scored per call
     expect(body.scored).toBe(1);
     expect(body.total).toBe(2);
+  });
+
+  it("scores all contacts from same company in one call", async () => {
+    const c1 = makeContact({ id: "c1", domaine: "chance.co", _rowIndex: "2" });
+    const c2 = makeContact({ id: "c2", domaine: "chance.co", _rowIndex: "3" });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockReadAll.mockResolvedValue([c1, c2]);
+
+    const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
+    const body = await res.json();
+
+    expect(body.done).toBe(true); // same company = both scored at once
+    expect(body.scored).toBe(2);
+    expect(body.total).toBe(2);
+    // AI should only have been called once (1 fetch for meta + 1 for scoring)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("filters contacts from other recherche_ids", async () => {

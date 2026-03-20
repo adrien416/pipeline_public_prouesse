@@ -282,29 +282,67 @@ export default async (request: Request) => {
       });
     }
 
-    // Score one contact
+    // Score one contact — reuse score from same company if already scored
     const contact = unscored[0];
-    const metaDesc = await fetchMetaDescription(contact.domaine);
-    const scores = await scoreContact(contact, mode, metaDesc, searchContacts);
+    const domain = safeDomain(contact.domaine);
 
-    const rowIndex = Number(contact._rowIndex);
-    if (!rowIndex || rowIndex < 2) {
+    // Check if another contact from the same company was already scored
+    const sameCompanyScored = domain
+      ? searchContacts.find(
+          (c) =>
+            c.id !== contact.id &&
+            c.score_total !== "" &&
+            safeDomain(c.domaine) === domain
+        )
+      : null;
+
+    let scores: { score_1: number; score_2: number; score_total: number; raison: string };
+
+    if (sameCompanyScored) {
+      // Reuse existing score — no AI call needed
+      scores = {
+        score_1: Number(sameCompanyScored.score_1) || 0,
+        score_2: Number(sameCompanyScored.score_2) || 0,
+        score_total: Number(sameCompanyScored.score_total) || 0,
+        raison: sameCompanyScored.score_raison || "",
+      };
+    } else {
+      const metaDesc = await fetchMetaDescription(contact.domaine);
+      scores = await scoreContact(contact, mode, metaDesc, searchContacts);
+    }
+
+    // Apply score to this contact AND all unscored contacts from the same company
+    const now = new Date().toISOString();
+    const contactsToUpdate = domain
+      ? unscored.filter((c) => safeDomain(c.domaine) === domain)
+      : [contact];
+
+    const updates: Array<{ rowIndex: number; values: string[] }> = [];
+    const updatedMap = new Map<string, Record<string, string>>();
+
+    for (const c of contactsToUpdate) {
+      const rowIndex = Number(c._rowIndex);
+      if (!rowIndex || rowIndex < 2) continue;
+      const updated: Record<string, string> = {
+        ...c,
+        score_1: String(scores.score_1),
+        score_2: String(scores.score_2),
+        score_total: String(scores.score_total),
+        score_raison: scores.raison,
+        date_modification: now,
+      };
+      updates.push({ rowIndex, values: toRow(headers, updated) });
+      updatedMap.set(c.id, updated);
+    }
+
+    if (updates.length === 0) {
       return json({ error: `rowIndex invalide pour contact ${contact.id}` }, 500);
     }
 
-    const updated: Record<string, string> = {
-      ...contact,
-      score_1: String(scores.score_1),
-      score_2: String(scores.score_2),
-      score_total: String(scores.score_total),
-      score_raison: scores.raison,
-      date_modification: new Date().toISOString(),
-    };
-
-    await batchUpdateRows("Contacts", [{ rowIndex, values: toRow(headers, updated) }]);
+    await batchUpdateRows("Contacts", updates);
 
     const responseContacts = searchContacts.map((c) =>
-      c.id === contact.id ? updated : c
+      updatedMap.has(c.id) ? updatedMap.get(c.id)! : c
     );
 
     const allScored = responseContacts.filter((c) => c.score_total !== "").length;
@@ -314,7 +352,7 @@ export default async (request: Request) => {
       total: searchContacts.length,
       scored: allScored,
       qualified,
-      done: unscored.length <= MAX_PER_CALL,
+      done: unscored.length <= contactsToUpdate.length,
       contacts: responseContacts,
     });
   } catch (err) {

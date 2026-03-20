@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchScoring, fetchContacts } from "../api/client";
+import { launchScoring, fetchContacts, updateContact } from "../api/client";
 import { ScoreBadge, TotalScoreBadge } from "../components/ScoreBadge";
 import { Spinner } from "../components/Spinner";
 
@@ -10,14 +10,67 @@ interface Props {
   onComplete: () => void;
 }
 
+/** Inline editable score cell */
+function EditableScore({
+  value,
+  max,
+  onSave,
+  badge,
+}: {
+  value: number;
+  max: number;
+  onSave: (v: number) => void;
+  badge: "sub" | "total";
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setDraft(String(value)); setEditing(true); }}
+        className="cursor-pointer hover:ring-2 hover:ring-blue-300 rounded px-1"
+        title="Cliquer pour modifier"
+      >
+        {badge === "total" ? <TotalScoreBadge total={value} /> : <ScoreBadge score={value} />}
+      </button>
+    );
+  }
+
+  function commit() {
+    const n = Math.max(0, Math.min(max, parseInt(draft) || 0));
+    setEditing(false);
+    if (n !== value) onSave(n);
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      min={0}
+      max={max}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+      className="w-12 text-center border rounded px-1 py-0.5 text-sm focus:ring-2 focus:ring-blue-500"
+    />
+  );
+}
+
 export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
-  /** true only after the scoring loop completed successfully with done=true from backend */
   const [scoringComplete, setScoringComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState<Set<string>>(new Set());
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -33,13 +86,12 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
       while (!isDone) {
         const result = await launchScoring(rechercheId, mode);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
-        // Update contacts cache with scored data from response
         if (result.contacts?.length) {
           queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
         }
         isDone = result.done;
         if (!isDone) {
-          await new Promise((r) => setTimeout(r, 13000)); // ~5 req/min limit on Anthropic
+          await new Promise((r) => setTimeout(r, 13000));
         }
       }
       setScoringComplete(true);
@@ -50,12 +102,46 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
     }
   }, [rechercheId, queryClient]);
 
+  /** Save a single score field to the backend and update local cache */
+  async function saveScore(contactId: string, field: "score_1" | "score_2", newValue: number) {
+    setSaving((prev) => new Set(prev).add(contactId));
+    try {
+      // Find current contact
+      const list = contacts.data?.contacts || [];
+      const c = list.find((x) => x.id === contactId);
+      if (!c) return;
+
+      const s1 = field === "score_1" ? newValue : (parseInt(c.score_1) || 0);
+      const s2 = field === "score_2" ? newValue : (parseInt(c.score_2) || 0);
+      const total = s1 + s2;
+
+      const updates = {
+        [field]: String(newValue),
+        score_total: String(total),
+      };
+
+      await updateContact(contactId, updates);
+
+      // Update local cache
+      queryClient.setQueryData(["contacts", rechercheId], {
+        contacts: list.map((x) =>
+          x.id === contactId
+            ? { ...x, ...updates }
+            : x
+        ),
+      });
+    } catch (err) {
+      setError(`Erreur de sauvegarde: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSaving((prev) => { const s = new Set(prev); s.delete(contactId); return s; });
+    }
+  }
+
   const contactsList = contacts.data?.contacts || [];
   const qualifiedCount = contactsList.filter(
     (c) => parseInt(c.score_total) >= 7
   ).length;
 
-  // Derive whether we already have scored contacts (e.g. from a previous run, loaded from sheet)
   const hasAnyScored = contactsList.some((c) => Number(c.score_total) > 0);
 
   return (
@@ -107,7 +193,6 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </div>
         <div className="flex gap-2">
-          {/* Always allow (re-)running the scoring */}
           <button
             onClick={runScoring}
             disabled={scoring || contactsList.length === 0}
@@ -119,7 +204,6 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
               ? "Re-scorer"
               : "Lancer le scoring IA"}
           </button>
-          {/* "Next step" button appears only after scoring actually completed OR if data already has scores */}
           {(scoringComplete || hasAnyScored) && !scoring && (
             <button
               onClick={onComplete}
@@ -144,6 +228,11 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">{error}</div>
+      )}
+
+      {/* Hint */}
+      {hasAnyScored && !scoring && (
+        <p className="text-xs text-gray-400 italic">Clique sur un score pour le modifier manuellement</p>
       )}
 
       {/* Results table */}
@@ -173,6 +262,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                 const total = parseInt(c.score_total) || 0;
                 const scored = s1 > 0 || s2 > 0;
                 const isExpanded = expandedId === c.id;
+                const isSaving = saving.has(c.id);
                 const domain = c.domaine;
                 const siteUrl = domain ? (domain.startsWith("http") ? domain : `https://${domain}`) : "";
 
@@ -181,7 +271,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                     key={c.id}
                     className={`border-t border-gray-100 ${
                       scored && total < 7 ? "opacity-40" : ""
-                    }`}
+                    } ${isSaving ? "bg-blue-50/50" : ""}`}
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {c.prenom} {c.nom}
@@ -216,10 +306,28 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {scored ? <ScoreBadge score={s1} /> : <span className="text-gray-300">-</span>}
+                      {scored ? (
+                        <EditableScore
+                          value={s1}
+                          max={5}
+                          badge="sub"
+                          onSave={(v) => saveScore(c.id, "score_1", v)}
+                        />
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {scored ? <ScoreBadge score={s2} /> : <span className="text-gray-300">-</span>}
+                      {scored ? (
+                        <EditableScore
+                          value={s2}
+                          max={5}
+                          badge="sub"
+                          onSave={(v) => saveScore(c.id, "score_2", v)}
+                        />
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       {scored ? <TotalScoreBadge total={total} /> : <span className="text-gray-300">-</span>}

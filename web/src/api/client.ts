@@ -93,6 +93,13 @@ export function launchEnrichment(recherche_id: string) {
   });
 }
 
+export function updateContact(id: string, updates: Record<string, string>) {
+  return request<{ contact: Record<string, string> }>("/contacts", {
+    method: "PUT",
+    body: JSON.stringify({ id, ...updates }),
+  });
+}
+
 export function excludeContacts(ids: string[]) {
   return request<{ excluded: number }>("/contacts", {
     method: "PUT",

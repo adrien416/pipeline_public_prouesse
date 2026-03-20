@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchContacts, getEnrichEstimate, launchEnrichment } from "../api/client";
 import { Spinner } from "../components/Spinner";
@@ -49,18 +49,28 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPending]);
 
+  const cancelRef = useRef(false);
+  const MAX_POLLS = 60; // Max ~15 minutes of polling (60 * 15s)
+
   const doEnrich = useCallback(async () => {
     setEnriching(true);
     setError(null);
     setPollCount(0);
+    cancelRef.current = false;
     try {
       let isDone = false;
       let total = { enriched: 0, not_found: 0, errors: 0 };
       let pollErrors = 0;
       let polls = 0;
-      while (!isDone) {
+      while (!isDone && !cancelRef.current) {
         polls++;
         setPollCount(polls);
+
+        if (polls > MAX_POLLS) {
+          setError(`Timeout: ${MAX_POLLS} verifications sans resultat. Relancez si besoin.`);
+          break;
+        }
+
         const r = await launchEnrichment(rechercheId);
         total = { enriched: total.enriched + r.enriched, not_found: total.not_found + r.not_found, errors: total.errors + r.errors };
         if (r.poll_error) {
@@ -85,11 +95,13 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
           }
         }
         isDone = r.done;
-        if (!isDone) {
+        if (!isDone && !cancelRef.current) {
           await new Promise((r) => setTimeout(r, 15000));
         }
       }
-      setResult(total);
+      if (!cancelRef.current) {
+        setResult(total);
+      }
       qc.invalidateQueries({ queryKey: ["contacts"] });
       qc.invalidateQueries({ queryKey: ["credits"] });
       qc.invalidateQueries({ queryKey: ["enrich-estimate"] });
@@ -99,6 +111,10 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
       setEnriching(false);
     }
   }, [rechercheId, qc]);
+
+  const cancelEnrich = useCallback(() => {
+    cancelRef.current = true;
+  }, []);
 
   // Determine button state
   const canStart = !enriching && (
@@ -151,8 +167,14 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
 
             <div className="flex items-center justify-center gap-2 text-sm text-purple-600 bg-purple-50 rounded-lg py-3">
               <Spinner className="h-4 w-4" />
-              <span>Fullenrich traite vos contacts... (verification #{pollCount}, toutes les 15s)</span>
+              <span>Fullenrich traite vos contacts... (verification #{pollCount}/{MAX_POLLS}, toutes les 15s)</span>
             </div>
+            <button
+              onClick={cancelEnrich}
+              className="w-full text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg py-2 mt-2 transition-colors"
+            >
+              Annuler l'enrichissement
+            </button>
           </div>
         )}
 

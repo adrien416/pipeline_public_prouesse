@@ -3,11 +3,19 @@ import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 
 const FULLENRICH_BASE = "https://app.fullenrich.com";
+const STUCK_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes (was 10)
+const MAX_RETRIES = 3; // Max re-submissions per contact before marking as erreur
 
 function fullenrichHeaders() {
   const key = process.env.FULLENRICH_API_KEY;
   if (!key) throw new Error("FULLENRICH_API_KEY non configuree");
   return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+}
+
+/** Count how many times a contact has been retried based on enrichissement_status pattern */
+function getRetryCount(status: string): number {
+  const match = status.match(/^retry:(\d+)$/);
+  return match ? parseInt(match[1]) : 0;
 }
 
 export default async (request: Request) => {
@@ -55,30 +63,54 @@ export default async (request: Request) => {
     const pending = qualified.filter((c) => c.enrichissement_status?.startsWith("pending:"));
 
     if (pending.length > 0) {
-      // Reset contacts stuck in pending for > 10 minutes
-      const TEN_MIN = 10 * 60 * 1000;
+      // Reset contacts stuck in pending for > 3 minutes
       const stuckPending = pending.filter((c) => {
         const mod = c.date_modification ? new Date(c.date_modification).getTime() : 0;
-        return Date.now() - mod > TEN_MIN;
+        // NaN check: if date is invalid, consider it stuck
+        if (isNaN(mod)) return true;
+        return Date.now() - mod > STUCK_TIMEOUT_MS;
       });
       if (stuckPending.length > 0) {
+        console.log(`Fullenrich: ${stuckPending.length} contacts stuck, resetting`);
         const resets: Array<{ rowIndex: number; values: string[] }> = [];
         for (const c of stuckPending) {
           if (!c._rowIndex) continue;
+          // Track retry count to avoid infinite resubmission
+          const prevRetries = getRetryCount(c.enrichissement_retry || "retry:0");
+          const newRetries = prevRetries + 1;
           resets.push({
             rowIndex: Number(c._rowIndex),
             values: toRow(sheetHeaders, {
               ...c,
-              enrichissement_status: "",
+              enrichissement_status: newRetries >= MAX_RETRIES ? "erreur" : "",
+              enrichissement_retry: `retry:${newRetries}`,
               date_modification: new Date().toISOString(),
             }),
           });
         }
         if (resets.length > 0) await batchUpdateRows("Contacts", resets);
-        return json({ enriched: 0, not_found: 0, errors: 0, done: false, reset: stuckPending.length });
+        const errored = resets.filter((_, i) => {
+          const retries = getRetryCount(stuckPending[i]?.enrichissement_retry || "retry:0") + 1;
+          return retries >= MAX_RETRIES;
+        }).length;
+        return json({ enriched: 0, not_found: 0, errors: errored, done: false, reset: stuckPending.length });
       }
 
       const enrichmentId = pending[0].enrichissement_status.split(":")[1];
+      if (!enrichmentId) {
+        console.error("Fullenrich: invalid pending status, no enrichment ID found");
+        // Reset all pending without valid ID
+        const resets: Array<{ rowIndex: number; values: string[] }> = [];
+        for (const c of pending) {
+          if (!c._rowIndex) continue;
+          resets.push({
+            rowIndex: Number(c._rowIndex),
+            values: toRow(sheetHeaders, { ...c, enrichissement_status: "", date_modification: new Date().toISOString() }),
+          });
+        }
+        if (resets.length > 0) await batchUpdateRows("Contacts", resets);
+        return json({ enriched: 0, not_found: 0, errors: 0, done: false });
+      }
 
       const pollResp = await fetch(
         `${FULLENRICH_BASE}/api/v1/contact/enrich/bulk/${enrichmentId}`,
@@ -112,10 +144,23 @@ export default async (request: Request) => {
       }
 
       const pollData = await pollResp.json();
-      console.log("Fullenrich poll response:", JSON.stringify({ status: pollData.status, datasCount: pollData.datas?.length }));
+      console.log("Fullenrich poll response:", JSON.stringify({
+        status: pollData.status,
+        datasCount: pollData.datas?.length,
+        keys: Object.keys(pollData),
+        // Log first result entry structure for debugging
+        firstEntry: pollData.datas?.[0] ? Object.keys(pollData.datas[0]) : null,
+      }));
       const status = (pollData.status ?? "").toUpperCase();
 
-      if (status === "COMPLETED" || status === "FAILED") {
+      // Accept various completion statuses from Fullenrich
+      const isCompleted = status === "COMPLETED" || status === "COMPLETE" || status === "DONE" || status === "FINISHED" || status === "FAILED";
+      // Also treat as completed if we have data results regardless of status
+      const hasResults = Array.isArray(pollData.datas) && pollData.datas.length > 0;
+
+      if (isCompleted || (hasResults && status !== "PROCESSING" && status !== "PENDING" && status !== "QUEUED")) {
+        console.log(`Fullenrich: treating as completed (status=${status}, hasResults=${hasResults}, resultsCount=${pollData.datas?.length})`);
+
           // Results are in pollData.datas[].contact.most_probable_email
           const resultDatas: any[] = pollData.datas ?? [];
           const updates: Array<{ rowIndex: number; values: string[] }> = [];

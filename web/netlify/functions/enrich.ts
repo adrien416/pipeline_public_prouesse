@@ -28,9 +28,11 @@ export default async (request: Request) => {
 
     // Estimate only — quick return
     if (estimate_only) {
+      const pendingContacts = qualified.filter((c) => c.enrichissement_status?.startsWith("pending:"));
       const toEnrich = qualified.filter(
-        (c) => c.enrichissement_status !== "ok" && !c.enrichissement_status?.startsWith("pending:")
+        (c) => c.enrichissement_status !== "ok" && c.enrichissement_status !== "pas_de_resultat" && !c.enrichissement_status?.startsWith("pending:")
       );
+      const enrichedCount = qualified.filter((c) => c.enrichissement_status === "ok").length;
       const creditsResp = await fetch(`${FULLENRICH_BASE}/api/v1/account/credits`, {
         headers: fullenrichHeaders(),
       });
@@ -43,6 +45,9 @@ export default async (request: Request) => {
         contacts_to_enrich: toEnrich.length,
         estimated_credits: toEnrich.length,
         current_balance: balance,
+        pending_count: pendingContacts.length,
+        enriched_count: enrichedCount,
+        total_qualified: qualified.length,
       });
     }
 
@@ -186,9 +191,11 @@ export default async (request: Request) => {
       return json({ enriched: 0, not_found: 0, errors: 0, done: false });
     }
 
-    // Step 2: Start new enrichment batch
+    // Step 2: Start new enrichment batch (exclude already ok, failed, or pending)
     const toEnrich = qualified.filter(
-      (c) => c.enrichissement_status !== "ok" && c.enrichissement_status !== "pas_de_resultat"
+      (c) => c.enrichissement_status !== "ok" &&
+             c.enrichissement_status !== "pas_de_resultat" &&
+             !c.enrichissement_status?.startsWith("pending:")
     );
 
     if (toEnrich.length === 0) {

@@ -75,6 +75,9 @@ export function getEnrichEstimate(recherche_id: string) {
     contacts_to_enrich: number;
     estimated_credits: number;
     current_balance: number;
+    pending_count: number;
+    enriched_count: number;
+    total_qualified: number;
   }>("/enrich", {
     method: "POST",
     body: JSON.stringify({ recherche_id, estimate_only: true }),

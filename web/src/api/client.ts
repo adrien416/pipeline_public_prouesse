@@ -88,6 +88,7 @@ export function launchEnrichment(recherche_id: string) {
     errors: number;
     done: boolean;
     contacts?: Array<Record<string, string>>;
+    poll_error?: string;
   }>("/enrich", {
     method: "POST",
     body: JSON.stringify({ recherche_id, estimate_only: false }),

@@ -80,11 +80,37 @@ export default async (request: Request) => {
         { headers: fullenrichHeaders() }
       );
 
-      if (pollResp.ok) {
-        const pollData = await pollResp.json();
-        const status = (pollData.status ?? "").toUpperCase();
+      if (!pollResp.ok) {
+        const errText = await pollResp.text().catch(() => "");
+        console.error(`Fullenrich poll error ${pollResp.status}: ${errText}`);
+        // If 404 or 410 — enrichment ID is invalid/expired, reset contacts
+        if (pollResp.status === 404 || pollResp.status === 410) {
+          const resets: Array<{ rowIndex: number; values: string[] }> = [];
+          for (const c of pending) {
+            if (!c._rowIndex) continue;
+            resets.push({
+              rowIndex: Number(c._rowIndex),
+              values: toRow(sheetHeaders, {
+                ...c,
+                enrichissement_status: "erreur",
+                date_modification: new Date().toISOString(),
+              }),
+            });
+          }
+          if (resets.length > 0) await batchUpdateRows("Contacts", resets);
+          return json({ enriched: 0, not_found: 0, errors: pending.length, done: false,
+            poll_error: `Fullenrich ${pollResp.status}: enrichment introuvable` });
+        }
+        // Other errors — return error info to frontend but keep polling
+        return json({ enriched: 0, not_found: 0, errors: 0, done: false,
+          poll_error: `Fullenrich poll ${pollResp.status}: ${errText.slice(0, 200)}` });
+      }
 
-        if (status === "COMPLETED" || status === "FAILED") {
+      const pollData = await pollResp.json();
+      console.log("Fullenrich poll response:", JSON.stringify({ status: pollData.status, datasCount: pollData.datas?.length }));
+      const status = (pollData.status ?? "").toUpperCase();
+
+      if (status === "COMPLETED" || status === "FAILED") {
           // Results are in pollData.datas[].contact.most_probable_email
           const resultDatas: any[] = pollData.datas ?? [];
           const updates: Array<{ rowIndex: number; values: string[] }> = [];
@@ -155,7 +181,6 @@ export default async (request: Request) => {
             contacts: freshQualified,
           });
         }
-      }
 
       // Still processing — tell frontend to keep polling
       return json({ enriched: 0, not_found: 0, errors: 0, done: false });

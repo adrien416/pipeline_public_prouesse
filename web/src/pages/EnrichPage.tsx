@@ -37,9 +37,21 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
     try {
       let isDone = false;
       let total = { enriched: 0, not_found: 0, errors: 0 };
+      let pollErrors = 0;
       while (!isDone) {
         const r = await launchEnrichment(rechercheId);
         total = { enriched: total.enriched + r.enriched, not_found: total.not_found + r.not_found, errors: total.errors + r.errors };
+        // Show poll errors from Fullenrich
+        if (r.poll_error) {
+          setError(r.poll_error);
+          pollErrors++;
+          if (pollErrors >= 3) {
+            throw new Error(`Enrichissement bloque: ${r.poll_error}`);
+          }
+        } else {
+          pollErrors = 0;
+          setError(null);
+        }
         // Update contacts cache immediately if response includes them
         if (r.contacts?.length) {
           const prev = qc.getQueryData<{ contacts: Record<string, string>[] }>(["contacts", rechercheId]);

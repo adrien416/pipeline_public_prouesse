@@ -1,5 +1,5 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Genere le : 2026-03-19*
+*Genere le : 2026-03-20*
 
 ## 1. Snapshot du projet
 - **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. L'outil permet de rechercher des dirigeants d'entreprises (via Fullenrich), de les scorer par IA selon des criteres de scalabilite/impact ou cession, d'enrichir leurs emails, puis d'envoyer des campagnes email personnalisees — le tout depuis une interface web.
@@ -29,7 +29,7 @@
 │   │   └── types/index.ts        # Types TypeScript
 │   ├── netlify/functions/        # Backend serverless (Netlify Functions)
 │   │   ├── _auth.ts              # Auth : login JWT, verification token, helper json()
-│   │   ├── _sheets.ts            # CRUD Google Sheets (readAll, appendRow, updateRow, batchUpdateRows, findRowById)
+│   │   ├── _sheets.ts            # CRUD Google Sheets (readAll avec _rowIndex, appendRow/appendRows via positionnement explicite, batchUpdateRows, findRowById, readRawRange)
 │   │   ├── search.ts             # POST /api/search — Claude Haiku traduit description → filtres Fullenrich → sauvegarde contacts
 │   │   ├── score.ts              # POST /api/score — scoring IA par contact (Haiku pour levee, Opus pour cession)
 │   │   ├── enrich.ts             # POST /api/enrich — enrichissement email via Fullenrich bulk API
@@ -55,7 +55,7 @@
 | Service | Usage | Fichier |
 |---------|-------|---------|
 | **Anthropic Claude API** | Traduction description → filtres (Haiku), scoring contacts (Haiku/Opus), generation phrase perso (Haiku) | `search.ts`, `score.ts`, `send.ts` |
-| **Fullenrich API v2** | Recherche de personnes (`/api/v2/people/search`), enrichissement email bulk (`/api/v1/contact/enrich/bulk`), credits (`/api/v1/account/credits`) | `search.ts`, `enrich.ts`, `credits.ts` |
+| **Fullenrich API** | Recherche de personnes v2 (`/api/v2/people/search`), enrichissement email bulk v1 (`/api/v1/contact/enrich/bulk` — body: `{name, datas, webhook_url}`, champs contacts: `firstname, lastname, domain, company_name, linkedin_url, enrich_fields: ["contact.emails"]}`), credits (`/api/v1/account/credits`) | `search.ts`, `enrich.ts`, `credits.ts` |
 | **Google Sheets API** | Base de donnees : onglets Contacts, Recherches, Campagnes, EmailLog, Fonds, Scoring | `_sheets.ts` |
 | **Brevo SMTP API** | Envoi d'emails transactionnels | `send.ts` |
 
@@ -107,19 +107,35 @@
     - **Auto-retry avec filtres elargis** : Quand la premiere recherche retourne 0 resultats, le systeme genere automatiquement des filtres plus larges (via un prompt specifique "RECHERCHE ELARGIE") et retente Fullenrich. Si le retry reussit, les filtres elargis sont utilises et l'UI affiche "Filtres elargis automatiquement".
     - **Suggestions seulement en dernier recours** : Les suggestions IA ne sont affichees que si le retry a aussi echoue (0 resultats apres 2 tentatives).
 
+14. **Fix critique : lignes fantomes Google Sheets** (`dc44db3`) — `values.append` de Google Sheets detectait des lignes fantomes (formatage sans donnees) et ajoutait les nouveaux contacts dans une zone illisible. Remplacement par `values.update` avec positionnement explicite : on lit la colonne A pour trouver la vraie derniere ligne, puis on ecrit a cette position. Aussi : `readAll` filtre maintenant les lignes vides et retourne `_rowIndex` (la vraie ligne dans la sheet) dans chaque objet. Tous les fichiers backend utilisent `_rowIndex` au lieu de `findIndex + 2` pour les mises a jour.
+
+15. **Scoring resilient aux erreurs** (`3e195c4`) — Quand Claude retourne un score 0/0 (site inaccessible, pas d'info), le scoring sauvegarde `score_total=0` avec la raison au lieu de crasher. Le scoring continue au contact suivant. Les contacts avec score 0 sont consideres comme "scores" (pas re-scores en boucle).
+
+16. **Fix API Fullenrich enrichissement** (`6612feb`, `dc44fb4`, `41f611e`) — Trois corrections successives pour l'endpoint `/api/v1/contact/enrich/bulk` :
+    - Ajout du champ `name` requis par l'API
+    - Le champ contenant les contacts s'appelle `datas` (pas `data` ni `contacts`)
+    - Les champs d'enrichissement sont `["contact.emails"]` (pas `["email"]`)
+    Documentation de reference : https://docs.fullenrich.com/startbulk
+
+17. **Colonne LinkedIn dans Scoring et Enrichissement** (`601a5ba`) — Ajout d'une colonne "LinkedIn" avec lien cliquable "Profil" dans les tables de scoring (`ScoringPage.tsx`) et d'enrichissement (`EnrichPage.tsx`). Fullenrich retrouve beaucoup mieux les emails quand le `linkedin_url` est fourni.
+
 ### Decisions non evidentes
-- **Haiku pour la recherche, Opus pour le scoring cession** : La traduction description → JSON est triviale, Haiku suffit. Le scoring cession necessite une analyse plus fine (signaux de vente), donc Opus. Le scoring levee de fonds utilise Haiku car les criteres sont plus simples.
+- **Haiku pour la recherche et le scoring** : Tous les modeles utilisent `claude-haiku-4-5-20251001` (rapide et pas cher). La traduction description → JSON et le scoring (levee + cession) utilisent Haiku.
 - **1 contact par appel API** : Le rate limit Anthropic est de 5 req/min pour cette org. Avec le polling frontend toutes les 15s, ca fait ~4 req/min, juste sous la limite.
 - **Google Sheets comme BDD** : Choix delibere pour que le client puisse voir/editer les donnees directement. Pas prevu pour du volume > quelques milliers de contacts.
+- **`values.update` au lieu de `values.append`** : Google Sheets `values.append` detectait des lignes fantomes (formatage sans donnees) et ajoutait les donnees hors de la zone lisible. On calcule la position exacte via `readRawRange("tab!A:A").length + 1` puis on ecrit avec `values.update`. Plus fiable.
+- **`_rowIndex` dans chaque objet readAll** : Chaque contact retourne par `readAll` contient `_rowIndex` = sa vraie ligne dans la sheet (1-indexed). Tous les updates utilisent ce champ au lieu de `findIndex + 2` qui cassait quand `readAll` filtrait des lignes vides.
+- **Score 0 est un score valide** : Si Claude retourne 0/0 (site inaccessible), le contact est marque `score_total=0` avec une raison. Il n'est PAS re-score en boucle. Le filtre "non score" est `score_total === ""` (vide), pas `<= 0`.
+- **Fullenrich API : `datas` pas `data`** : L'endpoint bulk `/api/v1/contact/enrich/bulk` attend `{ name, datas: [...] }`. Le champ s'appelle `datas` (avec un s). Les champs d'enrichissement sont `["contact.emails"]` pas `["email"]`.
 - **Brevo plutot que HubSpot pour l'envoi** : Le code `send.ts` utilise Brevo SMTP. HubSpot est mentionne dans le pipeline Python original mais n'est pas integre dans la version web.
 - **Industries en anglais dans le prompt de recherche** : Fullenrich utilise la taxonomie LinkedIn qui est en anglais. Le prompt force explicitement l'IA a traduire les termes francais (ex: "recyclage de dechets" → "Environmental Services"). Sans ca, les recherches niches retournent 0 resultats.
 - **Auto-retry avec 2 prompts differents** : La fonction `buildSystemPrompt(mode, broad)` genere un prompt different selon que c'est le premier essai ou le retry. Le retry ajoute des instructions explicites pour elargir (1 seule industrie large, max 2 titres, pas de specialties).
-- **Tests vitest pour le backend** : 102 tests unitaires couvrent les Netlify Functions. Les tests mockent `fetch` (Anthropic, Fullenrich), `_sheets` (Google Sheets), et `_auth` (JWT). Les tests Python (177) couvrent le pipeline CLI original.
+- **Tests vitest pour le backend** : 103 tests unitaires couvrent les Netlify Functions. Les tests mockent `fetch` (Anthropic, Fullenrich), `_sheets` (Google Sheets), et `_auth` (JWT). Les tests Python (177) couvrent le pipeline CLI original.
 
 ## 4. Etat actuel — EN COURS
 
 ### Tache en cours
-Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Tests : 177 Python + 102 TypeScript = 279 tests passent.
+L'enrichissement Fullenrich vient d'etre corrige (champs `datas` + `contact.emails`). A tester que l'enrichissement bulk fonctionne de bout en bout. Tests : 177 Python + 103 TypeScript = 280 tests passent.
 
 ### Ce qui fonctionne
 - Recherche de prospects (description francais → filtres Fullenrich en anglais LinkedIn → resultats)
@@ -127,8 +143,10 @@ Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Test
 - Suggestions IA concretes quand les 2 tentatives echouent
 - Affichage des filtres IA generes (vert si elargis automatiquement)
 - Exclusion manuelle de contacts avant validation
-- Scoring IA avec gestion du rate limit (skip + retry)
-- Enrichissement email via Fullenrich bulk
+- Scoring IA resilient (gestion rate limit + score 0 valide, ne crashe plus)
+- Ecriture Google Sheets fiable (positionnement explicite, plus de lignes fantomes)
+- Colonne LinkedIn visible dans Scoring et Enrichissement
+- Enrichissement email via Fullenrich bulk (API v1, format `datas` + `contact.emails`)
 - Creation de campagne email
 - Envoi d'emails via Brevo avec phrase perso generee par IA
 - Dashboard analytics
@@ -137,6 +155,7 @@ Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Test
 - L'envoi reel d'emails (Brevo) — la cle API `BREVO_API_KEY` doit etre configuree
 - Le webhook Brevo pour le tracking (opens, clicks, bounces)
 - L'enrichissement Fullenrich avec un volume > 10 contacts
+- La recuperation des resultats d'enrichissement (polling GET `/bulk/{enrichment_id}`)
 
 ## 5. Prochaines etapes (par priorite)
 
@@ -164,7 +183,7 @@ Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Test
 
 ### Dette technique
 - **`_sheets.ts` fait un `readAll` a chaque appel** : Ca lit TOUTE la feuille Contacts a chaque scoring/enrichissement. Acceptable pour < 1000 contacts, problematique au-dela.
-- **Le mode scoring "cession" utilise Opus** (`score.ts:94`) : C'est voulu (analyse plus fine), mais Opus est beaucoup plus cher ($0.015/req vs $0.0003 pour Haiku) et plus lent. Le client doit etre conscient du cout.
+- **`appendRow`/`appendRows` font un readRawRange supplementaire** : Pour calculer la position exacte, on lit la colonne A avant chaque ecriture. Ca double les appels API Google mais evite les bugs de lignes fantomes.
 - **`send.ts` utilise Brevo avec l'email hardcode** (`adrien@prouesse.vc`) en ligne 121 : Pas configurable.
 - **Le login est hardcode** (`_auth.ts:6`) : Email `adrien@prouesse.vc` en dur. Le hash du mot de passe est dans une variable d'env mais l'email non.
 
@@ -174,7 +193,8 @@ Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Test
 
 ### Ce qui parait bizarre mais est intentionnel
 - **`statut: "exclu"` plutot que suppression** : Les contacts exclus restent dans Google Sheets avec `statut=exclu`. Ils sont filtres cote serveur. Ca permet de les retrouver si besoin.
-- **Le scoring retourne `score_total: 0` sur rate limit** : C'est un signal de skip, pas un vrai score. Le code verifie `scores.score_total === 0 && !scores.raison` pour distinguer un skip d'un vrai score de 0.
+- **`score_total: "0"` est un score valide** : Quand Claude ne peut pas evaluer un contact (site inaccessible), il retourne 0/0 avec une raison. Le contact est marque comme score et n'est PAS re-score. Le filtre "non score" est `score_total === ""` (chaine vide).
+- **`_rowIndex` dans les objets contact** : Chaque objet retourne par `readAll` contient un champ `_rowIndex` qui represente la vraie ligne dans Google Sheets. C'est un champ interne (pas dans les headers), utilise uniquement pour les updates.
 
 ## 7. Contraintes design & marque
 
@@ -199,7 +219,7 @@ Aucune tache specifique en cours. L'app est fonctionnelle sur les 5 etapes. Test
 cd web
 npm install
 npx netlify dev     # Lance le dev server local (frontend + functions)
-npm test            # Lance les 102 tests vitest (Netlify Functions)
+npm test            # Lance les 103 tests vitest (Netlify Functions)
 cd .. && python -m pytest tests/  # Lance les 177 tests Python (pipeline CLI)
 ```
 

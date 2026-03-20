@@ -71,7 +71,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     domains: string[];
   } | null>(null);
   const [sending, setSending] = useState(false);
-  const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[] });
+  const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[], done: false });
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 
   const contacts = useQuery({
@@ -230,15 +230,25 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     if (!campaignId || sending) return;
     setSending(true);
     const total = parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0");
-    setSendProgress({ sent: 0, total, errors: [] });
+    setSendProgress({ sent: 0, total, errors: [], done: false });
     try {
       let remaining = total;
       let sentCount = 0;
       while (remaining > 0) {
-        const r = await triggerSend(campaignId);
+        let r: { sent: number; remaining?: number; error?: string; skipped_domain?: string };
+        try {
+          r = await triggerSend(campaignId);
+        } catch (err) {
+          // HTTP error (500, etc.) — show immediately and stop
+          const msg = err instanceof Error ? err.message : String(err);
+          setSendProgress((p) => ({ ...p, errors: [...p.errors, msg], done: true }));
+          break;
+        }
         if (r.sent > 0) {
           sentCount += r.sent;
           setSendProgress((p) => ({ ...p, sent: sentCount }));
+          // Refresh banner counter after each successful send
+          qc.invalidateQueries({ queryKey: ["campaign"] });
         }
         remaining = r.remaining ?? 0;
         setSendProgress((p) => ({ ...p, total: sentCount + remaining }));
@@ -246,21 +256,21 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           setSendProgress((p) => ({ ...p, errors: [...p.errors, `Doublon: ${r.skipped_domain}`] }));
         }
         if (r.sent === 0 && !r.skipped_domain) {
-          // Daily limit reached or error — stop
           if (r.error) {
             setSendProgress((p) => ({ ...p, errors: [...p.errors, r.error!] }));
           }
           break;
         }
-        // Wait interval between sends (minimum 5s to avoid hammering)
+        // Wait interval between sends
         if (remaining > 0) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
       }
+      setSendProgress((p) => ({ ...p, done: true }));
       qc.invalidateQueries({ queryKey: ["campaign"] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
     } catch (err) {
-      setSendProgress((p) => ({ ...p, errors: [...p.errors, String(err)] }));
+      setSendProgress((p) => ({ ...p, errors: [...p.errors, String(err)], done: true }));
     } finally {
       setSending(false);
     }
@@ -437,29 +447,43 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             </div>
           </div>
 
-          {/* Send progress */}
-          {sending && (
-            <div className="flex items-center gap-3">
-              <Spinner className="h-4 w-4 text-blue-600" />
-              <div className="flex-1">
-                <div className="flex justify-between text-xs text-gray-600 mb-1">
-                  <span>Envoi en cours...</span>
-                  <span>{sendProgress.sent}/{sendProgress.total}</span>
-                </div>
-                <div className="w-full bg-white rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full transition-all"
-                    style={{ width: `${sendProgress.total > 0 ? (sendProgress.sent / sendProgress.total) * 100 : 0}%` }}
-                  />
+          {/* Send progress — visible during and after sending */}
+          {(sending || sendProgress.done) && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {sending && <Spinner className="h-4 w-4 text-blue-600" />}
+                <div className="flex-1">
+                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>
+                      {sending
+                        ? "Envoi en cours..."
+                        : sendProgress.errors.length > 0
+                        ? `Envoi arrete — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`
+                        : `Termine — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`}
+                    </span>
+                    <span>{sendProgress.sent}/{sendProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-white rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        !sending && sendProgress.errors.length > 0 && sendProgress.sent === 0
+                          ? "bg-red-400"
+                          : !sending && sendProgress.sent > 0
+                          ? "bg-green-500"
+                          : "bg-blue-500"
+                      }`}
+                      style={{ width: `${sendProgress.total > 0 ? (sendProgress.sent / sendProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Send errors */}
-          {sendProgress.errors.length > 0 && !sending && (
-            <div className="text-xs text-amber-700">
-              {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
+              {/* Errors — shown immediately */}
+              {sendProgress.errors.length > 0 && (
+                <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700 space-y-0.5">
+                  {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,6 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases } from "../api/client";
+
+function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const lastSaved = useRef(value);
+
+  useEffect(() => {
+    if (!campaignId || value === lastSaved.current) return;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      updateCampaign({ id: campaignId, [field]: value });
+      lastSaved.current = value;
+    }, delay);
+    return () => clearTimeout(timer.current);
+  }, [campaignId, field, value, delay]);
+
+  // Reset lastSaved when campaignId changes
+  useEffect(() => {
+    lastSaved.current = value;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId]);
+}
 import { Spinner } from "../components/Spinner";
 
 interface Props {
@@ -71,11 +92,30 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
 
   const [generatingPhrases, setGeneratingPhrases] = useState(false);
   const [phraseProgress, setPhraseProgress] = useState({ generated: 0, total: 0 });
+  const [templateLoaded, setTemplateLoaded] = useState(false);
 
   const contactsList = contacts.data || [];
   const campaignData = campaign.data?.campaign;
   const campaignStatus = campaignData?.status || "draft";
   const campaignsList = existingCampaigns.data?.campaigns || [];
+
+  // Load template from saved campaign
+  useEffect(() => {
+    if (campaignData && !templateLoaded) {
+      if (campaignData.template_sujet) setSujet(campaignData.template_sujet);
+      if (campaignData.template_corps) setCorps(campaignData.template_corps);
+      setTemplateLoaded(true);
+    }
+  }, [campaignData, templateLoaded]);
+
+  // Reset templateLoaded when campaign changes
+  useEffect(() => {
+    setTemplateLoaded(false);
+  }, [campaignId]);
+
+  // Auto-save template changes
+  useDebouncedSave(campaignId, "template_sujet", sujet);
+  useDebouncedSave(campaignId, "template_corps", corps);
 
   // Count contacts missing phrase_perso
   const missingPhrases = contactsList.filter((c) => !c.phrase_perso).length;

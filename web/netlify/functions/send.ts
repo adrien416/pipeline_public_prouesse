@@ -82,29 +82,42 @@ export default async (request: Request) => {
       return json({ error: "Campagne non active", sent: 0, remaining: 0 });
     }
 
-    // Check day-of-week and time window
-    const now = new Date();
-    const dayMap: Record<number, string> = { 0: "dim", 1: "lun", 2: "mar", 3: "mer", 4: "jeu", 5: "ven", 6: "sam" };
-    const todayDay = dayMap[now.getDay()];
+    // Check day-of-week and time window (Paris timezone)
+    const parisFmt = new Intl.DateTimeFormat("fr-FR", {
+      timeZone: "Europe/Paris",
+      hour: "2-digit", minute: "2-digit", weekday: "short",
+      hour12: false,
+    });
+    const parts = parisFmt.formatToParts(new Date());
+    const parisWeekday = parts.find((p) => p.type === "weekday")?.value || "";
+    const parisHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
+    const parisMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
+
+    const weekdayMap: Record<string, string> = {
+      lun: "lun", mar: "mar", mer: "mer", jeu: "jeu", ven: "ven", sam: "sam", dim: "dim",
+      "lun.": "lun", "mar.": "mar", "mer.": "mer", "jeu.": "jeu", "ven.": "ven", "sam.": "sam", "dim.": "dim",
+    };
+    const todayDay = weekdayMap[parisWeekday.toLowerCase()] || parisWeekday.toLowerCase().slice(0, 3);
+
     const joursActifs: string[] = (() => {
       try { return JSON.parse(campaign.jours_semaine || "[]"); }
       catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
     })();
 
     if (!joursActifs.includes(todayDay)) {
-      return json({ error: `Pas d'envoi le ${todayDay}`, sent: 0, remaining: 0 });
+      return json({ error: `Pas d'envoi le ${todayDay} (heure de Paris)`, sent: 0, remaining: 0 });
     }
 
     const heureDebut = campaign.heure_debut || "08:30";
     const heureFin = campaign.heure_fin || "18:30";
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowMinutes = parisHour * 60 + parisMinute;
     const [dH, dM] = heureDebut.split(":").map(Number);
     const [fH, fM] = heureFin.split(":").map(Number);
     const debutMinutes = dH * 60 + dM;
     const finMinutes = fH * 60 + fM;
 
     if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
-      return json({ error: `Hors plage horaire (${heureDebut}-${heureFin})`, sent: 0, remaining: 0 });
+      return json({ error: `Hors plage horaire ${heureDebut}-${heureFin} (heure de Paris, il est ${String(parisHour).padStart(2,"0")}:${String(parisMinute).padStart(2,"0")})`, sent: 0, remaining: 0 });
     }
 
     const allContacts = await readAll("Contacts");
@@ -113,7 +126,8 @@ export default async (request: Request) => {
     );
 
     const maxParJour = parseInt(campaign.max_par_jour) || 15;
-    const today = new Date().toISOString().slice(0, 10);
+    // Use Paris date for daily limit check
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Paris" }); // YYYY-MM-DD
     const alreadySentToday = allContacts.filter(
       (c) => c.campagne_id === campagne_id && c.email_sent_at?.startsWith(today)
     ).length;

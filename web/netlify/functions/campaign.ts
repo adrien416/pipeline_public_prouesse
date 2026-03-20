@@ -13,11 +13,21 @@ import {
   toRow,
 } from "./_sheets.js";
 
+function normalizeDomain(d: string): string {
+  if (!d) return "";
+  try {
+    const url = d.startsWith("http") ? d : `https://${d}`;
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return d.toLowerCase();
+  }
+}
+
 export default async (request: Request) => {
   const auth = requireAuth(request);
   if (auth instanceof Response) return auth;
 
-  // GET — fetch latest campaign
+  // GET — list campaigns or fetch one
   if (request.method === "GET") {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
@@ -28,15 +38,23 @@ export default async (request: Request) => {
     }
 
     const all = await readAll("Campagnes");
-    const latest = all.length > 0 ? all[all.length - 1] : null;
-    return json({ campaign: latest });
+    const rechercheId = url.searchParams.get("recherche_id");
+
+    if (rechercheId) {
+      const filtered = all.filter((c) => c.recherche_id === rechercheId);
+      return json({ campaigns: filtered });
+    }
+
+    // Default: return all campaigns
+    return json({ campaigns: all });
   }
 
-  // POST — create campaign (fast, no AI calls)
+  // POST — create campaign
   if (request.method === "POST") {
     const body = await request.json();
     const {
       recherche_id,
+      nom,
       template_sujet,
       template_corps,
       mode,
@@ -45,22 +63,43 @@ export default async (request: Request) => {
       heure_debut,
       heure_fin,
       intervalle_min,
+      include_duplicates,
     } = body;
 
     if (!recherche_id || !template_sujet || !template_corps) {
       return json({ error: "Champs requis manquants" }, 400);
     }
 
-    // Count enriched contacts for this search
+    // Get all contacts
     const allContacts = await readAll("Contacts");
     const enriched = allContacts.filter(
       (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
     );
 
-    // Create campaign — no phrase generation here (done at send time)
+    // Duplicate domain protection: find domains already contacted in other campaigns
+    const contactedDomains = new Set<string>();
+    for (const c of allContacts) {
+      if (
+        c.campagne_id &&
+        c.recherche_id !== recherche_id &&
+        (c.email_status === "sent" || c.email_status === "opened" ||
+         c.email_status === "clicked" || c.email_status === "replied")
+      ) {
+        const d = normalizeDomain(c.domaine);
+        if (d) contactedDomains.add(d);
+      }
+    }
+
+    const duplicates = enriched.filter((c) => contactedDomains.has(normalizeDomain(c.domaine)));
+    const contactsToAssign = include_duplicates
+      ? enriched
+      : enriched.filter((c) => !contactedDomains.has(normalizeDomain(c.domaine)));
+
+    // Create campaign
     const campaign: Record<string, string> = {
       id: uuid(),
-      nom: `Campagne ${new Date().toLocaleDateString("fr-FR")}`,
+      nom: nom || `Campagne ${new Date().toLocaleDateString("fr-FR")}`,
+      recherche_id,
       template_sujet,
       template_corps,
       mode: mode || "levee_de_fonds",
@@ -70,7 +109,7 @@ export default async (request: Request) => {
       heure_debut: heure_debut || "08:30",
       heure_fin: heure_fin || "18:30",
       intervalle_min: String(intervalle_min || 20),
-      total_leads: String(enriched.length),
+      total_leads: String(contactsToAssign.length),
       sent: "0",
       opened: "0",
       clicked: "0",
@@ -79,12 +118,15 @@ export default async (request: Request) => {
       date_creation: new Date().toISOString(),
     };
 
-    await appendRow("Campagnes", toRow(CAMPAGNES_HEADERS, campaign));
+    await appendRow("Campagnes", toRow(
+      await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS),
+      campaign,
+    ));
 
     // Update contacts with campagne_id and email_status = queued
     const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const contactUpdates: Array<{ rowIndex: number; values: string[] }> = [];
-    for (const contact of enriched) {
+    for (const contact of contactsToAssign) {
       if (contact._rowIndex) {
         contactUpdates.push({
           rowIndex: Number(contact._rowIndex),
@@ -101,7 +143,11 @@ export default async (request: Request) => {
       await batchUpdateRows("Contacts", contactUpdates);
     }
 
-    return json({ campaign });
+    return json({
+      campaign,
+      duplicates_excluded: include_duplicates ? 0 : duplicates.length,
+      duplicate_domains: duplicates.map((c) => normalizeDomain(c.domaine)).filter(Boolean),
+    });
   }
 
   // PUT — update campaign (pause/resume/edit)
@@ -114,7 +160,10 @@ export default async (request: Request) => {
     if (!found) return json({ error: "Campagne introuvable" }, 404);
 
     const updated = { ...found.data, ...updates };
-    await updateRow("Campagnes", found.rowIndex, toRow(CAMPAGNES_HEADERS, updated));
+    await updateRow("Campagnes", found.rowIndex, toRow(
+      await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS),
+      updated,
+    ));
 
     return json({ campaign: updated });
   }

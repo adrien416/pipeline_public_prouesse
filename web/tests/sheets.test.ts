@@ -112,8 +112,8 @@ describe("RECHERCHES_HEADERS", () => {
 });
 
 describe("CAMPAGNES_HEADERS", () => {
-  it("has 18 columns", () => {
-    expect(CAMPAGNES_HEADERS).toHaveLength(18);
+  it("has 19 columns", () => {
+    expect(CAMPAGNES_HEADERS).toHaveLength(19);
   });
 
   it("starts with id and ends with date_creation", () => {

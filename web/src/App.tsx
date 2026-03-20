@@ -104,7 +104,14 @@ function AppContent() {
         <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
       )}
       {tab === "enrich" && rechercheId && (
-        <EnrichPage rechercheId={rechercheId} onComplete={() => goTo("campaign")} />
+        <EnrichPage
+          rechercheId={rechercheId}
+          onComplete={() => goTo("campaign")}
+          onViewCampaign={(cId) => {
+            setCampaignId(cId);
+            goTo("analytics");
+          }}
+        />
       )}
       {tab === "enrich" && !rechercheId && (
         <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />

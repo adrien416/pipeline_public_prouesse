@@ -263,7 +263,7 @@ export const RECHERCHES_HEADERS = [
 ];
 
 export const CAMPAGNES_HEADERS = [
-  "id", "nom", "template_sujet", "template_corps", "mode", "status",
+  "id", "nom", "recherche_id", "template_sujet", "template_corps", "mode", "status",
   "max_par_jour", "jours_semaine", "heure_debut", "heure_fin", "intervalle_min",
   "total_leads", "sent", "opened", "clicked", "replied", "bounced",
   "date_creation",

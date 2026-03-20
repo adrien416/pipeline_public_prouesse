@@ -40,11 +40,12 @@ export default async (request: Request) => {
     const total = campaignContacts.length;
     const queued = campaignContacts.filter((c) => c.email_status === "queued").length;
     const bounced = campaignContacts.filter((c) => c.email_status === "bounced").length;
+    const skipped = campaignContacts.filter((c) => c.email_status === "skipped_duplicate").length;
     const completed = campaignContacts.filter(
       (c) => c.email_status === "sent" || c.email_status === "opened" ||
              c.email_status === "clicked" || c.email_status === "replied"
     ).length;
-    const in_progress = total - queued - completed - bounced;
+    const in_progress = total - queued - completed - bounced - skipped;
 
     // Metrics
     const sent = parseInt(campaign.sent || "0");
@@ -77,7 +78,7 @@ export default async (request: Request) => {
 
     return json({
       campaign,
-      leads: { total, queued, in_progress, completed },
+      leads: { total, queued, in_progress, completed, skipped },
       metrics: { sent, delivered, opened, clicked, replied, bounced: bouncedCount },
       daily,
     });

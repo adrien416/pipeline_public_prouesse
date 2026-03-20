@@ -138,7 +138,11 @@ export function generatePhrases(recherche_id: string, mode: string) {
 }
 
 export function createCampaign(data: Record<string, unknown>) {
-  return request<{ campaign: Record<string, string> }>("/campaign", {
+  return request<{
+    campaign: Record<string, string>;
+    duplicates_excluded?: number;
+    duplicate_domains?: string[];
+  }>("/campaign", {
     method: "POST",
     body: JSON.stringify(data),
   });
@@ -154,6 +158,11 @@ export function updateCampaign(data: Record<string, unknown>) {
 export function fetchCampaign(id?: string) {
   const qs = id ? `?id=${id}` : "";
   return request<{ campaign: Record<string, string> | null }>(`/campaign${qs}`);
+}
+
+export function fetchCampaigns(recherche_id?: string) {
+  const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";
+  return request<{ campaigns: Record<string, string>[] }>(`/campaign${qs}`);
 }
 
 // ─── Send ───

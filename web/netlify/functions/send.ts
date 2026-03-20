@@ -100,6 +100,33 @@ export default async (request: Request) => {
     // Send 1 email per call to stay within Netlify timeout
     const contact = queued[0];
 
+    // Safety check: skip if domain already contacted in another campaign
+    if (contact.domaine) {
+      const domain = contact.domaine.toLowerCase();
+      const alreadyContacted = allContacts.some(
+        (c) =>
+          c.domaine?.toLowerCase() === domain &&
+          c.campagne_id !== campagne_id &&
+          c.campagne_id !== "" &&
+          (c.email_status === "sent" || c.email_status === "opened" ||
+           c.email_status === "clicked" || c.email_status === "replied")
+      );
+      if (alreadyContacted) {
+        // Mark as skipped and move to next
+        if (contact._rowIndex) {
+          await batchUpdateRows("Contacts", [{
+            rowIndex: Number(contact._rowIndex),
+            values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), {
+              ...contact,
+              email_status: "skipped_duplicate",
+              date_modification: new Date().toISOString(),
+            }),
+          }]);
+        }
+        return json({ sent: 0, remaining: queued.length - 1, skipped_domain: contact.domaine });
+      }
+    }
+
     // Generate phrase if not already done
     if (!contact.phrase_perso) {
       contact.phrase_perso = await generatePhrase(contact, campaign.mode);

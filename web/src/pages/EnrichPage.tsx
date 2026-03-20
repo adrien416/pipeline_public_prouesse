@@ -1,15 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, getEnrichEstimate, launchEnrichment } from "../api/client";
+import { fetchContacts, getEnrichEstimate, launchEnrichment, fetchCampaigns } from "../api/client";
 import { Spinner } from "../components/Spinner";
 import { TotalScoreBadge } from "../components/ScoreBadge";
 
 interface Props {
   rechercheId: string;
   onComplete: () => void;
+  onViewCampaign?: (campaignId: string) => void;
 }
 
-export function EnrichPage({ rechercheId, onComplete }: Props) {
+export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
   const qc = useQueryClient();
   const [enriching, setEnriching] = useState(false);
   const [result, setResult] = useState<{ enriched: number; not_found: number; errors: number } | null>(null);
@@ -30,8 +31,14 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
     refetchInterval: !enriching && !result ? 30000 : false,
   });
 
+  const existingCampaigns = useQuery({
+    queryKey: ["campaigns", rechercheId],
+    queryFn: () => fetchCampaigns(rechercheId),
+  });
+
   const contactsList = contacts.data?.contacts || [];
   const qualified = contactsList.filter((c) => parseInt(c.score_total) >= 7);
+  const campaignsList = existingCampaigns.data?.campaigns || [];
 
   // Compute live progress from contacts data
   const enrichedNow = qualified.filter((c) => c.enrichissement_status === "ok").length;
@@ -220,6 +227,55 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
                   : "Tous les contacts sont traites"
               }
             </button>
+
+            {/* Show campaigns + transition when all enriched */}
+            {estimate.data.contacts_to_enrich === 0 && (estimate.data.pending_count ?? 0) === 0 && (
+              <div className="space-y-3 border-t pt-4">
+                {campaignsList.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-gray-700">
+                      Campagnes existantes :
+                    </div>
+                    {campaignsList.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              c.status === "active" ? "bg-green-500" : "bg-orange-500"
+                            }`}
+                          />
+                          <div>
+                            <span className="text-sm font-medium">{c.nom}</span>
+                            <span className="text-xs text-gray-500 ml-2">
+                              {c.sent || 0}/{c.total_leads || 0} envoyes
+                            </span>
+                          </div>
+                        </div>
+                        {onViewCampaign && (
+                          <button
+                            onClick={() => onViewCampaign(c.id)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            Voir analytics →
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={onComplete}
+                  className="w-full bg-green-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-green-700"
+                >
+                  {campaignsList.length > 0
+                    ? "Creer une nouvelle campagne →"
+                    : `Preparer la campagne → (${estimate.data.enriched_count} contacts avec email)`}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -240,11 +296,51 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
                 <div className="text-xs text-gray-500 mt-1">erreurs</div>
               </div>
             </div>
+
+            {/* Existing campaigns for this search */}
+            {campaignsList.length > 0 && (
+              <div className="space-y-2 border-t pt-4">
+                <div className="text-sm font-medium text-gray-700">
+                  Campagnes existantes pour cette recherche :
+                </div>
+                {campaignsList.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          c.status === "active" ? "bg-green-500" : "bg-orange-500"
+                        }`}
+                      />
+                      <div>
+                        <span className="text-sm font-medium">{c.nom}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {c.sent || 0}/{c.total_leads || 0} envoyes
+                        </span>
+                      </div>
+                    </div>
+                    {onViewCampaign && (
+                      <button
+                        onClick={() => onViewCampaign(c.id)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Voir analytics →
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <button
               onClick={onComplete}
               className="w-full bg-green-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-green-700"
             >
-              Preparer la campagne &rarr; ({result.enriched} contacts avec email)
+              {campaignsList.length > 0
+                ? "Creer une nouvelle campagne →"
+                : `Preparer la campagne → (${result.enriched} contacts avec email)`}
             </button>
           </div>
         )}

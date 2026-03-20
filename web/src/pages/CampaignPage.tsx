@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, triggerSend, generatePhrases } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
@@ -34,6 +34,7 @@ const DAYS = [
 
 export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const qc = useQueryClient();
+  const [nom, setNom] = useState("");
   const [sujet, setSujet] = useState("{Entreprise} — echange sur votre developpement");
   const [corps, setCorps] = useState(DEFAULT_TEMPLATE);
   const [maxParJour, setMaxParJour] = useState("15");
@@ -43,11 +44,20 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const [intervalle, setIntervalle] = useState("20");
   const [selectedContact, setSelectedContact] = useState<Record<string, string> | null>(null);
   const [campaignId, setCampaignId] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    count: number;
+    domains: string[];
+  } | null>(null);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
     select: (data) => data.contacts.filter((c) => c.email && parseInt(c.score_total) >= 7),
+  });
+
+  const existingCampaigns = useQuery({
+    queryKey: ["campaigns", rechercheId],
+    queryFn: () => fetchCampaigns(rechercheId),
   });
 
   const campaign = useQuery({
@@ -63,6 +73,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const contactsList = contacts.data || [];
   const campaignData = campaign.data?.campaign;
   const campaignStatus = campaignData?.status || "draft";
+  const campaignsList = existingCampaigns.data?.campaigns || [];
 
   // Count contacts missing phrase_perso
   const missingPhrases = contactsList.filter((c) => !c.phrase_perso).length;
@@ -115,6 +126,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const create = useMutation({
     mutationFn: () =>
       createCampaign({
+        nom: nom || undefined,
         recherche_id: rechercheId,
         template_sujet: sujet,
         template_corps: corps,
@@ -127,6 +139,13 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       }),
     onSuccess: (data) => {
       if (data.campaign?.id) setCampaignId(data.campaign.id);
+      if (data.duplicates_excluded && data.duplicates_excluded > 0) {
+        setDuplicateWarning({
+          count: data.duplicates_excluded,
+          domains: data.duplicate_domains || [],
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
     },
   });
 
@@ -149,11 +168,10 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   }
 
   function previewEmail(contact: Record<string, string>) {
-    let preview = corps
+    return corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
       .replace(/\{Phrase\}/g, contact.phrase_perso || "[Phrase personnalisee IA]");
-    return preview;
   }
 
   const estimatedDays = contactsList.length > 0
@@ -168,6 +186,48 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           {contactsList.length} contacts avec email a contacter
         </p>
       </div>
+
+      {/* Existing campaigns for this search */}
+      {campaignsList.length > 0 && !campaignId && (
+        <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
+          <h3 className="font-semibold text-sm text-gray-700">
+            Campagnes existantes ({campaignsList.length})
+          </h3>
+          <div className="space-y-2">
+            {campaignsList.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      c.status === "active" ? "bg-green-500" : "bg-orange-500"
+                    }`}
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">{c.nom}</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      {c.sent || 0}/{c.total_leads || 0} envoyes
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onComplete(c.id)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Voir analytics →
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="border-t pt-3">
+            <p className="text-xs text-gray-500">
+              Ou creer une nouvelle campagne ci-dessous
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Campaign status banner */}
       {campaignData && (
@@ -187,7 +247,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
               }`}
             />
             <span className="text-sm font-medium">
-              {campaignStatus === "active" ? "Campagne active" : "Campagne en pause"}
+              {campaignData.nom || (campaignStatus === "active" ? "Campagne active" : "Campagne en pause")}
             </span>
             <span className="text-xs text-gray-500">
               {campaignData.sent || 0}/{campaignData.total_leads || 0} envoyes
@@ -223,6 +283,20 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         </div>
       )}
 
+      {/* Duplicate warning */}
+      {duplicateWarning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+          <strong>{duplicateWarning.count} contact{duplicateWarning.count > 1 ? "s" : ""} exclu{duplicateWarning.count > 1 ? "s" : ""}</strong> car leur entreprise
+          a deja ete contactee dans une campagne precedente.
+          {duplicateWarning.domains.length > 0 && (
+            <div className="text-xs mt-1 text-amber-600">
+              Domaines : {[...new Set(duplicateWarning.domains)].slice(0, 10).join(", ")}
+              {duplicateWarning.domains.length > 10 && ` (+${duplicateWarning.domains.length - 10})`}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Phrase generation progress */}
       {generatingPhrases && (
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 flex items-center gap-3">
@@ -230,6 +304,19 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           <span className="text-sm text-purple-700">
             Generation des phrases personnalisees IA... ({phraseProgress.generated}/{phraseProgress.total})
           </span>
+        </div>
+      )}
+
+      {/* Campaign name */}
+      {!campaignId && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <label className="block text-xs text-gray-500 mb-1">Nom de la campagne</label>
+          <input
+            value={nom}
+            onChange={(e) => setNom(e.target.value)}
+            placeholder="Ex: Fondateurs EdTech - Mars 2026"
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
         </div>
       )}
 

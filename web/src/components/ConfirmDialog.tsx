@@ -5,6 +5,7 @@ interface Props {
   title: string;
   message: string;
   confirmLabel?: string;
+  variant?: "default" | "danger";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -14,6 +15,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = "Confirmer",
+  variant = "default",
   onConfirm,
   onCancel,
 }: Props) {
@@ -47,7 +49,11 @@ export function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 min-h-[44px]"
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg min-h-[44px] ${
+              variant === "danger"
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
           >
             {confirmLabel}
           </button>

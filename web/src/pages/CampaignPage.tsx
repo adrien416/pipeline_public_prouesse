@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases } from "../api/client";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -71,6 +72,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   } | null>(null);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[] });
+  const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -192,12 +194,36 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   });
 
   const toggleStatus = useMutation({
-    mutationFn: () =>
-      updateCampaign({
-        id: campaignId,
-        status: campaignStatus === "active" ? "paused" : "active",
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaign"] }),
+    mutationFn: (targetId?: string) => {
+      const id = targetId || campaignId;
+      const camp = targetId
+        ? campaignsList.find((c) => c.id === targetId)
+        : campaignData;
+      const currentStatus = camp?.status || "draft";
+      return updateCampaign({
+        id,
+        status: currentStatus === "active" ? "paused" : "active",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+  });
+
+  const cancelCampaign = useMutation({
+    mutationFn: (targetId: string) =>
+      updateCampaign({ id: targetId, status: "cancelled" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      // If we cancelled the currently viewed campaign, clear it
+      if (cancelConfirm === campaignId) {
+        setCampaignId(null);
+      }
+      setCancelConfirm(null);
+    },
   });
 
   async function doSendAll() {
@@ -274,27 +300,58 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             {campaignsList.map((c) => (
               <div
                 key={c.id}
-                className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3"
+                className="bg-gray-50 rounded-lg px-4 py-3 space-y-2"
               >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      c.status === "active" ? "bg-green-500" : "bg-orange-500"
-                    }`}
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-gray-900">{c.nom}</span>
-                    <span className="text-xs text-gray-500 ml-2">
-                      {c.sent || 0}/{c.total_leads || 0} envoyes
-                    </span>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`h-2 w-2 rounded-full shrink-0 ${
+                        c.status === "active"
+                          ? "bg-green-500"
+                          : c.status === "cancelled"
+                          ? "bg-red-400"
+                          : "bg-orange-500"
+                      }`}
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">{c.nom}</span>
+                      <span className="text-xs text-gray-500 ml-2">
+                        {c.sent || 0}/{c.total_leads || 0} envoyes
+                      </span>
+                      {c.status === "cancelled" && (
+                        <span className="text-xs text-red-500 ml-2">Annulee</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.status !== "cancelled" && (
+                      <>
+                        <button
+                          onClick={() => toggleStatus.mutate(c.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                            c.status === "active"
+                              ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                              : "bg-green-100 text-green-700 hover:bg-green-200"
+                          }`}
+                        >
+                          {c.status === "active" ? "Pause" : "Reprendre"}
+                        </button>
+                        <button
+                          onClick={() => setCancelConfirm(c.id)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                        >
+                          Annuler
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => onComplete(c.id)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    >
+                      Analytics
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={() => onComplete(c.id)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  Voir analytics →
-                </button>
               </div>
             ))}
           </div>
@@ -312,6 +369,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           className={`rounded-lg px-4 py-3 space-y-3 ${
             campaignStatus === "active"
               ? "bg-green-50 border border-green-200"
+              : campaignStatus === "cancelled"
+              ? "bg-red-50 border border-red-200"
               : campaignStatus === "paused"
               ? "bg-orange-50 border border-orange-200"
               : "bg-gray-50 border border-gray-200"
@@ -321,35 +380,53 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             <div className="flex items-center gap-2">
               <span
                 className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                  campaignStatus === "active" ? "bg-green-500" : "bg-orange-500"
+                  campaignStatus === "active"
+                    ? "bg-green-500"
+                    : campaignStatus === "cancelled"
+                    ? "bg-red-400"
+                    : "bg-orange-500"
                 }`}
               />
               <span className="text-sm font-medium">
-                {campaignData.nom || (campaignStatus === "active" ? "Campagne active" : "Campagne en pause")}
+                {campaignData.nom || (
+                  campaignStatus === "active" ? "Campagne active"
+                  : campaignStatus === "cancelled" ? "Campagne annulee"
+                  : "Campagne en pause"
+                )}
               </span>
               <span className="text-xs text-gray-500">
                 {campaignData.sent || 0}/{campaignData.total_leads || 0} envoyes
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => toggleStatus.mutate()}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                  campaignStatus === "active"
-                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                    : "bg-green-100 text-green-700 hover:bg-green-200"
-                }`}
-              >
-                {campaignStatus === "active" ? "Pause" : "Reprendre"}
-              </button>
-              {campaignStatus === "active" && (
-                <button
-                  onClick={doSendAll}
-                  disabled={sending}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
-                >
-                  {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
-                </button>
+              {campaignStatus !== "cancelled" && (
+                <>
+                  <button
+                    onClick={() => toggleStatus.mutate()}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                      campaignStatus === "active"
+                        ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                        : "bg-green-100 text-green-700 hover:bg-green-200"
+                    }`}
+                  >
+                    {campaignStatus === "active" ? "Pause" : "Reprendre"}
+                  </button>
+                  {campaignStatus === "active" && (
+                    <button
+                      onClick={doSendAll}
+                      disabled={sending}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
+                    >
+                      {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setCancelConfirm(campaignId!)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                  >
+                    Annuler
+                  </button>
+                </>
               )}
               <button
                 onClick={() => onComplete(campaignId!)}
@@ -600,6 +677,16 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!cancelConfirm}
+        title="Annuler la campagne"
+        message="Les emails non envoyes ne seront pas envoyes. Les contacts seront liberes et pourront etre reassignes a une nouvelle campagne. Les emails deja envoyes ne sont pas affectes."
+        confirmLabel="Annuler la campagne"
+        variant="danger"
+        onConfirm={() => cancelConfirm && cancelCampaign.mutate(cancelConfirm)}
+        onCancel={() => setCancelConfirm(null)}
+      />
     </div>
   );
 }

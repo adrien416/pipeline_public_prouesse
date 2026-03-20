@@ -150,7 +150,7 @@ export default async (request: Request) => {
     });
   }
 
-  // PUT — update campaign (pause/resume/edit)
+  // PUT — update campaign (pause/resume/cancel/edit)
   if (request.method === "PUT") {
     const body = await request.json();
     const { id, ...updates } = body;
@@ -164,6 +164,31 @@ export default async (request: Request) => {
       await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS),
       updated,
     ));
+
+    // If cancelling, release queued contacts
+    if (updates.status === "cancelled") {
+      const allContacts = await readAll("Contacts");
+      const queued = allContacts.filter(
+        (c) => c.campagne_id === id && c.email_status === "queued"
+      );
+      if (queued.length > 0) {
+        const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+        const contactUpdates = queued
+          .filter((c) => c._rowIndex)
+          .map((c) => ({
+            rowIndex: Number(c._rowIndex),
+            values: toRow(contactHeaders, {
+              ...c,
+              campagne_id: "",
+              email_status: "",
+              date_modification: new Date().toISOString(),
+            }),
+          }));
+        if (contactUpdates.length > 0) {
+          await batchUpdateRows("Contacts", contactUpdates);
+        }
+      }
+    }
 
     return json({ campaign: updated });
   }

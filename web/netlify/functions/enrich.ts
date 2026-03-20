@@ -51,6 +51,29 @@ export default async (request: Request) => {
     const pending = qualified.filter((c) => c.enrichissement_status?.startsWith("pending:"));
 
     if (pending.length > 0) {
+      // Reset contacts stuck in pending for > 10 minutes
+      const TEN_MIN = 10 * 60 * 1000;
+      const stuckPending = pending.filter((c) => {
+        const mod = c.date_modification ? new Date(c.date_modification).getTime() : 0;
+        return Date.now() - mod > TEN_MIN;
+      });
+      if (stuckPending.length > 0) {
+        const resets: Array<{ rowIndex: number; values: string[] }> = [];
+        for (const c of stuckPending) {
+          if (!c._rowIndex) continue;
+          resets.push({
+            rowIndex: Number(c._rowIndex),
+            values: toRow(sheetHeaders, {
+              ...c,
+              enrichissement_status: "",
+              date_modification: new Date().toISOString(),
+            }),
+          });
+        }
+        if (resets.length > 0) await batchUpdateRows("Contacts", resets);
+        return json({ enriched: 0, not_found: 0, errors: 0, done: false, reset: stuckPending.length });
+      }
+
       const enrichmentId = pending[0].enrichissement_status.split(":")[1];
 
       const pollResp = await fetch(

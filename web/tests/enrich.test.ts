@@ -215,6 +215,7 @@ describe("enrich handler — poll pending", () => {
     const pending = makeContact({
       score_total: "8",
       enrichissement_status: "pending:enr-123",
+      date_modification: new Date().toISOString(),
     });
     mockReadAll.mockResolvedValue([pending]);
 
@@ -237,6 +238,7 @@ describe("enrich handler — poll pending", () => {
     const pending = makeContact({
       score_total: "8",
       enrichissement_status: "pending:enr-123",
+      date_modification: new Date().toISOString(),
     });
     mockReadAll.mockResolvedValue([pending]);
 
@@ -258,6 +260,7 @@ describe("enrich handler — poll pending", () => {
     const pending = makeContact({
       score_total: "8",
       enrichissement_status: "pending:enr-123",
+      date_modification: new Date().toISOString(),
     });
     mockReadAll.mockResolvedValue([pending]);
 

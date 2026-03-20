@@ -1,15 +1,21 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { launchSearch, excludeContacts } from "../api/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { launchSearch, excludeContacts, fetchRecherches } from "../api/client";
 import type { SearchParams } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
   onComplete: (rechercheId: string, mode: "levee_de_fonds" | "cession") => void;
+  onLoadRecherche?: (id: string, mode: "levee_de_fonds" | "cession", tab?: "scoring" | "enrich") => void;
 }
 
-export function SearchPage({ onComplete }: Props) {
+export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const queryClient = useQueryClient();
+
+  const previousSearches = useQuery({
+    queryKey: ["recherches"],
+    queryFn: fetchRecherches,
+  });
   const [description, setDescription] = useState("");
   const [mode, setMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
   const [location, setLocation] = useState("France");
@@ -45,6 +51,44 @@ export function SearchPage({ onComplete }: Props) {
           Decris ta cible en francais, l'IA traduit en filtres Fullenrich
         </p>
       </div>
+
+      {/* Previous searches */}
+      {previousSearches.data?.recherches && previousSearches.data.recherches.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Recherches precedentes</h3>
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {previousSearches.data.recherches.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                <div className="flex-1 min-w-0 mr-3">
+                  <span className="font-medium text-gray-900 truncate block">{r.description}</span>
+                  <span className="text-xs text-gray-400">
+                    {r.mode === "cession" ? "Cession" : "Levee"} — {r.nb_resultats} resultats — {r.date ? new Date(r.date).toLocaleDateString("fr-FR") : ""}
+                  </span>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onLoadRecherche?.(r.id, (r.mode as "levee_de_fonds" | "cession") || "levee_de_fonds", "scoring")}
+                    className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"
+                  >
+                    Scoring
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onLoadRecherche?.(r.id, (r.mode as "levee_de_fonds" | "cession") || "levee_de_fonds", "enrich")}
+                    className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded hover:bg-green-100"
+                  >
+                    Enrichissement
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSearch} className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
         {/* Description */}

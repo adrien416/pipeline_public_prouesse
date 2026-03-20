@@ -100,6 +100,11 @@ export function excludeContacts(ids: string[]) {
   });
 }
 
+// ─── Recherches ───
+export function fetchRecherches() {
+  return request<{ recherches: Array<Record<string, string>> }>("/recherches");
+}
+
 // ─── Contacts ───
 export function fetchContacts(recherche_id?: string) {
   const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";

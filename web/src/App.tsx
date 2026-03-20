@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Layout, type Tab } from "./components/Layout";
@@ -28,26 +28,46 @@ const TAB_INDEX: Record<Tab, number> = {
   analytics: 4,
 };
 
+function loadSavedState() {
+  try {
+    const saved = localStorage.getItem("prouesse_session");
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ }
+  return null;
+}
+
 function AppContent() {
   const { authenticated, loading } = useAuth();
-  const [tab, setTab] = useState<Tab>("search");
-  const [rechercheId, setRechercheId] = useState<string | null>(null);
-  const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">("levee_de_fonds");
-  const [campaignId, setCampaignId] = useState<string | null>(null);
-  /**
-   * Tracks the highest step the user has unlocked.
-   * 0 = search always available
-   * 1 = scoring unlocked after search
-   * 2 = enrich unlocked after scoring
-   * etc.
-   */
-  const [maxReachedStep, setMaxReachedStep] = useState(0);
+
+  const saved = loadSavedState();
+  const [tab, setTab] = useState<Tab>(saved?.tab || "search");
+  const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
+  const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">(saved?.searchMode || "levee_de_fonds");
+  const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
+  const [maxReachedStep, setMaxReachedStep] = useState(saved?.maxReachedStep || 0);
+
+  // Persist state to localStorage
+  useEffect(() => {
+    localStorage.setItem("prouesse_session", JSON.stringify({
+      tab, rechercheId, searchMode, campaignId, maxReachedStep,
+    }));
+  }, [tab, rechercheId, searchMode, campaignId, maxReachedStep]);
 
   /** Advance to a tab AND unlock it (and all previous tabs). */
   function goTo(target: Tab) {
     const idx = TAB_INDEX[target];
     setMaxReachedStep((prev) => Math.max(prev, idx));
     setTab(target);
+  }
+
+  /** Load a previous search (from search selector) */
+  function loadRecherche(id: string, mode: "levee_de_fonds" | "cession", targetTab?: Tab) {
+    setRechercheId(id);
+    setSearchMode(mode);
+    setMaxReachedStep((prev) => Math.max(prev, 2)); // Unlock up to enrich
+    if (targetTab) {
+      setTab(targetTab);
+    }
   }
 
   if (loading) {
@@ -69,6 +89,7 @@ function AppContent() {
             setSearchMode(mode);
             goTo("scoring");
           }}
+          onLoadRecherche={loadRecherche}
         />
       )}
       {tab === "scoring" && rechercheId && (

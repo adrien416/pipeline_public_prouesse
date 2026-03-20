@@ -3,7 +3,6 @@ import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 
 const FULLENRICH_BASE = "https://app.fullenrich.com";
-const BATCH_SIZE = 3;
 
 function fullenrichHeaders() {
   const key = process.env.FULLENRICH_API_KEY;
@@ -96,10 +95,23 @@ export default async (request: Request) => {
             const contact = pending[i];
             if (!contact._rowIndex) continue;
 
-            const resultEntry = resultDatas[i];
+            // Match result by index (Fullenrich returns results in same order as request)
+            // Also try matching by linkedin/name as fallback
+            let resultEntry = resultDatas[i];
+            if (!resultEntry && resultDatas.length > 0) {
+              resultEntry = resultDatas.find((r: any) => {
+                const rl = r?.contact?.linkedin_url || r?.linkedin_url || "";
+                return rl && contact.linkedin && rl.includes(contact.linkedin.replace(/\/$/, "").split("/").pop() || "___");
+              }) ?? resultDatas.find((r: any) => {
+                const ln = (r?.contact?.last_name || r?.last_name || "").toLowerCase();
+                return ln && ln === contact.nom.toLowerCase();
+              });
+            }
+
             const email =
               resultEntry?.contact?.most_probable_email ??
               resultEntry?.contact?.emails?.[0]?.email ??
+              resultEntry?.most_probable_email ??
               resultEntry?.email ??
               "";
 
@@ -158,7 +170,8 @@ export default async (request: Request) => {
       return json({ enriched: 0, not_found: 0, errors: 0, done: true });
     }
 
-    const batch = toEnrich.slice(0, BATCH_SIZE);
+    // Send ALL contacts in a single bulk request
+    const batch = toEnrich;
 
     const datas = batch.map((c) => ({
       firstname: c.prenom || "",

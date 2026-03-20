@@ -44,7 +44,7 @@ function AppContent() {
   const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
   const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">(saved?.searchMode || "levee_de_fonds");
   const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
-  const [maxReachedStep, setMaxReachedStep] = useState(saved?.maxReachedStep || 0);
+  const [maxReachedStep, setMaxReachedStep] = useState<number>(saved?.maxReachedStep || 0);
 
   // Persist state to localStorage
   useEffect(() => {

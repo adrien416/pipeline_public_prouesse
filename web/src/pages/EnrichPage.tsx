@@ -39,7 +39,7 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
         const r = await launchEnrichment(rechercheId);
         total = { enriched: total.enriched + r.enriched, not_found: total.not_found + r.not_found, errors: total.errors + r.errors };
         isDone = r.done;
-        if (!isDone) await new Promise((r) => setTimeout(r, 2000));
+        if (!isDone) await new Promise((r) => setTimeout(r, 15000));
       }
       setResult(total);
       qc.invalidateQueries({ queryKey: ["contacts"] });

@@ -51,10 +51,8 @@ export default async (request: Request) => {
     const pending = qualified.filter((c) => c.enrichissement_status?.startsWith("pending:"));
 
     if (pending.length > 0) {
-      // Extract enrichment_id from first pending contact
       const enrichmentId = pending[0].enrichissement_status.split(":")[1];
 
-      // Poll once (no waiting)
       const pollResp = await fetch(
         `${FULLENRICH_BASE}/api/v1/contact/enrich/bulk/${enrichmentId}`,
         { headers: fullenrichHeaders() }
@@ -62,9 +60,11 @@ export default async (request: Request) => {
 
       if (pollResp.ok) {
         const pollData = await pollResp.json();
+        const status = (pollData.status ?? "").toUpperCase();
 
-        if (pollData.status === "completed" || pollData.status === "failed") {
-          const results = pollData.contacts ?? pollData.results ?? [];
+        if (status === "COMPLETED" || status === "FAILED") {
+          // Results are in pollData.datas[].contact.most_probable_email
+          const resultDatas: any[] = pollData.datas ?? [];
           const updates: Array<{ rowIndex: number; values: string[] }> = [];
           let enriched = 0;
           let not_found = 0;
@@ -73,8 +73,12 @@ export default async (request: Request) => {
             const contact = pending[i];
             if (!contact._rowIndex) continue;
 
-            const resultContact = results?.[i];
-            const email = resultContact?.email ?? resultContact?.professional_email ?? "";
+            const resultEntry = resultDatas[i];
+            const email =
+              resultEntry?.contact?.most_probable_email ??
+              resultEntry?.contact?.emails?.[0]?.email ??
+              resultEntry?.email ??
+              "";
 
             updates.push({
               rowIndex: Number(contact._rowIndex),
@@ -92,11 +96,20 @@ export default async (request: Request) => {
 
           if (updates.length > 0) await batchUpdateRows("Contacts", updates);
 
-          const remaining = qualified.filter(
-            (c) => c.enrichissement_status !== "ok" && !c.enrichissement_status?.startsWith("pending:")
-          ).length - 0; // pending ones are now done
+          // Check if more contacts need enriching
+          const remainingToEnrich = qualified.filter(
+            (c) =>
+              c.enrichissement_status !== "ok" &&
+              c.enrichissement_status !== "pas_de_resultat" &&
+              !pending.some((p) => p.id === c.id)
+          ).length;
 
-          return json({ enriched, not_found, errors: 0, done: remaining <= 0 && pending.length === qualified.filter(c => c.enrichissement_status !== "ok").length });
+          return json({
+            enriched,
+            not_found,
+            errors: 0,
+            done: remainingToEnrich === 0,
+          });
         }
       }
 

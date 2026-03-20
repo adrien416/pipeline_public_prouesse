@@ -220,8 +220,8 @@ describe("enrich handler — poll pending", () => {
 
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({
-        status: "completed",
-        contacts: [{ email: "jean@greentech.fr" }],
+        status: "COMPLETED",
+        datas: [{ contact: { most_probable_email: "jean@greentech.fr" } }],
       }))
     ) as typeof fetch;
 
@@ -242,8 +242,8 @@ describe("enrich handler — poll pending", () => {
 
     globalThis.fetch = vi.fn(async () =>
       new Response(JSON.stringify({
-        status: "completed",
-        contacts: [{ email: "" }],
+        status: "COMPLETED",
+        datas: [{ contact: { most_probable_email: "" } }],
       }))
     ) as typeof fetch;
 

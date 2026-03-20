@@ -63,6 +63,48 @@ function EditableScore({
   );
 }
 
+/** Feedback text field — saved on blur or Enter */
+function FeedbackCell({
+  value,
+  onSave,
+  saving,
+}: {
+  value: string;
+  onSave: (v: string) => void;
+  saving: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  function commit() {
+    if (dirty && draft !== value) {
+      onSave(draft);
+      setDirty(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <textarea
+        value={draft}
+        onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); } }}
+        rows={1}
+        placeholder="Ton avis..."
+        className={`w-full text-xs border rounded px-2 py-1 resize-none focus:ring-2 focus:ring-amber-400 ${
+          saving ? "bg-amber-50 border-amber-300" : value ? "border-amber-200 bg-amber-50/50" : "border-gray-200"
+        }`}
+      />
+      {value && (
+        <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-400 rounded-full" title="Feedback enregistre" />
+      )}
+    </div>
+  );
+}
+
 export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
@@ -101,6 +143,24 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
       setScoring(false);
     }
   }, [rechercheId, queryClient]);
+
+  /** Save a feedback comment to the backend */
+  async function saveFeedback(contactId: string, feedback: string) {
+    setSaving((prev) => new Set(prev).add(contactId));
+    try {
+      await updateContact(contactId, { score_feedback: feedback });
+      const list = contacts.data?.contacts || [];
+      queryClient.setQueryData(["contacts", rechercheId], {
+        contacts: list.map((x) =>
+          x.id === contactId ? { ...x, score_feedback: feedback } : x
+        ),
+      });
+    } catch (err) {
+      setError(`Erreur: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSaving((prev) => { const s = new Set(prev); s.delete(contactId); return s; });
+    }
+  }
 
   /** Save a single score field to the backend and update local cache */
   async function saveScore(contactId: string, field: "score_1" | "score_2", newValue: number) {
@@ -253,6 +313,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                 </th>
                 <th className="px-3 py-2 text-center">Total</th>
                 <th className="px-3 py-2 text-left">Raison</th>
+                <th className="px-3 py-2 text-left">Ton feedback</th>
               </tr>
             </thead>
             <tbody>
@@ -346,6 +407,17 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                         </button>
                       ) : (
                         <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 min-w-[180px]">
+                      {scored ? (
+                        <FeedbackCell
+                          value={c.score_feedback || ""}
+                          onSave={(v) => saveFeedback(c.id, v)}
+                          saving={isSaving}
+                        />
+                      ) : (
+                        <span className="text-gray-300 text-xs">-</span>
                       )}
                     </td>
                   </tr>

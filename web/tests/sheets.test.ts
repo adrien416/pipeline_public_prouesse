@@ -53,6 +53,7 @@ describe("toRow", () => {
       score_2: "3",
       score_total: "7",
       score_raison: "Good company",
+      score_feedback: "",
       recherche_id: "r1",
       campagne_id: "",
       email_status: "",
@@ -69,15 +70,15 @@ describe("toRow", () => {
     expect(row[3]).toBe("jean@example.com"); // email
     expect(row[4]).toBe("ACME"); // entreprise
     expect(row[14]).toBe("7"); // score_total
-    expect(row[16]).toBe("r1"); // recherche_id
+    expect(row[17]).toBe("r1"); // recherche_id
   });
 });
 
 // ─── Headers constants ───
 
 describe("CONTACTS_HEADERS", () => {
-  it("has 23 columns", () => {
-    expect(CONTACTS_HEADERS).toHaveLength(23);
+  it("has 24 columns", () => {
+    expect(CONTACTS_HEADERS).toHaveLength(24);
   });
 
   it("starts with id", () => {
@@ -89,7 +90,7 @@ describe("CONTACTS_HEADERS", () => {
       "id", "nom", "prenom", "email", "entreprise", "titre",
       "domaine", "secteur", "linkedin", "telephone",
       "statut", "enrichissement_status",
-      "score_1", "score_2", "score_total", "score_raison",
+      "score_1", "score_2", "score_total", "score_raison", "score_feedback",
       "recherche_id", "campagne_id",
       "email_status", "email_sent_at", "phrase_perso",
       "date_creation", "date_modification",

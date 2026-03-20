@@ -307,6 +307,7 @@ export default async (request: Request) => {
       score_2: "",
       score_total: "",
       score_raison: "",
+      score_feedback: "",
       recherche_id: rechercheId,
       campagne_id: "",
       email_status: "",
@@ -326,7 +327,7 @@ export default async (request: Request) => {
         headers_count: headers.length,
         headers_sample: headers.slice(0, 5).join(",") + "..." + headers.slice(15, 18).join(","),
         first_row_sample: rows[0]
-          ? `id=${rows[0][0]}, rech_idx16=${rows[0][16]}, cols=${rows[0].length}`
+          ? `id=${rows[0][0]}, rech_idx17=${rows[0][17]}, cols=${rows[0].length}`
           : "none",
         rows_count: rows.length,
       };

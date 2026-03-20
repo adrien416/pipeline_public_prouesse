@@ -55,6 +55,7 @@ async function handlePost(request: Request) {
     score_2: "",
     score_total: "",
     score_raison: "",
+    score_feedback: "",
     recherche_id: body.recherche_id ?? "",
     campagne_id: "",
     email_status: "",

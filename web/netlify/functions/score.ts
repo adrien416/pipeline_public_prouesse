@@ -92,18 +92,41 @@ JSON uniquement :
 {"impact_env": <1-5>, "signaux_vente": <1-5>, "raison": "<2-3 phrases>"}`;
 }
 
+/**
+ * Build a "learning" block from previous feedbacks in the same search.
+ * This teaches the AI from the user's corrections.
+ */
+function buildFeedbackContext(contacts: Record<string, string>[]): string {
+  const withFeedback = contacts.filter(
+    (c) => c.score_feedback && c.score_total
+  );
+  if (withFeedback.length === 0) return "";
+
+  const examples = withFeedback.slice(0, 10).map((c) => {
+    return `- ${c.entreprise} (${c.secteur}): score IA ${c.score_1}/${c.score_2}=${c.score_total}/10. Feedback utilisateur: "${c.score_feedback}"`;
+  }).join("\n");
+
+  return `\n\nAPPRENTISSAGE — L'utilisateur a corrigé/commenté des scorings précédents. Adapte tes critères en conséquence :
+${examples}
+Tiens compte de ces retours pour affiner ton scoring.`;
+}
+
 async function scoreContact(
   contact: Record<string, string>,
   mode: string,
-  metaDesc: string
+  metaDesc: string,
+  allContacts?: Record<string, string>[]
 ): Promise<{ score_1: number; score_2: number; score_total: number; raison: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie — ajoute-la dans les variables d'environnement Netlify");
 
-  const prompt =
+  const basePrompt =
     mode === "cession"
       ? buildCessionPrompt(contact, metaDesc)
       : buildLeveePrompt(contact, metaDesc);
+
+  const feedbackContext = allContacts ? buildFeedbackContext(allContacts) : "";
+  const prompt = basePrompt + feedbackContext;
 
   const model = "claude-haiku-4-5-20251001";
 
@@ -262,7 +285,7 @@ export default async (request: Request) => {
     // Score one contact
     const contact = unscored[0];
     const metaDesc = await fetchMetaDescription(contact.domaine);
-    const scores = await scoreContact(contact, mode, metaDesc);
+    const scores = await scoreContact(contact, mode, metaDesc, searchContacts);
 
     const rowIndex = Number(contact._rowIndex);
     if (!rowIndex || rowIndex < 2) {

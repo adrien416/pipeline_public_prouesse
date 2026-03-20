@@ -201,7 +201,21 @@ export async function getHeadersForWrite(
 ): Promise<string[]> {
   if (_headerCache.has(tabName)) return _headerCache.get(tabName)!;
   const h = await readHeaders(tabName);
-  const headers = h.length > 0 ? h : fallback;
+  let headers: string[];
+  if (h.length > 0) {
+    headers = h;
+  } else {
+    // Sheet is empty — write headers to row 1
+    headers = fallback;
+    const sheets = getSheets();
+    const endCol = String.fromCharCode(64 + headers.length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: getSpreadsheetId(),
+      range: `${tabName}!A1:${endCol}1`,
+      valueInputOption: "RAW",
+      requestBody: { values: [headers] },
+    });
+  }
   _headerCache.set(tabName, headers);
   return headers;
 }
@@ -211,7 +225,7 @@ export const CONTACTS_HEADERS = [
   "id", "nom", "prenom", "email", "entreprise", "titre",
   "domaine", "secteur", "linkedin", "telephone",
   "statut", "enrichissement_status",
-  "score_1", "score_2", "score_total", "score_raison",
+  "score_1", "score_2", "score_total", "score_raison", "score_feedback",
   "recherche_id", "campagne_id",
   "email_status", "email_sent_at", "phrase_perso",
   "date_creation", "date_modification",

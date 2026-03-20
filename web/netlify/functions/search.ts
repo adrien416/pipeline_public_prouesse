@@ -303,6 +303,7 @@ export default async (request: Request) => {
       telephone: "",
       statut: "nouveau",
       enrichissement_status: "",
+      enrichissement_retry: "",
       score_1: "",
       score_2: "",
       score_total: "",
@@ -344,8 +345,8 @@ export default async (request: Request) => {
 
       // Verify recherche_id in last written row
       const lastRow = writeDebug.total_rows_after_write as number;
-      const verifyLast = await readRawRange(`Contacts!A${lastRow}:W${lastRow}`);
-      writeDebug.last_row_rech = verifyLast[0]?.[16] ?? "MISSING";
+      const verifyLast = await readRawRange(`Contacts!A${lastRow}:Y${lastRow}`);
+      writeDebug.last_row_rech = verifyLast[0]?.[18] ?? "MISSING";
     }
 
     return json({

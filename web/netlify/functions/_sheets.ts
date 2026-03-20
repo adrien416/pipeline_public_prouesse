@@ -7,6 +7,17 @@ import { google, sheets_v4 } from "googleapis";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
+/** Convert 1-based column number to sheet letter (1=A, 26=Z, 27=AA, etc.) */
+function colLetter(n: number): string {
+  let s = "";
+  while (n > 0) {
+    n--;
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
 function getAuth() {
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!b64) throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY non définie");
@@ -73,7 +84,7 @@ export async function appendRow(tabName: string, values: string[]): Promise<void
   // Find the true last row by reading column A
   const colA = await readRawRange(`${tabName}!A:A`);
   const targetRow = colA.length + 1;
-  const endCol = String.fromCharCode(64 + values.length);
+  const endCol = colLetter(values.length);
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
@@ -93,7 +104,7 @@ export async function updateRow(
   values: string[]
 ): Promise<void> {
   const sheets = getSheets();
-  const endCol = String.fromCharCode(64 + values.length); // A=65
+  const endCol = colLetter(values.length); // A=65
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
     range: `${tabName}!A${rowIndex}:${endCol}${rowIndex}`,
@@ -145,7 +156,7 @@ export async function appendRows(tabName: string, rows: string[][]): Promise<voi
   const colA = await readRawRange(`${tabName}!A:A`);
   const startRow = colA.length + 1; // 1-indexed, after last data row
   const endRow = startRow + rows.length - 1;
-  const endCol = String.fromCharCode(64 + rows[0].length); // W for 23 cols
+  const endCol = colLetter(rows[0].length);
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
@@ -165,7 +176,7 @@ export async function batchUpdateRows(
   if (updates.length === 0) return;
   const sheets = getSheets();
   const data = updates.map((u) => {
-    const endCol = String.fromCharCode(64 + u.values.length);
+    const endCol = colLetter(u.values.length);
     return {
       range: `${tabName}!A${u.rowIndex}:${endCol}${u.rowIndex}`,
       values: [u.values],
@@ -203,12 +214,28 @@ export async function getHeadersForWrite(
   const h = await readHeaders(tabName);
   let headers: string[];
   if (h.length > 0) {
-    headers = h;
+    // Check if code has new columns not yet in the sheet
+    const missing = fallback.filter((col) => !h.includes(col));
+    if (missing.length > 0) {
+      // Add missing columns to the end of existing headers
+      headers = [...h, ...missing];
+      const sheets = getSheets();
+      const endCol = colLetter(headers.length);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: getSpreadsheetId(),
+        range: `${tabName}!A1:${endCol}1`,
+        valueInputOption: "RAW",
+        requestBody: { values: [headers] },
+      });
+      console.log(`Sheet "${tabName}": added missing columns: ${missing.join(", ")}`);
+    } else {
+      headers = h;
+    }
   } else {
     // Sheet is empty — write headers to row 1
     headers = fallback;
     const sheets = getSheets();
-    const endCol = String.fromCharCode(64 + headers.length);
+    const endCol = colLetter(headers.length);
     await sheets.spreadsheets.values.update({
       spreadsheetId: getSpreadsheetId(),
       range: `${tabName}!A1:${endCol}1`,

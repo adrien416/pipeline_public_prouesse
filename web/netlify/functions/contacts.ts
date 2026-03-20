@@ -51,6 +51,7 @@ async function handlePost(request: Request) {
     telephone: body.telephone ?? "",
     statut: "nouveau",
     enrichissement_status: "",
+    enrichissement_retry: "",
     score_1: "",
     score_2: "",
     score_total: "",

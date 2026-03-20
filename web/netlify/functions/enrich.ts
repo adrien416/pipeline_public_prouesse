@@ -127,11 +127,20 @@ export default async (request: Request) => {
               !pending.some((p) => p.id === c.id)
           ).length;
 
+          // Re-read contacts to return fresh data
+          const freshContacts = await readAll("Contacts");
+          const freshQualified = freshContacts.filter(
+            (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
+          );
+
           return json({
             enriched,
             not_found,
             errors: 0,
-            done: remainingToEnrich === 0,
+            done: freshQualified.every(
+              (c) => c.enrichissement_status === "ok" || c.enrichissement_status === "pas_de_resultat"
+            ),
+            contacts: freshQualified,
           });
         }
       }

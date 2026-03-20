@@ -18,6 +18,8 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
+    // Refresh contacts while enriching to show live updates
+    refetchInterval: enriching ? 10000 : false,
   });
 
   const estimate = useQuery({
@@ -38,8 +40,22 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
       while (!isDone) {
         const r = await launchEnrichment(rechercheId);
         total = { enriched: total.enriched + r.enriched, not_found: total.not_found + r.not_found, errors: total.errors + r.errors };
+        // Update contacts cache immediately if response includes them
+        if (r.contacts?.length) {
+          const prev = qc.getQueryData<{ contacts: Record<string, string>[] }>(["contacts", rechercheId]);
+          if (prev) {
+            const enrichedIds = new Set(r.contacts.map((c) => c.id));
+            const merged = prev.contacts.map((c) => {
+              if (enrichedIds.has(c.id)) return r.contacts!.find((e) => e.id === c.id) || c;
+              return c;
+            });
+            qc.setQueryData(["contacts", rechercheId], { contacts: merged });
+          }
+        }
         isDone = r.done;
-        if (!isDone) await new Promise((r) => setTimeout(r, 15000));
+        if (!isDone) {
+          await new Promise((r) => setTimeout(r, 15000));
+        }
       }
       setResult(total);
       qc.invalidateQueries({ queryKey: ["contacts"] });
@@ -199,22 +215,27 @@ export function EnrichPage({ rechercheId, onComplete }: Props) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  // Normalize: "pending:xxx" → "pending"
+  const normalized = status?.startsWith("pending:") ? "pending" : (status || "");
+
   const styles: Record<string, string> = {
     ok: "bg-green-100 text-green-700",
     pending: "bg-yellow-100 text-yellow-700",
     erreur: "bg-red-100 text-red-700",
     pas_de_resultat: "bg-gray-100 text-gray-500",
+    "": "bg-blue-50 text-blue-600",
   };
   const labels: Record<string, string> = {
     ok: "Enrichi",
-    pending: "En cours",
+    pending: "En cours...",
     erreur: "Erreur",
     pas_de_resultat: "Pas de resultat",
     "": "A enrichir",
   };
+
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || "bg-gray-100 text-gray-500"}`}>
-      {labels[status] || status || "A enrichir"}
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[normalized] || "bg-gray-100 text-gray-500"}`}>
+      {labels[normalized] || status || "A enrichir"}
     </span>
   );
 }

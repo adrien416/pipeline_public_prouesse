@@ -124,6 +124,19 @@ export function fetchContacts(recherche_id?: string) {
 }
 
 // ─── Campaign ───
+export function generatePhrases(recherche_id: string, mode: string) {
+  return request<{
+    generated: number;
+    total: number;
+    remaining: number;
+    done: boolean;
+    contacts: Array<Record<string, string>>;
+  }>("/generate-phrases", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, mode }),
+  });
+}
+
 export function createCampaign(data: Record<string, unknown>) {
   return request<{ campaign: Record<string, string> }>("/campaign", {
     method: "POST",

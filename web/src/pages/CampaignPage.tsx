@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, triggerSend } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, triggerSend, generatePhrases } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
@@ -57,15 +57,60 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     refetchInterval: 5000,
   });
 
+  const [generatingPhrases, setGeneratingPhrases] = useState(false);
+  const [phraseProgress, setPhraseProgress] = useState({ generated: 0, total: 0 });
+
   const contactsList = contacts.data || [];
   const campaignData = campaign.data?.campaign;
   const campaignStatus = campaignData?.status || "draft";
+
+  // Count contacts missing phrase_perso
+  const missingPhrases = contactsList.filter((c) => !c.phrase_perso).length;
 
   useEffect(() => {
     if (contactsList.length > 0 && !selectedContact) {
       setSelectedContact(contactsList[0]);
     }
   }, [contactsList, selectedContact]);
+
+  // Auto-generate phrases when contacts are loaded
+  useEffect(() => {
+    if (contactsList.length > 0 && missingPhrases > 0 && !generatingPhrases) {
+      doGeneratePhrases();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactsList.length, missingPhrases]);
+
+  async function doGeneratePhrases() {
+    setGeneratingPhrases(true);
+    try {
+      let done = false;
+      while (!done) {
+        const r = await generatePhrases(rechercheId, mode);
+        setPhraseProgress({ generated: r.total - (r.remaining ?? 0), total: r.total });
+        done = r.done;
+        if (r.contacts?.length) {
+          const prev = qc.getQueryData<{ contacts: Record<string, string>[] }>(["contacts", rechercheId]);
+          if (prev) {
+            const updatedIds = new Set(r.contacts.map((c) => c.id));
+            const merged = prev.contacts.map((c) => {
+              if (updatedIds.has(c.id)) return r.contacts.find((e) => e.id === c.id) || c;
+              return c;
+            });
+            qc.setQueryData(["contacts", rechercheId], { contacts: merged });
+          }
+        }
+        if (!done) {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    } catch (err) {
+      console.error("Phrase generation error:", err);
+    } finally {
+      setGeneratingPhrases(false);
+    }
+  }
 
   const create = useMutation({
     mutationFn: () =>
@@ -175,6 +220,16 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
               Analytics →
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Phrase generation progress */}
+      {generatingPhrases && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 flex items-center gap-3">
+          <Spinner className="h-4 w-4 text-purple-600" />
+          <span className="text-sm text-purple-700">
+            Generation des phrases personnalisees IA... ({phraseProgress.generated}/{phraseProgress.total})
+          </span>
         </div>
       )}
 

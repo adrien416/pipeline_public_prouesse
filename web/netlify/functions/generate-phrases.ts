@@ -21,11 +21,15 @@ async function generatePhrase(contact: Record<string, string>, mode: string): Pr
           role: "user",
           content: `Genere une phrase d'accroche personnalisee pour un email de prospection.
 
-Contact : ${contact.prenom} ${contact.nom}, ${contact.titre} chez ${contact.entreprise}
+Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
 Mode : ${mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise"}
 
-Regles : pas de cliche, pas d'invention, 1-2 phrases max, ton professionnel mais humain, tutoiement.
+Regles STRICTES :
+- NE MENTIONNE JAMAIS le prenom ou le nom du contact (le mail commence deja par "Bonjour {Prenom}")
+- Commence directement par le contenu (ex: "J'ai vu que...", "Ton entreprise...", "En tant que...")
+- 1-2 phrases max, ton professionnel mais humain, tutoiement
+- Pas de cliche, pas d'invention
 
 JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
         }],

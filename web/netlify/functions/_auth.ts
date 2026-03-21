@@ -1,16 +1,18 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
-const LOGIN_EMAIL = "adrien@prouesse.vc";
-const LOGIN_PASSWORD_HASH =
-  process.env.LOGIN_PASSWORD_HASH ||
-  "$2b$10$pXkwqe8hWXcDJHF0DwuA8u3bj18ibVNnxZ0xRKKDm3wTlnZjgk002";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
+
+const LOGIN_EMAIL = process.env.LOGIN_EMAIL || "adrien@prouesse.vc";
+
+const LOGIN_PASSWORD_HASH = process.env.LOGIN_PASSWORD_HASH;
+if (!LOGIN_PASSWORD_HASH) throw new Error("LOGIN_PASSWORD_HASH environment variable is required");
 
 export function verifyLogin(email: string, password: string): string | null {
   if (email.toLowerCase() !== LOGIN_EMAIL) return null;
   if (!bcrypt.compareSync(password, LOGIN_PASSWORD_HASH)) return null;
-  return jwt.sign({ email: LOGIN_EMAIL }, JWT_SECRET, { expiresIn: "24h" });
+  return jwt.sign({ email: LOGIN_EMAIL }, JWT_SECRET, { expiresIn: "2h" });
 }
 
 export function verifyToken(token: string): { email: string } | null {

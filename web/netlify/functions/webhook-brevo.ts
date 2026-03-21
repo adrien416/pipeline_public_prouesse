@@ -11,10 +11,17 @@ import {
   toRow,
 } from "./_sheets.js";
 
-// Brevo webhook — no auth required (Brevo sends events here)
+// Brevo webhook — authenticated via shared secret
 export default async (request: Request) => {
   if (request.method !== "POST") {
     return new Response("OK", { status: 200 });
+  }
+
+  // Verify webhook secret (set the same value in Brevo webhook URL as ?secret=XXX)
+  const url = new URL(request.url);
+  const webhookSecret = process.env.BREVO_WEBHOOK_SECRET;
+  if (webhookSecret && url.searchParams.get("secret") !== webhookSecret) {
+    return new Response("Unauthorized", { status: 401 });
   }
 
   try {

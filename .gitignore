@@ -8,13 +8,18 @@ data/errors.log
 
 # Environnement
 .env
+.env.local
+.env.*.local
 venv/
 __pycache__/
 *.pyc
 
-# Credentials Google Sheets
+# Credentials & keys
 credentials.json
 token.json
+*.key
+*.pem
+service-account.json
 
 # Web app
 web/node_modules/

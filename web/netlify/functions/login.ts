@@ -14,7 +14,7 @@ export default async (request: Request) => {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Set-Cookie": `auth_token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`,
+      "Set-Cookie": `auth_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200`,
     },
   });
 };

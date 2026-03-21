@@ -7,5 +7,6 @@ export default defineConfig({
   // @ts-expect-error vitest config in vite
   test: {
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['tests/setup.ts'],
   },
 })

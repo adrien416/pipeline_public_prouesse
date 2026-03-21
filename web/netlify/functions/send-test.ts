@@ -3,6 +3,8 @@ import { requireAuth, json } from "./_auth.js";
 import { findRowById, readAll } from "./_sheets.js";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
+const SENDER_EMAIL = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+const SENDER_NAME = process.env.SENDER_NAME || "Adrien Pannetier";
 
 function textToHtml(text: string): string {
   const escaped = text
@@ -65,14 +67,14 @@ export default async (request: Request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sender: { name: "Adrien Pannetier", email: "adrien@prouesse.vc" },
-        replyTo: { name: "Adrien Pannetier", email: "adrien@prouesse.vc" },
+        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+        replyTo: { name: SENDER_NAME, email: SENDER_EMAIL },
         to: [{ email: test_email, name: "Test" }],
         subject: `[TEST] ${sujet}`,
         textContent: corps,
         htmlContent: textToHtml(corps),
         headers: {
-          "List-Unsubscribe": "<mailto:adrien@prouesse.vc?subject=unsubscribe>",
+          "List-Unsubscribe": `<mailto:${SENDER_EMAIL}?subject=unsubscribe>`,
         },
       }),
     });

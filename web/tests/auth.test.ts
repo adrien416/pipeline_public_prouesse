@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import jwt from "jsonwebtoken";
 import {
   verifyLogin,
@@ -8,7 +8,7 @@ import {
   json,
 } from "../netlify/functions/_auth.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 // ─── verifyLogin ───
 

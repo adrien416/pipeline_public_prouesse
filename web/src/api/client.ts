@@ -168,7 +168,22 @@ export function fetchCampaigns(recherche_id?: string) {
   return request<{ campaigns: Record<string, string>[] }>(`/campaign${qs}`);
 }
 
+export function deleteCampaign(id: string) {
+  return request<{ ok: boolean }>(`/campaign?id=${id}`, { method: "DELETE" });
+}
+
+export function purgeAllCampaigns() {
+  return request<{ deleted: number }>("/campaign?purge_all=true", { method: "DELETE" });
+}
+
 // ─── Send ───
+export function sendTestEmail(campagne_id: string, test_email: string) {
+  return request<{ sent: boolean; test_email: string; subject: string; contact_used: string; error?: string }>("/send-test", {
+    method: "POST",
+    body: JSON.stringify({ campagne_id, test_email }),
+  });
+}
+
 export function triggerSend(campagne_id: string) {
   return request<{ sent: number; remaining: number; error?: string; skipped_domain?: string }>("/send", {
     method: "POST",

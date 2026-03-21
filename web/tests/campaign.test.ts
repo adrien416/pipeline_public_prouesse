@@ -319,9 +319,19 @@ describe("campaign PUT", () => {
 // ─── Unsupported method ───
 
 describe("campaign — unsupported method", () => {
-  it("returns 405 for DELETE", async () => {
-    const req = new Request("http://localhost/api/campaign", { method: "DELETE" });
+  it("returns 405 for PATCH", async () => {
+    const req = new Request("http://localhost/api/campaign", { method: "PATCH" });
     const res = await campaignHandler(req);
     expect(res.status).toBe(405);
+  });
+});
+
+describe("campaign — DELETE", () => {
+  it("returns 400 when no id or purge_all", async () => {
+    const req = new Request("http://localhost/api/campaign", { method: "DELETE" });
+    const res = await campaignHandler(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("id ou purge_all");
   });
 });

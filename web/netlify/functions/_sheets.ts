@@ -189,6 +189,31 @@ export async function batchUpdateRows(
 }
 
 /**
+ * Supprime des lignes d'un onglet Google Sheets.
+ * rowIndices: tableau de numeros de lignes 1-indexed.
+ * Supprime de bas en haut pour eviter le decalage d'index.
+ */
+export async function deleteRows(tabName: string, rowIndices: number[]): Promise<void> {
+  if (rowIndices.length === 0) return;
+  const sorted = [...rowIndices].sort((a, b) => b - a);
+  const sheets = getSheets();
+  const spreadsheetId = getSpreadsheetId();
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const sheetMeta = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  if (!sheetMeta) throw new Error(`Onglet "${tabName}" introuvable`);
+  const sheetId = sheetMeta.properties!.sheetId!;
+
+  const requests = sorted.map((row) => ({
+    deleteDimension: {
+      range: { sheetId, dimension: "ROWS" as const, startIndex: row - 1, endIndex: row },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+}
+
+/**
  * Lit uniquement la 1ère ligne (headers) d'un onglet.
  */
 export async function readHeaders(tabName: string): Promise<string[]> {

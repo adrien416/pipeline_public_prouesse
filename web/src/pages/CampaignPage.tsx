@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
@@ -73,6 +73,11 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[], done: false });
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
+  const [testEmail, setTestEmail] = useState("");
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState(false);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -295,6 +300,47 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     }
   }
 
+  async function doSendTest() {
+    if (!campaignId || !testEmail || testSending) return;
+    setTestSending(true);
+    setTestResult(null);
+    setTestError(null);
+    try {
+      const r = await sendTestEmail(campaignId, testEmail);
+      if (r.sent) {
+        setTestResult(`Email de test envoye a ${r.test_email} (contact: ${r.contact_used})`);
+      } else {
+        setTestError(r.error || "Erreur inconnue");
+      }
+    } catch (err) {
+      setTestError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTestSending(false);
+    }
+  }
+
+  const purge = useMutation({
+    mutationFn: () => purgeAllCampaigns(),
+    onSuccess: () => {
+      setCampaignId(null);
+      setPurgeConfirm(false);
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["campaigns-all"] });
+    },
+  });
+
+  const deleteCamp = useMutation({
+    mutationFn: (id: string) => deleteCampaign(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      qc.invalidateQueries({ queryKey: ["campaigns-all"] });
+    },
+  });
+
   function toggleDay(day: string) {
     setJours((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
   }
@@ -469,6 +515,38 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
               </div>
             )}
           </div>
+
+          {/* Test email */}
+          {campaignStatus === "active" && (
+            <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Tester avant d'envoyer</h3>
+              <div className="flex gap-2">
+                <input
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="ton@email.com"
+                  type="email"
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={doSendTest}
+                  disabled={testSending || !testEmail}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 shrink-0"
+                >
+                  {testSending ? "Envoi..." : "Envoyer un test"}
+                </button>
+              </div>
+              {testResult && (
+                <div className="bg-green-50 rounded-lg px-3 py-2 text-xs text-green-700">{testResult}</div>
+              )}
+              {testError && (
+                <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700">{testError}</div>
+              )}
+              <p className="text-xs text-gray-400">
+                Envoie l'email avec les variables du premier contact, mais a ton adresse. Objet prefixe [TEST]. Aucun compteur modifie.
+              </p>
+            </div>
+          )}
 
           {/* Schedule summary for active campaign */}
           {campaignStatus !== "cancelled" && (
@@ -717,7 +795,15 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-600 hover:bg-gray-50 select-none">
             Campagnes precedentes ({pastCampaigns.length})
           </summary>
-          <div className="px-4 pb-4 space-y-2 border-t">
+          <div className="px-4 pb-4 space-y-2 border-t pt-3">
+            <div className="flex justify-end mb-1">
+              <button
+                onClick={() => setPurgeConfirm(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+              >
+                Tout supprimer
+              </button>
+            </div>
             {pastCampaigns.map((c) => (
               <div
                 key={c.id}
@@ -738,12 +824,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     {c.date_creation && ` · ${new Date(c.date_creation).toLocaleDateString("fr-FR")}`}
                   </p>
                 </div>
-                <button
-                  onClick={() => onComplete(c.id)}
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 shrink-0"
-                >
-                  Analytics
-                </button>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={() => deleteCamp.mutate(c.id)}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                  >
+                    Supprimer
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -758,6 +846,16 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         variant="danger"
         onConfirm={() => cancelConfirm && cancelCampaign.mutate(cancelConfirm)}
         onCancel={() => setCancelConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={purgeConfirm}
+        title="Supprimer toutes les campagnes"
+        message="Toutes les campagnes (actives, en pause, annulees) seront definitivement supprimees. Les contacts seront liberes. Les emails deja envoyes ne sont pas affectes."
+        confirmLabel="Tout supprimer"
+        variant="danger"
+        onConfirm={() => purge.mutate()}
+        onCancel={() => setPurgeConfirm(false)}
       />
     </div>
   );

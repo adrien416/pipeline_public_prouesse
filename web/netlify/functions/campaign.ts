@@ -7,6 +7,7 @@ import {
   findRowById,
   updateRow,
   batchUpdateRows,
+  deleteRows,
   getHeadersForWrite,
   CAMPAGNES_HEADERS,
   CONTACTS_HEADERS,
@@ -203,6 +204,90 @@ export default async (request: Request) => {
     }
 
     return json({ campaign: updated });
+  }
+
+  // DELETE — delete one campaign or purge all
+  if (request.method === "DELETE") {
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+    const purgeAll = url.searchParams.get("purge_all") === "true";
+
+    if (purgeAll) {
+      const allCampaigns = await readAll("Campagnes");
+      if (allCampaigns.length === 0) return json({ deleted: 0 });
+
+      // Release all contacts with campagne_id
+      const allContacts = await readAll("Contacts");
+      const assigned = allContacts.filter((c) => c.campagne_id);
+      if (assigned.length > 0) {
+        const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+        const contactUpdates = assigned
+          .filter((c) => c._rowIndex)
+          .map((c) => ({
+            rowIndex: Number(c._rowIndex),
+            values: toRow(contactHeaders, {
+              ...c,
+              campagne_id: "",
+              email_status: "",
+              date_modification: new Date().toISOString(),
+            }),
+          }));
+        if (contactUpdates.length > 0) {
+          await batchUpdateRows("Contacts", contactUpdates);
+        }
+      }
+
+      // Delete email logs
+      const allLogs = await readAll("EmailLog");
+      if (allLogs.length > 0) {
+        await deleteRows("EmailLog", allLogs.map((l) => Number(l._rowIndex)));
+      }
+
+      // Delete all campaigns
+      await deleteRows("Campagnes", allCampaigns.map((c) => Number(c._rowIndex)));
+
+      return json({ deleted: allCampaigns.length });
+    }
+
+    if (id) {
+      const found = await findRowById("Campagnes", id);
+      if (!found) return json({ error: "Campagne introuvable" }, 404);
+
+      // Release queued contacts
+      const allContacts = await readAll("Contacts");
+      const assigned = allContacts.filter((c) => c.campagne_id === id && c.email_status === "queued");
+      if (assigned.length > 0) {
+        const contactHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+        const contactUpdates = assigned
+          .filter((c) => c._rowIndex)
+          .map((c) => ({
+            rowIndex: Number(c._rowIndex),
+            values: toRow(contactHeaders, {
+              ...c,
+              campagne_id: "",
+              email_status: "",
+              date_modification: new Date().toISOString(),
+            }),
+          }));
+        if (contactUpdates.length > 0) {
+          await batchUpdateRows("Contacts", contactUpdates);
+        }
+      }
+
+      // Delete email logs for this campaign
+      const logs = await readAll("EmailLog");
+      const campaignLogs = logs.filter((l) => l.campagne_id === id);
+      if (campaignLogs.length > 0) {
+        await deleteRows("EmailLog", campaignLogs.map((l) => Number(l._rowIndex)));
+      }
+
+      // Delete campaign
+      await deleteRows("Campagnes", [found.rowIndex]);
+
+      return json({ ok: true });
+    }
+
+    return json({ error: "id ou purge_all requis" }, 400);
   }
 
   return json({ error: "Methode non supportee" }, 405);

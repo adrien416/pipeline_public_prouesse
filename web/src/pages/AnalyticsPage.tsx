@@ -66,29 +66,77 @@ export function AnalyticsPage({ campaignId }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Campaign selector */}
-      {campaigns.length > 1 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <label className="block text-xs text-gray-500 mb-1">Campagne</label>
-          <select
-            value={selectedId || ""}
-            onChange={(e) => setSelectedId(e.target.value || undefined)}
-            className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-          >
-            {!selectedId && <option value="">-- Derniere campagne --</option>}
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nom || `Campagne ${c.date_creation?.slice(0, 10)}`}
-                {" — "}
-                {c.sent || 0}/{c.total_leads || 0} envoyes
-                {c.status === "active" ? " (active)" : c.status === "paused" ? " (pause)" : ""}
-              </option>
-            ))}
-          </select>
+      {/* Campaign selector — visual cards */}
+      {campaigns.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-gray-700">Campagnes</h3>
+          <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+            {campaigns.map((c) => {
+              const isSelected = selectedId === c.id;
+              const sent = parseInt(c.sent || "0");
+              const total = parseInt(c.total_leads || "0");
+              const pct = total > 0 ? Math.round((sent / total) * 100) : 0;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedId(c.id)}
+                  className={`flex-shrink-0 w-52 rounded-xl border p-3 text-left transition-all snap-start ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
+                  }`}
+                >
+                  {/* Status badge */}
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${
+                      c.status === "active" ? "bg-green-500" :
+                      c.status === "paused" ? "bg-orange-500" :
+                      c.status === "cancelled" ? "bg-red-400" : "bg-gray-400"
+                    }`} />
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full uppercase tracking-wide ${
+                      c.status === "active" ? "bg-green-100 text-green-700" :
+                      c.status === "paused" ? "bg-orange-100 text-orange-700" :
+                      c.status === "cancelled" ? "bg-red-100 text-red-600" :
+                      "bg-gray-100 text-gray-600"
+                    }`}>
+                      {c.status === "active" ? "Active" :
+                       c.status === "paused" ? "Pause" :
+                       c.status === "cancelled" ? "Annulee" : "Terminee"}
+                    </span>
+                  </div>
+
+                  {/* Campaign name */}
+                  <div className="text-sm font-medium text-gray-900 truncate mb-0.5">
+                    {c.nom || "Sans nom"}
+                  </div>
+
+                  {/* Date */}
+                  <div className="text-[11px] text-gray-500 mb-2">
+                    {c.date_creation ? new Date(c.date_creation).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    }) : ""}
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${
+                        c.status === "cancelled" ? "bg-gray-400" : "bg-blue-500"
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-gray-500">{sent}/{total} envoyes</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* No campaign selected but campaigns exist */}
+      {/* No campaign selected */}
       {!campaign && campaigns.length > 0 && (
         <div className="text-center py-10 text-gray-500">
           <p className="text-sm">Selectionne une campagne ci-dessus</p>
@@ -227,7 +275,13 @@ export function AnalyticsPage({ campaignId }: Props) {
             </thead>
             <tbody>
               {campaigns.map((c) => (
-                <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <tr
+                  key={c.id}
+                  className={`border-t border-gray-100 cursor-pointer ${
+                    selectedId === c.id ? "bg-blue-50" : "hover:bg-gray-50"
+                  }`}
+                  onClick={() => setSelectedId(c.id)}
+                >
                   <td className="px-4 py-3 font-medium text-gray-900">
                     {c.nom || "Sans nom"}
                   </td>
@@ -238,10 +292,12 @@ export function AnalyticsPage({ campaignId }: Props) {
                           ? "bg-green-100 text-green-700"
                           : c.status === "paused"
                           ? "bg-orange-100 text-orange-700"
+                          : c.status === "cancelled"
+                          ? "bg-red-100 text-red-600"
                           : "bg-gray-100 text-gray-600"
                       }`}
                     >
-                      {c.status === "active" ? "Active" : c.status === "paused" ? "Pause" : c.status}
+                      {c.status === "active" ? "Active" : c.status === "paused" ? "Pause" : c.status === "cancelled" ? "Annulee" : c.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center text-gray-700">{c.sent || 0}</td>
@@ -250,14 +306,13 @@ export function AnalyticsPage({ campaignId }: Props) {
                     {c.date_creation ? new Date(c.date_creation).toLocaleDateString("fr-FR") : "-"}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setSelectedId(c.id)}
+                    <span
                       className={`text-xs font-medium ${
-                        selectedId === c.id ? "text-blue-700" : "text-blue-500 hover:text-blue-700"
+                        selectedId === c.id ? "text-blue-700" : "text-blue-500"
                       }`}
                     >
                       {selectedId === c.id ? "Selectionnee" : "Voir"}
-                    </button>
+                    </span>
                   </td>
                 </tr>
               ))}

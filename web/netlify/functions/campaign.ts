@@ -70,6 +70,18 @@ export default async (request: Request) => {
       return json({ error: "Champs requis manquants" }, 400);
     }
 
+    // Guard: prevent creating duplicate active campaigns for the same search
+    const allCampaigns = await readAll("Campagnes");
+    const existingActive = allCampaigns.find(
+      (c) => c.recherche_id === recherche_id && (c.status === "active" || c.status === "paused")
+    );
+    if (existingActive) {
+      return json({
+        error: "Une campagne active existe deja pour cette recherche. Annulez-la ou mettez-la en pause d'abord.",
+        existing_campaign_id: existingActive.id,
+      }, 409);
+    }
+
     // Get all contacts
     const allContacts = await readAll("Contacts");
     const enriched = allContacts.filter(
@@ -98,7 +110,7 @@ export default async (request: Request) => {
     // Create campaign
     const campaign: Record<string, string> = {
       id: uuid(),
-      nom: nom || `Campagne ${new Date().toLocaleDateString("fr-FR")}`,
+      nom: nom || `Campagne ${new Date().toLocaleDateString("fr-FR")} ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })}`,
       recherche_id,
       template_sujet,
       template_corps,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -45,13 +45,13 @@ Bien a toi,
 Adrien`;
 
 const DAYS = [
-  { id: "lun", label: "Lundi" },
-  { id: "mar", label: "Mardi" },
-  { id: "mer", label: "Mercredi" },
-  { id: "jeu", label: "Jeudi" },
-  { id: "ven", label: "Vendredi" },
-  { id: "sam", label: "Samedi" },
-  { id: "dim", label: "Dimanche" },
+  { id: "lun", label: "Lun" },
+  { id: "mar", label: "Mar" },
+  { id: "mer", label: "Mer" },
+  { id: "jeu", label: "Jeu" },
+  { id: "ven", label: "Ven" },
+  { id: "sam", label: "Sam" },
+  { id: "dim", label: "Dim" },
 ];
 
 export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
@@ -100,6 +100,22 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const campaignData = campaign.data?.campaign;
   const campaignStatus = campaignData?.status || "draft";
   const campaignsList = existingCampaigns.data?.campaigns || [];
+
+  // Derive active and past campaigns
+  const activeCampaign = campaignsList.find(
+    (c) => c.status === "active" || c.status === "paused"
+  );
+  const pastCampaigns = campaignsList.filter(
+    (c) => c.status === "cancelled" || c.status === "completed"
+  );
+  const hasActiveCampaign = !!activeCampaign;
+
+  // Auto-select the active campaign
+  useEffect(() => {
+    if (activeCampaign && !campaignId) {
+      setCampaignId(activeCampaign.id);
+    }
+  }, [activeCampaign, campaignId]);
 
   // Load template from saved campaign
   useEffect(() => {
@@ -191,6 +207,13 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       }
       qc.invalidateQueries({ queryKey: ["campaigns"] });
     },
+    onError: (error: any) => {
+      // On 409 conflict, an active campaign already exists — refetch to pick it up
+      if (error?.status === 409 && error?.body?.existing_campaign_id) {
+        setCampaignId(error.body.existing_campaign_id);
+        qc.invalidateQueries({ queryKey: ["campaigns"] });
+      }
+    },
   });
 
   const toggleStatus = useMutation({
@@ -218,7 +241,6 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       qc.invalidateQueries({ queryKey: ["campaign"] });
       qc.invalidateQueries({ queryKey: ["campaigns"] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
-      // If we cancelled the currently viewed campaign, clear it
       if (cancelConfirm === campaignId) {
         setCampaignId(null);
       }
@@ -239,7 +261,6 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         try {
           r = await triggerSend(campaignId);
         } catch (err) {
-          // HTTP error (500, etc.) — show immediately and stop
           const msg = err instanceof Error ? err.message : String(err);
           setSendProgress((p) => ({ ...p, errors: [...p.errors, msg], done: true }));
           break;
@@ -247,7 +268,6 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         if (r.sent > 0) {
           sentCount += r.sent;
           setSendProgress((p) => ({ ...p, sent: sentCount }));
-          // Refresh banner counter after each successful send
           qc.invalidateQueries({ queryKey: ["campaign"] });
         }
         remaining = r.remaining ?? 0;
@@ -261,7 +281,6 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           }
           break;
         }
-        // Wait interval between sends
         if (remaining > 0) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
         }
@@ -291,6 +310,10 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     ? Math.ceil(contactsList.length / (parseInt(maxParJour) || 15))
     : 0;
 
+  const sentCount = parseInt(campaignData?.sent || "0");
+  const totalLeads = parseInt(campaignData?.total_leads || "0");
+  const campaignProgress = totalLeads > 0 ? Math.round((sentCount / totalLeads) * 100) : 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -300,190 +323,172 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         </p>
       </div>
 
-      {/* Existing campaigns for this search */}
-      {campaignsList.length > 0 && !campaignId && (
-        <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
-          <h3 className="font-semibold text-sm text-gray-700">
-            Campagnes existantes ({campaignsList.length})
-          </h3>
-          <div className="space-y-2">
-            {campaignsList.map((c) => (
-              <div
-                key={c.id}
-                className="bg-gray-50 rounded-lg px-4 py-3 space-y-2"
-              >
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`h-2 w-2 rounded-full shrink-0 ${
-                        c.status === "active"
-                          ? "bg-green-500"
-                          : c.status === "cancelled"
-                          ? "bg-red-400"
-                          : "bg-orange-500"
+      {/* ─── ACTIVE CAMPAIGN VIEW ─── */}
+      {campaignData && (
+        <div className="space-y-4">
+          {/* Campaign header card */}
+          <div
+            className={`rounded-xl border p-4 space-y-4 ${
+              campaignStatus === "active"
+                ? "bg-green-50 border-green-200"
+                : campaignStatus === "cancelled"
+                ? "bg-red-50 border-red-200"
+                : campaignStatus === "paused"
+                ? "bg-orange-50 border-orange-200"
+                : "bg-gray-50 border-gray-200"
+            }`}
+          >
+            {/* Top row: name + status + actions */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${
+                      campaignStatus === "active"
+                        ? "bg-green-500 animate-pulse"
+                        : campaignStatus === "cancelled"
+                        ? "bg-red-400"
+                        : "bg-orange-500"
+                    }`}
+                  />
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    campaignStatus === "active"
+                      ? "bg-green-100 text-green-700"
+                      : campaignStatus === "paused"
+                      ? "bg-orange-100 text-orange-700"
+                      : campaignStatus === "cancelled"
+                      ? "bg-red-100 text-red-600"
+                      : "bg-gray-100 text-gray-600"
+                  }`}>
+                    {campaignStatus === "active" ? "Active"
+                      : campaignStatus === "paused" ? "En pause"
+                      : campaignStatus === "cancelled" ? "Annulee"
+                      : "Brouillon"}
+                  </span>
+                </div>
+                <h3 className="text-base font-semibold text-gray-900 truncate">
+                  {campaignData.nom || "Campagne sans nom"}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Creee le {campaignData.date_creation ? new Date(campaignData.date_creation).toLocaleDateString("fr-FR") : "—"}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-wrap gap-1.5 shrink-0">
+                {campaignStatus !== "cancelled" && (
+                  <>
+                    <button
+                      onClick={() => toggleStatus.mutate()}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                        campaignStatus === "active"
+                          ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                          : "bg-green-100 text-green-700 hover:bg-green-200"
                       }`}
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-gray-900">{c.nom}</span>
-                      <span className="text-xs text-gray-500 ml-2">
-                        {c.sent || 0}/{c.total_leads || 0} envoyes
-                      </span>
-                      {c.status === "cancelled" && (
-                        <span className="text-xs text-red-500 ml-2">Annulee</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {c.status !== "cancelled" && (
-                      <>
-                        <button
-                          onClick={() => toggleStatus.mutate(c.id)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
-                            c.status === "active"
-                              ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                              : "bg-green-100 text-green-700 hover:bg-green-200"
-                          }`}
-                        >
-                          {c.status === "active" ? "Pause" : "Reprendre"}
-                        </button>
-                        <button
-                          onClick={() => setCancelConfirm(c.id)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
-                        >
-                          Annuler
-                        </button>
-                      </>
+                    >
+                      {campaignStatus === "active" ? "Pause" : "Reprendre"}
+                    </button>
+                    {campaignStatus === "active" && (
+                      <button
+                        onClick={doSendAll}
+                        disabled={sending}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
+                      </button>
                     )}
                     <button
-                      onClick={() => onComplete(c.id)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      onClick={() => setCancelConfirm(campaignId!)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
                     >
-                      Analytics
+                      Annuler
                     </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="border-t pt-3">
-            <p className="text-xs text-gray-500">
-              Ou creer une nouvelle campagne ci-dessous
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Campaign status banner */}
-      {campaignData && (
-        <div
-          className={`rounded-lg px-4 py-3 space-y-3 ${
-            campaignStatus === "active"
-              ? "bg-green-50 border border-green-200"
-              : campaignStatus === "cancelled"
-              ? "bg-red-50 border border-red-200"
-              : campaignStatus === "paused"
-              ? "bg-orange-50 border border-orange-200"
-              : "bg-gray-50 border border-gray-200"
-          }`}
-        >
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <span
-                className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                  campaignStatus === "active"
-                    ? "bg-green-500"
-                    : campaignStatus === "cancelled"
-                    ? "bg-red-400"
-                    : "bg-orange-500"
-                }`}
-              />
-              <span className="text-sm font-medium">
-                {campaignData.nom || (
-                  campaignStatus === "active" ? "Campagne active"
-                  : campaignStatus === "cancelled" ? "Campagne annulee"
-                  : "Campagne en pause"
+                  </>
                 )}
-              </span>
-              <span className="text-xs text-gray-500">
-                {campaignData.sent || 0}/{campaignData.total_leads || 0} envoyes
-              </span>
+                <button
+                  onClick={() => onComplete(campaignId!)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  Analytics
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {campaignStatus !== "cancelled" && (
-                <>
-                  <button
-                    onClick={() => toggleStatus.mutate()}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                      campaignStatus === "active"
-                        ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                        : "bg-green-100 text-green-700 hover:bg-green-200"
-                    }`}
-                  >
-                    {campaignStatus === "active" ? "Pause" : "Reprendre"}
-                  </button>
-                  {campaignStatus === "active" && (
-                    <button
-                      onClick={doSendAll}
-                      disabled={sending}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
-                    >
-                      {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setCancelConfirm(campaignId!)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
-                  >
-                    Annuler
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => onComplete(campaignId!)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
-              >
-                Analytics
-              </button>
+
+            {/* Progress bar */}
+            <div>
+              <div className="flex justify-between text-xs text-gray-600 mb-1">
+                <span>{sentCount} / {totalLeads} emails envoyes</span>
+                <span>{campaignProgress}%</span>
+              </div>
+              <div className="w-full bg-white/60 rounded-full h-2.5">
+                <div
+                  className="bg-green-500 h-2.5 rounded-full transition-all"
+                  style={{ width: `${campaignProgress}%` }}
+                />
+              </div>
             </div>
+
+            {/* Send progress — visible during and after sending */}
+            {(sending || sendProgress.done) && (
+              <div className="space-y-2 border-t border-green-200/50 pt-3">
+                <div className="flex items-center gap-3">
+                  {sending && <Spinner className="h-4 w-4 text-blue-600" />}
+                  <div className="flex-1">
+                    <div className="flex justify-between text-xs text-gray-600 mb-1">
+                      <span>
+                        {sending
+                          ? "Envoi en cours..."
+                          : sendProgress.errors.length > 0 && sendProgress.sent === 0
+                          ? "Echec de l'envoi"
+                          : sendProgress.errors.length > 0
+                          ? `Envoi arrete — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`
+                          : `Termine — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`}
+                      </span>
+                      <span>{sendProgress.sent}/{sendProgress.total}</span>
+                    </div>
+                    <div className="w-full bg-white rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${
+                          !sending && sendProgress.errors.length > 0 && sendProgress.sent === 0
+                            ? "bg-red-400"
+                            : !sending && sendProgress.sent > 0
+                            ? "bg-green-500"
+                            : "bg-blue-500"
+                        }`}
+                        style={{ width: `${sendProgress.total > 0 ? (sendProgress.sent / sendProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {sendProgress.errors.length > 0 && (
+                  <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700 space-y-0.5">
+                    {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Send progress — visible during and after sending */}
-          {(sending || sendProgress.done) && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                {sending && <Spinner className="h-4 w-4 text-blue-600" />}
-                <div className="flex-1">
-                  <div className="flex justify-between text-xs text-gray-600 mb-1">
-                    <span>
-                      {sending
-                        ? "Envoi en cours..."
-                        : sendProgress.errors.length > 0
-                        ? `Envoi arrete — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`
-                        : `Termine — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`}
-                    </span>
-                    <span>{sendProgress.sent}/{sendProgress.total}</span>
-                  </div>
-                  <div className="w-full bg-white rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        !sending && sendProgress.errors.length > 0 && sendProgress.sent === 0
-                          ? "bg-red-400"
-                          : !sending && sendProgress.sent > 0
-                          ? "bg-green-500"
-                          : "bg-blue-500"
-                      }`}
-                      style={{ width: `${sendProgress.total > 0 ? (sendProgress.sent / sendProgress.total) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
+          {/* Schedule summary for active campaign */}
+          {campaignStatus !== "cancelled" && (
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Parametres d'envoi</h3>
               </div>
-
-              {/* Errors — shown immediately */}
-              {sendProgress.errors.length > 0 && (
-                <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700 space-y-0.5">
-                  {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
+                <span>Max {campaignData.max_par_jour || "15"}/jour</span>
+                <span>{campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</span>
+                <span>Intervalle {campaignData.intervalle_min || "20"} min</span>
+                <span>
+                  {(() => {
+                    try {
+                      const d = JSON.parse(campaignData.jours_semaine || "[]");
+                      return Array.isArray(d) ? d.join(", ") : campaignData.jours_semaine;
+                    } catch { return campaignData.jours_semaine; }
+                  })()}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -513,194 +518,237 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         </div>
       )}
 
-      {/* Campaign name */}
-      {!campaignId && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <label className="block text-xs text-gray-500 mb-1">Nom de la campagne</label>
-          <input
-            value={nom}
-            onChange={(e) => setNom(e.target.value)}
-            placeholder="Ex: Fondateurs EdTech - Mars 2026"
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Template editor (left) */}
-        <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
-          <h3 className="font-semibold text-sm text-gray-700">Template email</h3>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Objet</label>
-            <input
-              value={sujet}
-              onChange={(e) => setSujet(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Corps</label>
-            <textarea
-              value={corps}
-              onChange={(e) => setCorps(e.target.value)}
-              rows={14}
-              className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
-            />
-          </div>
-          <div className="text-xs text-gray-400">
-            Variables : {"{Prenom}"}, {"{Entreprise}"}, {"{Phrase}"}
-          </div>
-        </div>
-
-        {/* Contact list (center) */}
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="p-3 border-b bg-gray-50">
-            <h3 className="font-semibold text-sm text-gray-700">
-              Leads ({contactsList.length})
-            </h3>
-          </div>
-          <div className="max-h-[500px] overflow-y-auto">
-            {contactsList.map((c, i) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedContact(c)}
-                className={`w-full text-left px-3 py-2 text-sm border-b border-gray-50 hover:bg-blue-50 flex items-center gap-2 ${
-                  selectedContact?.id === c.id ? "bg-blue-50" : ""
-                }`}
-              >
-                <span className="text-xs text-gray-400 w-5">{i + 1}</span>
-                <span className="truncate text-gray-700">{c.email}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Preview (right) */}
-        <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm text-gray-700">Preview</h3>
-            {selectedContact && (
-              <span className="text-xs text-gray-400">
-                {selectedContact.prenom} {selectedContact.nom}
-              </span>
-            )}
-          </div>
-          {selectedContact && (
-            <div className="space-y-3">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Objet :</div>
-                <div className="text-sm font-medium">
-                  {sujet
-                    .replace(/\{Entreprise\}/g, selectedContact.entreprise || "")
-                    .replace(/\{Prenom\}/g, selectedContact.prenom || "")}
-                </div>
+      {/* ─── TEMPLATE EDITOR + CONTACTS + PREVIEW ─── */}
+      {/* Show when campaign is active/paused OR when creating new */}
+      {(campaignData && campaignStatus !== "cancelled") || !hasActiveCampaign ? (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Template editor (left) */}
+            <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
+              <h3 className="font-semibold text-sm text-gray-700">Template email</h3>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Objet</label>
+                <input
+                  value={sujet}
+                  onChange={(e) => setSujet(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1">Corps :</div>
-                <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {previewEmail(selectedContact)}
-                </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Corps</label>
+                <textarea
+                  value={corps}
+                  onChange={(e) => setCorps(e.target.value)}
+                  rows={14}
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+                />
+              </div>
+              <div className="text-xs text-gray-400">
+                Variables : {"{Prenom}"}, {"{Entreprise}"}, {"{Phrase}"}
               </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Schedule settings */}
-      <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-        <h3 className="font-semibold text-gray-900">Parametres d'envoi</h3>
+            {/* Contact list (center) */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="p-3 border-b bg-gray-50">
+                <h3 className="font-semibold text-sm text-gray-700">
+                  Leads ({contactsList.length})
+                </h3>
+              </div>
+              <div className="max-h-[500px] overflow-y-auto">
+                {contactsList.map((c, i) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedContact(c)}
+                    className={`w-full text-left px-3 py-2 text-sm border-b border-gray-50 hover:bg-blue-50 flex items-center gap-2 ${
+                      selectedContact?.id === c.id ? "bg-blue-50" : ""
+                    }`}
+                  >
+                    <span className="text-xs text-gray-400 w-5">{i + 1}</span>
+                    <span className="truncate text-gray-700">{c.email}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {estimatedDays > 0 && (
-          <div className="text-sm text-blue-600 font-medium">
-            Duree estimee de la campagne : {estimatedDays} jours
+            {/* Preview (right) */}
+            <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm text-gray-700">Preview</h3>
+                {selectedContact && (
+                  <span className="text-xs text-gray-400">
+                    {selectedContact.prenom} {selectedContact.nom}
+                  </span>
+                )}
+              </div>
+              {selectedContact && (
+                <div className="space-y-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Objet :</div>
+                    <div className="text-sm font-medium">
+                      {sujet
+                        .replace(/\{Entreprise\}/g, selectedContact.entreprise || "")
+                        .replace(/\{Prenom\}/g, selectedContact.prenom || "")}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500 mb-1">Corps :</div>
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                      {previewEmail(selectedContact)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Max emails/jour</label>
-            <input
-              type="number"
-              value={maxParJour}
-              onChange={(e) => setMaxParJour(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Heure debut</label>
-            <input
-              type="time"
-              value={heureDebut}
-              onChange={(e) => setHeureDebut(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Heure fin</label>
-            <input
-              type="time"
-              value={heureFin}
-              onChange={(e) => setHeureFin(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Intervalle min (min)</label>
-            <input
-              type="number"
-              value={intervalle}
-              onChange={(e) => setIntervalle(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
+          {/* ─── CREATION FORM (only when no active campaign) ─── */}
+          {!hasActiveCampaign && !campaignId && (
+            <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+              <h3 className="font-semibold text-gray-900">Nouvelle campagne</h3>
 
-        <div>
-          <label className="block text-xs text-gray-500 mb-2">Jours d'envoi</label>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map((d) => (
+              {/* Campaign name */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Nom de la campagne (optionnel)</label>
+                <input
+                  value={nom}
+                  onChange={(e) => setNom(e.target.value)}
+                  placeholder="Ex: Fondateurs EdTech - Mars 2026"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              {estimatedDays > 0 && (
+                <div className="text-sm text-blue-600 font-medium">
+                  Duree estimee de la campagne : {estimatedDays} jours
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Max emails/jour</label>
+                  <input
+                    type="number"
+                    value={maxParJour}
+                    onChange={(e) => setMaxParJour(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Heure debut</label>
+                  <input
+                    type="time"
+                    value={heureDebut}
+                    onChange={(e) => setHeureDebut(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Heure fin</label>
+                  <input
+                    type="time"
+                    value={heureFin}
+                    onChange={(e) => setHeureFin(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Intervalle (min)</label>
+                  <input
+                    type="number"
+                    value={intervalle}
+                    onChange={(e) => setIntervalle(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-2">Jours d'envoi</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAYS.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => toggleDay(d.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                        jours.includes(d.id)
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-blue-50 rounded-lg px-4 py-2 text-xs text-blue-700">
+                Au maximum {maxParJour} emails envoyes par jour depuis adrien@prouesse.vc
+              </div>
+
               <button
-                key={d.id}
-                onClick={() => toggleDay(d.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                  jours.includes(d.id)
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-500"
-                }`}
+                onClick={() => create.mutate()}
+                disabled={create.isPending || contactsList.length === 0}
+                className="w-full bg-blue-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {d.label}
+                {create.isPending ? (
+                  <>
+                    <Spinner className="h-4 w-4" />
+                    Creation de la campagne...
+                  </>
+                ) : (
+                  `Lancer la campagne (${contactsList.length} contacts)`
+                )}
               </button>
+
+              {create.isError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  {create.error instanceof Error ? create.error.message : "Erreur"}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {/* ─── PAST CAMPAIGNS (collapsed) ─── */}
+      {pastCampaigns.length > 0 && (
+        <details className="bg-white rounded-xl shadow-sm border">
+          <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-600 hover:bg-gray-50 select-none">
+            Campagnes precedentes ({pastCampaigns.length})
+          </summary>
+          <div className="px-4 pb-4 space-y-2 border-t">
+            {pastCampaigns.map((c) => (
+              <div
+                key={c.id}
+                className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${
+                      c.status === "cancelled" ? "bg-red-400" : "bg-gray-400"
+                    }`} />
+                    <span className="text-sm font-medium text-gray-700 truncate">
+                      {c.nom || "Sans nom"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {c.sent || 0}/{c.total_leads || 0} envoyes
+                    {c.status === "cancelled" && " · Annulee"}
+                    {c.date_creation && ` · ${new Date(c.date_creation).toLocaleDateString("fr-FR")}`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onComplete(c.id)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 shrink-0"
+                >
+                  Analytics
+                </button>
+              </div>
             ))}
           </div>
-        </div>
-
-        <div className="bg-blue-50 rounded-lg px-4 py-2 text-xs text-blue-700">
-          Au maximum {maxParJour} emails envoyes par jour depuis adrien@prouesse.vc
-        </div>
-
-        {!campaignId && (
-          <button
-            onClick={() => create.mutate()}
-            disabled={create.isPending || contactsList.length === 0}
-            className="w-full bg-blue-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {create.isPending ? (
-              <>
-                <Spinner className="h-4 w-4" />
-                Creation de la campagne...
-              </>
-            ) : (
-              `Lancer la campagne (${contactsList.length} contacts)`
-            )}
-          </button>
-        )}
-
-        {create.isError && (
-          <div className="text-sm text-red-600">
-            {create.error instanceof Error ? create.error.message : "Erreur"}
-          </div>
-        )}
-      </div>
+        </details>
+      )}
 
       <ConfirmDialog
         open={!!cancelConfirm}

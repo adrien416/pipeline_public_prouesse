@@ -4,7 +4,7 @@ import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCamp
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastSaved = useRef(value);
 
   useEffect(() => {
@@ -379,7 +379,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 {campaignStatus !== "cancelled" && (
                   <>
                     <button
-                      onClick={() => toggleStatus.mutate()}
+                      onClick={() => toggleStatus.mutate(undefined)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
                         campaignStatus === "active"
                           ? "bg-orange-100 text-orange-700 hover:bg-orange-200"

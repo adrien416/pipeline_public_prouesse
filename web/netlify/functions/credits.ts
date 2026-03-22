@@ -34,7 +34,7 @@ export default async (request: Request) => {
     return json({ balance: data.balance ?? data.credits ?? 0 });
   } catch (err) {
     console.error("credits error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

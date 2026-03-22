@@ -262,7 +262,7 @@ describe("score handler — rate limit", () => {
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toContain("rate limited");
+    expect(body.error).toBe("Erreur interne");
   }, 60000); // Higher timeout because of retry backoff waits (5s + 10s + 15s)
 
   it("treats score_total='0' as already scored (not re-scored)", async () => {

@@ -115,7 +115,7 @@ export default async (request: Request) => {
     });
   } catch (err) {
     console.error("generate-phrases error:", err);
-    return json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

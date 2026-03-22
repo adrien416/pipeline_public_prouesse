@@ -361,7 +361,7 @@ export default async (request: Request) => {
     });
   } catch (err) {
     console.error("search error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

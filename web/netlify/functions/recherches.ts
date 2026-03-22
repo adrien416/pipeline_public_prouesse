@@ -15,7 +15,7 @@ export default async (request: Request) => {
     return json({ recherches });
   } catch (err) {
     console.error("recherches error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

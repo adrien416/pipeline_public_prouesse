@@ -72,7 +72,7 @@ export default async (request: Request) => {
     return json(result);
   } catch (err) {
     console.error("sheet-check error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

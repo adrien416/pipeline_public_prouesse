@@ -27,9 +27,18 @@ function safeDomain(domaine: string): string {
   }
 }
 
+function isPrivateUrl(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname;
+    return /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.|localhost|::1|fe80:|\[::1\])/.test(host);
+  } catch { return true; }
+}
+
 async function fetchMetaDescription(domain: string): Promise<string> {
   if (!domain) return "";
   const url = domain.startsWith("http") ? domain : `https://${domain}`;
+  if (isPrivateUrl(url)) return "";
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
@@ -357,7 +366,7 @@ export default async (request: Request) => {
     });
   } catch (err) {
     console.error("score error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

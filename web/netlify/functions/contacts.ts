@@ -120,7 +120,7 @@ export default async (request: Request, _context: Context) => {
     }
   } catch (err) {
     console.error("contacts error:", err);
-    return json({ error: String(err) }, 500);
+    return json({ error: "Erreur interne" }, 500);
   }
 };
 

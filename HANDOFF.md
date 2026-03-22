@@ -102,6 +102,8 @@
 
 ### Session 3 (2026-03-22)
 
+9. **Fix espace en debut d'email** (`d5cab33`) — Les emails envoyes avaient un espace/retour a la ligne en debut de corps, ce qui faisait "trop IA". Ajout de `.trim()` sur le corps dans `send.ts`, `send-test.ts` et sur le resultat de `rewrite-template.ts`.
+
 7. **Webhook Brevo configure** — Webhook enregistre cote Brevo via fonction one-shot (supprimee apres usage). Tracke opens, clicks, hardBounce, softBounce, unsubscribed. URL : `https://pipeline-prospection.netlify.app/api/webhook/brevo?secret=***`.
 
 8. **Audit securite + corrections** (`99dc710`) :

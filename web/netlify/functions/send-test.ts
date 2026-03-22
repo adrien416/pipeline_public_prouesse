@@ -20,7 +20,7 @@ function textToHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;")
     .replace(/\n/g, "<br>");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;padding:0;">${escaped}</td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html style="margin:0;padding:0;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;-webkit-text-size-adjust:100%;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;border-collapse:collapse;"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;padding:0;margin:0;">${escaped}</td></tr></table></body></html>`;
 }
 
 export default async (request: Request) => {

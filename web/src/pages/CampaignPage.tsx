@@ -275,7 +275,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   async function doSendAll() {
     if (!campaignId || sending) return;
     setSending(true);
-    const total = parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0");
+    const total = Math.max(0, parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0"));
     setSendProgress({ sent: 0, total, errors: [], done: false });
     try {
       let remaining = total;
@@ -395,7 +395,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
 
   const sentCount = parseInt(campaignData?.sent || "0");
   const totalLeads = parseInt(campaignData?.total_leads || "0");
-  const campaignProgress = totalLeads > 0 ? Math.round((sentCount / totalLeads) * 100) : 0;
+  const campaignProgress = totalLeads > 0 ? Math.min(100, Math.round((sentCount / totalLeads) * 100)) : 0;
 
   return (
     <div className="space-y-6">
@@ -418,6 +418,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 ? "bg-red-50 border-red-200"
                 : campaignStatus === "paused"
                 ? "bg-orange-50 border-orange-200"
+                : campaignStatus === "completed"
+                ? "bg-gray-50 border-gray-200"
                 : "bg-gray-50 border-gray-200"
             }`}
           >
@@ -431,6 +433,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                         ? "bg-green-500 animate-pulse"
                         : campaignStatus === "cancelled"
                         ? "bg-red-400"
+                        : campaignStatus === "completed"
+                        ? "bg-gray-400"
                         : "bg-orange-500"
                     }`}
                   />
@@ -441,11 +445,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                       ? "bg-orange-100 text-orange-700"
                       : campaignStatus === "cancelled"
                       ? "bg-red-100 text-red-600"
+                      : campaignStatus === "completed"
+                      ? "bg-gray-100 text-gray-600"
                       : "bg-gray-100 text-gray-600"
                   }`}>
                     {campaignStatus === "active" ? "Active"
                       : campaignStatus === "paused" ? "En pause"
                       : campaignStatus === "cancelled" ? "Annulee"
+                      : campaignStatus === "completed" ? "Terminee"
                       : "Brouillon"}
                   </span>
                 </div>
@@ -453,7 +460,11 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   {campaignData.nom || "Campagne sans nom"}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Creee le {campaignData.date_creation ? new Date(campaignData.date_creation).toLocaleDateString("fr-FR") : "—"}
+                  Creee le {(() => {
+                    if (!campaignData.date_creation) return "—";
+                    const d = new Date(campaignData.date_creation);
+                    return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR") : "—";
+                  })()}
                 </p>
               </div>
 
@@ -654,18 +665,17 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
-                  <span>Max {campaignData.max_par_jour || "15"}/jour</span>
-                  <span>{campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</span>
-                  <span>Intervalle {campaignData.intervalle_min || "20"} min</span>
-                  <span>
-                    {(() => {
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div><span className="text-gray-400">Max/jour :</span> {campaignData.max_par_jour || "15"}</div>
+                  <div><span className="text-gray-400">Horaires :</span> {campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</div>
+                  <div><span className="text-gray-400">Intervalle :</span> {campaignData.intervalle_min || "20"} min</div>
+                  <div><span className="text-gray-400">Jours :</span> {(() => {
                       try {
                         const d = JSON.parse(campaignData.jours_semaine || "[]");
                         return Array.isArray(d) ? d.join(", ") : campaignData.jours_semaine;
                       } catch { return campaignData.jours_semaine; }
                     })()}
-                  </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -957,7 +967,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   <p className="text-xs text-gray-500 mt-0.5">
                     {c.sent || 0}/{c.total_leads || 0} envoyes
                     {c.status === "cancelled" && " · Annulee"}
-                    {c.date_creation && ` · ${new Date(c.date_creation).toLocaleDateString("fr-FR")}`}
+                    {c.status === "completed" && " · Terminee"}
+                    {c.date_creation && new Date(c.date_creation).getFullYear() > 2000 && ` · ${new Date(c.date_creation).toLocaleDateString("fr-FR")}`}
                   </p>
                 </div>
                 <div className="flex gap-1.5 shrink-0">

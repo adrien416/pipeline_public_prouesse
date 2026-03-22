@@ -75,7 +75,7 @@ export function AnalyticsPage({ campaignId }: Props) {
               const isSelected = selectedId === c.id;
               const sent = parseInt(c.sent || "0");
               const total = parseInt(c.total_leads || "0");
-              const pct = total > 0 ? Math.round((sent / total) * 100) : 0;
+              const pct = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
               return (
                 <button
                   key={c.id}
@@ -112,11 +112,15 @@ export function AnalyticsPage({ campaignId }: Props) {
 
                   {/* Date */}
                   <div className="text-[11px] text-gray-500 mb-2">
-                    {c.date_creation ? new Date(c.date_creation).toLocaleDateString("fr-FR", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    }) : ""}
+                    {(() => {
+                      if (!c.date_creation) return "";
+                      const d = new Date(c.date_creation);
+                      return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }) : "";
+                    })()}
                   </div>
 
                   {/* Progress bar */}
@@ -128,7 +132,7 @@ export function AnalyticsPage({ campaignId }: Props) {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <div className="text-[11px] text-gray-500">{sent}/{total} envoyes</div>
+                  <div className="text-[11px] text-gray-500">{Math.min(sent, total)}/{total} envoyes</div>
                 </button>
               );
             })}

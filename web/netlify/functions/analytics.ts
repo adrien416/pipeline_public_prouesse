@@ -47,8 +47,15 @@ export default async (request: Request) => {
     ).length;
     const in_progress = total - queued - completed - bounced - skipped;
 
-    // Metrics
-    const sent = parseInt(campaign.sent || "0");
+    // Metrics — prefer actual contact data over campaign counters (which can desync)
+    const contactSent = campaignContacts.filter(
+      (c) => c.email_status === "sent" || c.email_status === "opened" ||
+             c.email_status === "clicked" || c.email_status === "replied" ||
+             c.email_status === "bounced"
+    ).length;
+    const counterSent = parseInt(campaign.sent || "0");
+    // Use the higher of the two to avoid undercounting
+    const sent = Math.max(contactSent, counterSent);
     const opened = parseInt(campaign.opened || "0");
     const clicked = parseInt(campaign.clicked || "0");
     const replied = parseInt(campaign.replied || "0");

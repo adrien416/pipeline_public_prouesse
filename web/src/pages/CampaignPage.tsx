@@ -122,11 +122,21 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     }
   }, [activeCampaign, campaignId]);
 
-  // Load template from saved campaign
+  // Load template + params from saved campaign
   useEffect(() => {
     if (campaignData && !templateLoaded) {
       if (campaignData.template_sujet) setSujet(campaignData.template_sujet);
       if (campaignData.template_corps) setCorps(campaignData.template_corps);
+      if (campaignData.max_par_jour) setMaxParJour(campaignData.max_par_jour);
+      if (campaignData.heure_debut) setHeureDebut(campaignData.heure_debut);
+      if (campaignData.heure_fin) setHeureFin(campaignData.heure_fin);
+      if (campaignData.intervalle_min) setIntervalle(campaignData.intervalle_min);
+      if (campaignData.jours_semaine) {
+        try {
+          const parsed = JSON.parse(campaignData.jours_semaine);
+          if (Array.isArray(parsed)) setJours(parsed);
+        } catch { /* keep default */ }
+      }
       setTemplateLoaded(true);
     }
   }, [campaignData, templateLoaded]);
@@ -139,6 +149,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   // Auto-save template changes
   useDebouncedSave(campaignId, "template_sujet", sujet);
   useDebouncedSave(campaignId, "template_corps", corps);
+
+  // Auto-save send params (only when paused)
+  const joursJson = JSON.stringify(jours);
+  useDebouncedSave(campaignStatus === "paused" ? campaignId : null, "max_par_jour", maxParJour);
+  useDebouncedSave(campaignStatus === "paused" ? campaignId : null, "heure_debut", heureDebut);
+  useDebouncedSave(campaignStatus === "paused" ? campaignId : null, "heure_fin", heureFin);
+  useDebouncedSave(campaignStatus === "paused" ? campaignId : null, "intervalle_min", intervalle);
+  useDebouncedSave(campaignStatus === "paused" ? campaignId : null, "jours_semaine", joursJson);
 
   // Count contacts missing phrase_perso
   const missingPhrases = contactsList.filter((c) => !c.phrase_perso).length;
@@ -548,25 +566,89 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             </div>
           )}
 
-          {/* Schedule summary for active campaign */}
+          {/* Schedule — editable when paused, read-only otherwise */}
           {campaignStatus !== "cancelled" && (
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-gray-700">Parametres d'envoi</h3>
+                {campaignStatus === "paused" && (
+                  <span className="text-xs text-amber-600 font-medium">Modifiable en pause</span>
+                )}
               </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
-                <span>Max {campaignData.max_par_jour || "15"}/jour</span>
-                <span>{campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</span>
-                <span>Intervalle {campaignData.intervalle_min || "20"} min</span>
-                <span>
-                  {(() => {
-                    try {
-                      const d = JSON.parse(campaignData.jours_semaine || "[]");
-                      return Array.isArray(d) ? d.join(", ") : campaignData.jours_semaine;
-                    } catch { return campaignData.jours_semaine; }
-                  })()}
-                </span>
-              </div>
+              {campaignStatus === "paused" ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Max emails/jour</label>
+                      <input
+                        type="number"
+                        value={maxParJour}
+                        onChange={(e) => setMaxParJour(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Heure debut</label>
+                      <input
+                        type="time"
+                        value={heureDebut}
+                        onChange={(e) => setHeureDebut(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Heure fin</label>
+                      <input
+                        type="time"
+                        value={heureFin}
+                        onChange={(e) => setHeureFin(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Intervalle (min)</label>
+                      <input
+                        type="number"
+                        value={intervalle}
+                        onChange={(e) => setIntervalle(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-2">Jours d'envoi</label>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS.map((d) => (
+                        <button
+                          key={d.id}
+                          onClick={() => toggleDay(d.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                            jours.includes(d.id)
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
+                  <span>Max {campaignData.max_par_jour || "15"}/jour</span>
+                  <span>{campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</span>
+                  <span>Intervalle {campaignData.intervalle_min || "20"} min</span>
+                  <span>
+                    {(() => {
+                      try {
+                        const d = JSON.parse(campaignData.jours_semaine || "[]");
+                        return Array.isArray(d) ? d.join(", ") : campaignData.jours_semaine;
+                      } catch { return campaignData.jours_semaine; }
+                    })()}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

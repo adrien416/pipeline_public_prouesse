@@ -18,17 +18,21 @@ const BREVO_API = "https://api.brevo.com/v3/smtp/email";
 const SENDER_EMAIL = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
 const SENDER_NAME = process.env.SENDER_NAME || "Adrien Pannetier";
 
-/** Convert plain text to minimal HTML for better deliverability */
+/** Strip all leading/trailing whitespace including BOM, NBSP, \r */
+function stripWhitespace(text: string): string {
+  return text.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");
+}
+
+/** Convert plain text to table-based HTML for cross-client compatibility */
 function textToHtml(text: string): string {
-  const escaped = text
+  const escaped = stripWhitespace(text)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;")
-    .replace(/\n\n/g, "</p><p>")
     .replace(/\n/g, "<br>");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;"><p>${escaped}</p></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;padding:0;">${escaped}</td></tr></table></body></html>`;
 }
 
 async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
@@ -194,8 +198,8 @@ export default async (request: Request) => {
     const corps = campaign.template_corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
-      .replace(/\{Phrase\}/g, contact.phrase_perso || "")
-      .trim();
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+    const corpsClean = stripWhitespace(corps);
 
     const brevoResp = await fetch(BREVO_API, {
       method: "POST",
@@ -208,8 +212,8 @@ export default async (request: Request) => {
         replyTo: { name: SENDER_NAME, email: SENDER_EMAIL },
         to: [{ email: contact.email, name: `${contact.prenom} ${contact.nom}` }],
         subject: sujet,
-        textContent: corps,
-        htmlContent: textToHtml(corps),
+        textContent: corpsClean,
+        htmlContent: textToHtml(corpsClean),
         headers: {
           "X-Campaign-Id": campagne_id,
           "List-Unsubscribe": `<mailto:${SENDER_EMAIL}?subject=unsubscribe>`,

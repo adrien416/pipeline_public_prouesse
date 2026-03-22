@@ -21,7 +21,7 @@ export default async (request: Request) => {
     });
   }
 
-  const webhookUrl = `https://prouesse.vc/api/webhook/brevo?secret=${webhookSecret}`;
+  const webhookUrl = `https://pipeline-prospection.netlify.app/api/webhook/brevo?secret=${webhookSecret}`;
 
   // Events we want to track
   const events = [
@@ -50,7 +50,7 @@ export default async (request: Request) => {
   }
 
   // Check if a webhook already exists for our URL
-  const existing = existingWebhooks.find((w) => w.url.startsWith("https://prouesse.vc/api/webhook/brevo"));
+  const existing = existingWebhooks.find((w) => w.url.includes("/api/webhook/brevo"));
   if (existing) {
     // Delete it and recreate with correct config
     try {

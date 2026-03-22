@@ -5,7 +5,7 @@
 - **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. L'outil permet de rechercher des dirigeants d'entreprises (via Fullenrich), de les scorer par IA selon des criteres de scalabilite/impact ou cession, d'enrichir leurs emails, puis d'envoyer des campagnes email personnalisees — le tout depuis une interface web.
 - **Proprietaire** : Adrien Pannetier — Prouesse (brand lie a Leveo / Lina Capital)
 - **Stack** : React 19 + TypeScript + Vite 7 (frontend), Netlify Functions (backend serverless), Google Sheets (BDD), Anthropic Claude API (IA), Fullenrich API (recherche + enrichissement email), Brevo SMTP (envoi emails)
-- **Repo** : `adrien416/ClayAvecClaude` — branche active : `claude/outbound-prospecting-pipeline-BkDZA`
+- **Repo** : `adrien416/ClayAvecClaude` — branche active : `claude/build-prospecting-pipeline-bEApO`
 - **Deploy** : Netlify (auto-deploy depuis le repo). URL : `https://pipeline-prospection.netlify.app`. Build : `npm run build` dans `/web`, publie `/web/dist`
 
 ## 2. Architecture
@@ -100,6 +100,16 @@
 
 ## 4. Historique des changements
 
+### Session 4 (2026-03-22)
+
+10. **Fix bugs campagne & analytics** (`427a4e1`) :
+    - **Barre de progression > 100%** : Quand `sent` depasse `total_leads` (donnees desynchronisees), la barre debordait (350%). Cappee a 100% sur CampaignPage et AnalyticsPage.
+    - **Statut "Brouillon" au lieu de "Terminee"** : Le statut `completed` n'etait pas gere dans CampaignPage — affichait "Brouillon" avec un badge orange. Ajoute le statut `completed` avec badge gris + label "Terminee".
+    - **Analytics desynchronisees** : Le compteur `campaign.sent` (7) ne correspondait pas aux contacts ayant `email_status=sent` (1). `analytics.ts` utilise maintenant le max des deux pour eviter le sous-comptage.
+    - **Date "1 janv. 1"** : Les dates invalides (annee < 2000) affichent "—" au lieu de dates absurdes.
+    - **Params illisibles sur mobile** : L'affichage des parametres d'envoi en lecture seule (flex-wrap) melangeait les valeurs. Remplace par une grille 2 colonnes avec labels.
+    - **Nettoyage** : Suppression du code en cours sur l'amelioration des campagnes (auto-pause sur metriques, campaign insights) — non termine et introduisait des colonnes supplementaires.
+
 ### Session 3 (2026-03-22)
 
 9. **Fix espace en debut d'email** (`d5cab33`) — Les emails envoyes avaient un espace/retour a la ligne en debut de corps, ce qui faisait "trop IA". Ajout de `.trim()` sur le corps dans `send.ts`, `send-test.ts` et sur le resultat de `rewrite-template.ts`.
@@ -142,7 +152,7 @@
 
 ## 6. Prochaines etapes (par priorite)
 
-1. **Tester l'envoi email de bout en bout** — Lancer une campagne test avec 2-3 contacts, cliquer "Envoyer maintenant", verifier dans Brevo que les emails sont partis et que le webhook remonte les opens/clicks.
+1. **Nettoyer les donnees corrompues** — Supprimer la campagne "Ecole de co a impact" (colonnes decalees) dans Google Sheets ou via l'interface, puis recreer une campagne propre.
 
 2. **Relances automatiques** — Ajouter relance_1 et relance_2 avec delais configurables (J+3, J+7). Les templates existent deja dans `/templates/`.
 
@@ -150,11 +160,14 @@
 
 4. **Augmenter le rate limit Anthropic** — Le scoring est lent (~25 min pour 100 contacts a 5 req/min).
 
+5. **Auto-pause sur metriques** — Pauser automatiquement une campagne si le bounce rate depasse 15% ou l'open rate est < 5% (code ebauche puis retire en session 4, a reimplementer proprement).
+
 ## 7. Problemes connus
 
 ### Bugs identifies
 - **Rate limit Anthropic 5 req/min** : Scoring lent. Le code gere ca (skip + retry) mais c'est une limitation.
-- **Timezone serveur** : `send.ts` utilise `new Date()` qui est en UTC sur Netlify. La plage horaire est verifiee en UTC, pas en heure de Paris. A corriger si l'utilisateur est en France (ajouter +1h ou +2h selon DST).
+- **Desync compteurs campagne** : Le compteur `campaign.sent` peut diverger du nombre reel de contacts avec `email_status=sent`. Le code analytics utilise `Math.max()` des deux pour compenser, mais la cause racine (ecriture concurrente ou echec partiel de `batchUpdateRows`) n'est pas resolue.
+- **Donnees corrompues dans la sheet** : La campagne "Ecole de co a impact" a des colonnes decalees (`max_par_jour="active"`, `date_creation="01/01/1"`). Probablement causee par un changement de schema. Solution : supprimer et recreer la campagne.
 
 ### Securite (risques acceptes)
 - **Webhook secret en query param** : Le secret Brevo est passe en `?secret=XXX` dans l'URL. Pattern standard Brevo, mais le secret apparait dans les logs serveur. Risque faible (serveur-a-serveur).

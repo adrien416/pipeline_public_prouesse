@@ -1,0 +1,10 @@
+Bonjour $prenom,
+
+Dernier message de ma part — je ne veux pas être insistant.
+
+$hook
+
+Si ce n'est pas d'actualité, aucun souci. Je reste disponible si le sujet devient pertinent à l'avenir.
+
+Bonne continuation,
+[VOTRE NOM]

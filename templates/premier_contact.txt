@@ -1,0 +1,11 @@
+Bonjour $prenom,
+
+$hook
+
+Chez [VOTRE CABINET], nous accompagnons les entreprises comme $entreprise dans leur $offre.
+
+Seriez-vous disponible pour un échange de 15 minutes cette semaine ou la suivante ?
+
+Bien cordialement,
+[VOTRE NOM]
+[VOTRE TITRE]

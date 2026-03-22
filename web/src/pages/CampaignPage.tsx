@@ -365,10 +365,28 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   }
 
   function previewEmail(contact: Record<string, string>) {
-    return corps
+    const text = corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
       .replace(/\{Phrase\}/g, contact.phrase_perso || "[Phrase personnalisee IA]");
+    // Split text on URLs and return React nodes with clickable links
+    const urlRegex = /(https?:\/\/[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/g;
+    const parts: (string | React.ReactElement)[] = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = urlRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      const url = match[0];
+      const href = url.startsWith("http") ? url : `https://${url}`;
+      parts.push(
+        <a key={match.index} href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">
+          {url}
+        </a>
+      );
+      lastIndex = urlRegex.lastIndex;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts;
   }
 
   const estimatedDays = contactsList.length > 0

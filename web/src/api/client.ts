@@ -140,6 +140,13 @@ export function generatePhrases(recherche_id: string, mode: string) {
   });
 }
 
+export function rewriteTemplate(recherche_id: string, mode: string, template_sujet: string, template_corps: string) {
+  return request<{ sujet: string; corps: string }>("/rewrite-template", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, mode, template_sujet, template_corps }),
+  });
+}
+
 export function createCampaign(data: Record<string, unknown>) {
   return request<{
     campaign: Record<string, string>;

@@ -1,5 +1,5 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Mis a jour le : 2026-03-20*
+*Mis a jour le : 2026-03-22*
 
 ## 1. Snapshot du projet
 - **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. L'outil permet de rechercher des dirigeants d'entreprises (via Fullenrich), de les scorer par IA selon des criteres de scalabilite/impact ou cession, d'enrichir leurs emails, puis d'envoyer des campagnes email personnalisees — le tout depuis une interface web.
@@ -45,9 +45,6 @@
 │   ├── netlify.toml              # Config Netlify (build command, publish dir)
 │   ├── package.json              # Dependances npm
 │   └── vite.config.ts            # Config Vite
-├── scripts/                      # Pipeline Python CLI (version originale, plus utilisee activement)
-├── tests/                        # Tests Python pour le pipeline CLI
-├── config.yaml                   # Config YAML du pipeline (secteurs, limites, parametres d'envoi)
 ├── templates/                    # Templates email (premier_contact, relance_1, relance_2)
 └── HANDOFF.md                    # Ce fichier
 ```
@@ -70,6 +67,7 @@
 | `JWT_SECRET` | Secret pour signer les tokens JWT |
 | `LOGIN_PASSWORD_HASH` | Hash bcrypt du mot de passe admin |
 | `BREVO_API_KEY` | Cle API Brevo (envoi emails) |
+| `BREVO_WEBHOOK_SECRET` | Secret pour authentifier les webhooks Brevo |
 
 ### Schema Google Sheets
 - **Contacts** (25 colonnes) : id, nom, prenom, email, entreprise, titre, domaine, secteur, linkedin, telephone, statut, enrichissement_status, enrichissement_retry, score_1, score_2, score_total, score_raison, score_feedback, recherche_id, campagne_id, email_status, email_sent_at, phrase_perso, date_creation, date_modification
@@ -133,7 +131,7 @@
 
 1. **Tester l'envoi email de bout en bout** — Verifier que `BREVO_API_KEY` est configuree, lancer une campagne test avec 2-3 contacts, verifier que les emails partent et arrivent.
 
-2. **Webhook Brevo pour tracking** — `webhook-brevo.ts` existe mais n'est probablement pas configure cote Brevo. Configurer le webhook pour tracker opens/clicks/bounces et mettre a jour EmailLog + Campagnes.
+2. **Webhook Brevo pour tracking** — `webhook-brevo.ts` existe, `BREVO_WEBHOOK_SECRET` configure sur Netlify. Utiliser `/api/setup-brevo-webhook` pour enregistrer le webhook cote Brevo (one-shot, supprimer apres).
 
 3. **Relances automatiques** — Ajouter relance_1 et relance_2 avec delais configurables (J+3, J+7). Les templates existent deja dans `/templates/`.
 

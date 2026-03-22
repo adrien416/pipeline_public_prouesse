@@ -214,6 +214,31 @@ export async function deleteRows(tabName: string, rowIndices: number[]): Promise
 }
 
 /**
+ * Supprime des colonnes d'un onglet Google Sheets.
+ * colIndices: tableau de numeros de colonnes 0-indexed.
+ * Supprime de droite a gauche pour eviter le decalage d'index.
+ */
+async function deleteColumns(tabName: string, colIndices: number[]): Promise<void> {
+  if (colIndices.length === 0) return;
+  const sorted = [...colIndices].sort((a, b) => b - a);
+  const sheets = getSheets();
+  const spreadsheetId = getSpreadsheetId();
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const sheetMeta = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  if (!sheetMeta) throw new Error(`Onglet "${tabName}" introuvable`);
+  const sheetId = sheetMeta.properties!.sheetId!;
+
+  const requests = sorted.map((col) => ({
+    deleteDimension: {
+      range: { sheetId, dimension: "COLUMNS" as const, startIndex: col, endIndex: col + 1 },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+}
+
+/**
  * Lit uniquement la 1ère ligne (headers) d'un onglet.
  */
 export async function readHeaders(tabName: string): Promise<string[]> {
@@ -239,11 +264,26 @@ export async function getHeadersForWrite(
   const h = await readHeaders(tabName);
   let headers: string[];
   if (h.length > 0) {
+    // Check for stale columns in the sheet that are NOT in code
+    const staleIndices = h
+      .map((col, idx) => fallback.includes(col) ? -1 : idx)
+      .filter((idx) => idx >= 0);
+    if (staleIndices.length > 0) {
+      const staleNames = staleIndices.map((i) => h[i]);
+      console.log(`Sheet "${tabName}": removing stale columns: ${staleNames.join(", ")}`);
+      await deleteColumns(tabName, staleIndices);
+      // Re-read headers after deletion
+      const cleaned = h.filter((_, idx) => !staleIndices.includes(idx));
+      headers = cleaned;
+    } else {
+      headers = h;
+    }
+
     // Check if code has new columns not yet in the sheet
-    const missing = fallback.filter((col) => !h.includes(col));
+    const missing = fallback.filter((col) => !headers.includes(col));
     if (missing.length > 0) {
       // Add missing columns to the end of existing headers
-      headers = [...h, ...missing];
+      headers = [...headers, ...missing];
       const sheets = getSheets();
       const endCol = colLetter(headers.length);
       await sheets.spreadsheets.values.update({
@@ -253,8 +293,6 @@ export async function getHeadersForWrite(
         requestBody: { values: [headers] },
       });
       console.log(`Sheet "${tabName}": added missing columns: ${missing.join(", ")}`);
-    } else {
-      headers = h;
     }
   } else {
     // Sheet is empty — write headers to row 1

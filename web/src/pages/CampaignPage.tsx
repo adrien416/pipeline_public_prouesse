@@ -393,8 +393,11 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     ? Math.ceil(contactsList.length / (parseInt(maxParJour) || 15))
     : 0;
 
-  const sentCount = parseInt(campaignData?.sent || "0");
-  const totalLeads = parseInt(campaignData?.total_leads || "0");
+  const rawSent = parseInt(campaignData?.sent || "0");
+  const rawTotal = parseInt(campaignData?.total_leads || "0");
+  // If sent > total (desync), use sent as the real total
+  const totalLeads = Math.max(rawTotal, rawSent);
+  const sentCount = rawSent;
   const campaignProgress = totalLeads > 0 ? Math.min(100, Math.round((sentCount / totalLeads) * 100)) : 0;
 
   return (
@@ -456,7 +459,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                       : "Brouillon"}
                   </span>
                 </div>
-                <h3 className="text-base font-semibold text-gray-900 truncate">
+                <h3 className="text-base font-semibold text-gray-900 break-words">
                   {campaignData.nom || "Campagne sans nom"}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
@@ -666,14 +669,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                  <div><span className="text-gray-400">Max/jour :</span> {campaignData.max_par_jour || "15"}</div>
-                  <div><span className="text-gray-400">Horaires :</span> {campaignData.heure_debut || "08:30"} – {campaignData.heure_fin || "18:30"}</div>
-                  <div><span className="text-gray-400">Intervalle :</span> {campaignData.intervalle_min || "20"} min</div>
-                  <div><span className="text-gray-400">Jours :</span> {(() => {
+                  <div><span className="text-gray-400">Max/jour : </span>{/^\d+$/.test(campaignData.max_par_jour) ? campaignData.max_par_jour : "15"}</div>
+                  <div><span className="text-gray-400">Horaires : </span>{/^\d{2}:\d{2}$/.test(campaignData.heure_debut) ? campaignData.heure_debut : "08:30"} – {/^\d{2}:\d{2}$/.test(campaignData.heure_fin) ? campaignData.heure_fin : "18:30"}</div>
+                  <div><span className="text-gray-400">Intervalle : </span>{/^\d+$/.test(campaignData.intervalle_min) ? campaignData.intervalle_min : "20"} min</div>
+                  <div><span className="text-gray-400">Jours : </span>{(() => {
                       try {
                         const d = JSON.parse(campaignData.jours_semaine || "[]");
-                        return Array.isArray(d) ? d.join(", ") : campaignData.jours_semaine;
-                      } catch { return campaignData.jours_semaine; }
+                        return Array.isArray(d) ? d.join(", ") : "lun-ven";
+                      } catch { return "lun-ven"; }
                     })()}
                   </div>
                 </div>

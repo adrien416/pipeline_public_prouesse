@@ -90,8 +90,8 @@ Reponds UNIQUEMENT en JSON valide :
 
     const result = JSON.parse(match[0]);
     return json({
-      sujet: result.sujet || template_sujet,
-      corps: result.corps || template_corps,
+      sujet: (result.sujet || template_sujet).trim(),
+      corps: (result.corps || template_corps).trim(),
     });
   } catch (err) {
     console.error("rewrite-template error:", err);

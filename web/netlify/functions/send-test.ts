@@ -59,7 +59,8 @@ export default async (request: Request) => {
     const corps = campaign.template_corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
-      .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "")
+      .trim();
 
     // Send test email — does NOT update any counters or statuses
     const brevoResp = await fetch(BREVO_API, {

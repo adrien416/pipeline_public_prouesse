@@ -194,7 +194,8 @@ export default async (request: Request) => {
     const corps = campaign.template_corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
-      .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "")
+      .trim();
 
     const brevoResp = await fetch(BREVO_API, {
       method: "POST",

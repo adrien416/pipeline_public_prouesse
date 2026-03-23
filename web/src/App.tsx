@@ -64,8 +64,11 @@ function AppContent() {
   function loadRecherche(id: string, mode: "levee_de_fonds" | "cession", targetTab?: Tab) {
     setRechercheId(id);
     setSearchMode(mode);
+    setCampaignId(null); // Reset so auto-select picks the right campaign
     setMaxReachedStep((prev) => Math.max(prev, 2)); // Unlock up to enrich
     if (targetTab) {
+      const idx = TAB_INDEX[targetTab];
+      setMaxReachedStep((prev) => Math.max(prev, idx));
       setTab(targetTab);
     }
   }
@@ -124,6 +127,7 @@ function AppContent() {
             setCampaignId(cId);
             goTo("analytics");
           }}
+          onNavigateToSearch={(id, m) => loadRecherche(id, m as "levee_de_fonds" | "cession", "campaign")}
         />
       )}
       {tab === "campaign" && !rechercheId && (

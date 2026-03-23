@@ -338,6 +338,7 @@ export const CAMPAGNES_HEADERS = [
   "total_leads", "sent", "opened", "clicked", "replied", "bounced",
   "date_creation",
   "user_id",
+  "user_role",
 ];
 
 export const EMAILLOG_HEADERS = [

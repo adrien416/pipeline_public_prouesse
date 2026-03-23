@@ -143,6 +143,7 @@ export default async (request: Request) => {
       bounced: "0",
       date_creation: new Date().toISOString(),
       user_id: auth.userId,
+      user_role: auth.role,
     };
 
     await appendRow("Campagnes", toRow(

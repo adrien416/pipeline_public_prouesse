@@ -136,13 +136,13 @@ export function requireAuth(request: Request): UserContext | Response {
 
 /**
  * Filter rows by user ownership.
- * Admin sees everything. Others see only their own + unowned (user_id="") rows.
+ * Admin sees everything except demo data. Others see only their own + unowned (user_id="") rows.
  */
 export function filterByUser<T extends Record<string, string>>(
   rows: T[],
   user: UserContext
 ): T[] {
-  if (user.role === "admin") return rows;
+  if (user.role === "admin") return rows.filter((r) => (r as Record<string, string>).user_role !== "demo");
   return rows.filter((r) => r.user_id === user.userId || r.user_id === "");
 }
 

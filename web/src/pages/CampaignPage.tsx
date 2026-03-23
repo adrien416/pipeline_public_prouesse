@@ -61,6 +61,7 @@ interface Props {
   rechercheId: string;
   mode: "levee_de_fonds" | "cession";
   onComplete: (campaignId: string) => void;
+  onNavigateToSearch?: (rechercheId: string, mode: string) => void;
 }
 
 const DEFAULT_TEMPLATE = `Bonjour {Prenom},
@@ -92,7 +93,7 @@ const TEST_EMAILS = [
   "adpannetier@gmail.com",
 ];
 
-export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
+export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch }: Props) {
   const qc = useQueryClient();
   const [nom, setNom] = useState("");
   const [sujet, setSujet] = useState("{Entreprise} — échange sur votre développement");
@@ -171,10 +172,12 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   );
   const hasActiveCampaign = !!activeCampaign;
 
-  // Build a map of recherche_id -> description for display
+  // Build maps of recherche_id -> description and mode for display/navigation
   const rechercheMap = new Map<string, string>();
+  const rechercheModeMap = new Map<string, string>();
   (allRecherches.data?.recherches || []).forEach((r) => {
     rechercheMap.set(r.id, r.description || "Sans nom");
+    rechercheModeMap.set(r.id, r.mode || "levee_de_fonds");
   });
 
   // Active campaigns from OTHER searches
@@ -551,6 +554,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     >
                       Analytics
                     </button>
+                    {onNavigateToSearch && (
+                      <button
+                        onClick={() => onNavigateToSearch(c.recherche_id, rechercheModeMap.get(c.recherche_id) || "levee_de_fonds")}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                      >
+                        Gérer
+                      </button>
+                    )}
                   </div>
                 </div>
               );

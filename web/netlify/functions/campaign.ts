@@ -49,7 +49,15 @@ export default async (request: Request) => {
     const allCampaigns = await readAll("Campagnes");
     const rechercheId = url.searchParams.get("recherche_id");
     const showAll = url.searchParams.get("all") === "true" && auth.role === "admin";
-    const visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth);
+    let visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth);
+
+    // For admin: also filter out campaigns from demo users that lack user_role field
+    // (legacy rows created before user_role was added)
+    if (auth.role === "admin") {
+      const users = await readAll("Users");
+      const demoUserIds = new Set(users.filter((u) => u.role === "demo").map((u) => u.id));
+      visible = visible.filter((c) => !demoUserIds.has(c.user_id));
+    }
 
     if (rechercheId) {
       const filtered = visible.filter((c) => c.recherche_id === rechercheId);

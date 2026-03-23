@@ -219,6 +219,7 @@ export function fetchAnalytics(campagne_id?: string) {
     campaign: Record<string, string> | null;
     leads: { total: number; queued: number; in_progress: number; completed: number };
     metrics: { sent: number; delivered: number; opened: number; clicked: number; replied: number; bounced: number };
+    contactsByMetric?: Record<string, Array<{ prenom: string; nom: string; email: string; entreprise: string; date: string }>>;
     daily: Array<{ date: string; sent: number; replied: number; bounced: number }>;
   }>(`/analytics${qs}`);
 }

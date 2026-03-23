@@ -13,6 +13,7 @@ export default async (request: Request) => {
     const campagneId = url.searchParams.get("campagne_id");
 
     // Find campaign
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
     let campaign: Record<string, string> | null = null;
     if (campagneId) {
       const found = await findRowById("Campagnes", campagneId);
@@ -21,11 +22,15 @@ export default async (request: Request) => {
         if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
           return json({ error: "Accès non autorisé" }, 403);
         }
-        campaign = found.data;
+        // Admin: hide demo campaigns
+        if (demoIds && found.data.user_id && demoIds.has(found.data.user_id)) {
+          campaign = null;
+        } else {
+          campaign = found.data;
+        }
       }
     } else {
       // Get latest campaign visible to this user
-      const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
       const all = filterByUser(await readAll("Campagnes"), auth, demoIds);
       campaign = all.length > 0 ? all[all.length - 1] : null;
     }

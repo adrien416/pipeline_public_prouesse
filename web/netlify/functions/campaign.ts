@@ -36,6 +36,8 @@ export default async (request: Request) => {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+
     if (id) {
       const found = await findRowById("Campagnes", id);
       if (!found) return json({ campaign: null });
@@ -43,12 +45,15 @@ export default async (request: Request) => {
       if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
         return json({ campaign: null });
       }
+      // Admin: hide demo campaigns
+      if (auth.role === "admin" && demoIds && found.data.user_id && demoIds.has(found.data.user_id)) {
+        return json({ campaign: null });
+      }
       return json({ campaign: found.data });
     }
 
     const allCampaigns = await readAll("Campagnes");
     const rechercheId = url.searchParams.get("recherche_id");
-    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
     const showAll = url.searchParams.get("all") === "true" && auth.role === "admin";
     let visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth, demoIds);
 

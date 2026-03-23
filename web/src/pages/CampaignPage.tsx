@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
@@ -137,6 +137,18 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     refetchInterval: 5000,
   });
 
+  // All campaigns across all searches (for the overview panel)
+  const allCampaigns = useQuery({
+    queryKey: ["campaigns-all"],
+    queryFn: () => fetchCampaigns(),
+  });
+
+  // All recherches (to show search names in the overview)
+  const allRecherches = useQuery({
+    queryKey: ["recherches"],
+    queryFn: fetchRecherches,
+  });
+
   const [generatingPhrases, setGeneratingPhrases] = useState(false);
   const [phraseProgress, setPhraseProgress] = useState({ generated: 0, total: 0 });
   const [templateLoaded, setTemplateLoaded] = useState(false);
@@ -158,6 +170,17 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     (c) => !knownStatuses.includes(c.status)
   );
   const hasActiveCampaign = !!activeCampaign;
+
+  // Build a map of recherche_id -> description for display
+  const rechercheMap = new Map<string, string>();
+  (allRecherches.data?.recherches || []).forEach((r) => {
+    rechercheMap.set(r.id, r.description || "Sans nom");
+  });
+
+  // Active campaigns from OTHER searches
+  const otherActiveCampaigns = (allCampaigns.data?.campaigns || []).filter(
+    (c) => c.recherche_id !== rechercheId && (c.status === "active" || c.status === "paused")
+  );
 
   // Auto-select the active campaign
   useEffect(() => {
@@ -286,8 +309,12 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const toggleStatus = useMutation({
     mutationFn: (targetId?: string) => {
       const id = targetId || campaignId;
+      const allCamps = [
+        ...campaignsList,
+        ...(allCampaigns.data?.campaigns || []),
+      ];
       const camp = targetId
-        ? campaignsList.find((c) => c.id === targetId)
+        ? allCamps.find((c) => c.id === targetId)
         : campaignData;
       const currentStatus = camp?.status || "draft";
       return updateCampaign({
@@ -298,6 +325,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["campaign"] });
       qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaigns-all"] });
     },
   });
 
@@ -307,6 +335,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["campaign"] });
       qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaigns-all"] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
       if (cancelConfirm === campaignId) {
         setCampaignId(null);
@@ -459,6 +488,78 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           {contactsList.length} contacts avec email à contacter
         </p>
       </div>
+
+      {/* ─── OTHER ACTIVE CAMPAIGNS OVERVIEW ─── */}
+      {otherActiveCampaigns.length > 0 && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-indigo-700">
+            Autres campagnes en cours ({otherActiveCampaigns.length})
+          </h3>
+          <div className="space-y-2">
+            {otherActiveCampaigns.map((c) => {
+              const sent = parseInt(c.sent || "0");
+              const total = Math.max(parseInt(c.total_leads || "0"), sent);
+              const pct = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
+              return (
+                <div key={c.id} className="bg-white rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${
+                        c.status === "active" ? "bg-green-500 animate-pulse" : "bg-orange-500"
+                      }`} />
+                      <span className="text-sm font-medium text-gray-700 truncate">
+                        {c.nom || "Sans nom"}
+                      </span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                        c.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-orange-100 text-orange-700"
+                      }`}>
+                        {c.status === "active" ? "Active" : "En pause"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {rechercheMap.get(c.recherche_id) || c.recherche_id}
+                      {" · "}
+                      {sent}/{total} envoyés ({pct}%)
+                    </p>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1">
+                      <div
+                        className="bg-green-500 h-1.5 rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      onClick={() => toggleStatus.mutate(c.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                        c.status === "active"
+                          ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                          : "bg-green-100 text-green-700 hover:bg-green-200"
+                      }`}
+                    >
+                      {c.status === "active" ? "Pause" : "Reprendre"}
+                    </button>
+                    <button
+                      onClick={() => setCancelConfirm(c.id)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={() => onComplete(c.id)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    >
+                      Analytics
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ─── ACTIVE CAMPAIGN VIEW ─── */}
       {campaignData && !knownStatuses.includes(campaignData.status) && (

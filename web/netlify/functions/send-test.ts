@@ -30,7 +30,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { campagne_id, test_email } = await request.json();
+    const { campagne_id, test_email, contact_index } = await request.json();
     if (!campagne_id) return json({ error: "campagne_id requis" }, 400);
     if (!test_email) return json({ error: "test_email requis" }, 400);
 
@@ -41,19 +41,25 @@ export default async (request: Request) => {
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
     const campaign = campFound.data;
 
-    // Find first queued contact to use as sample data
+    // Find a contact to use as sample data (vary by contact_index for multiple test emails)
     const allContacts = await readAll("Contacts");
-    const sampleContact = allContacts.find(
+    const queuedContacts = allContacts.filter(
       (c) => c.campagne_id === campagne_id && c.email_status === "queued"
-    ) || allContacts.find(
+    );
+    const allCampaignContacts = allContacts.filter(
       (c) => c.campagne_id === campagne_id
     );
+    const pool = queuedContacts.length > 0 ? queuedContacts : allCampaignContacts;
+    const idx = (typeof contact_index === "number" && pool.length > 0)
+      ? contact_index % pool.length
+      : 0;
+    const sampleContact = pool.length > 0 ? pool[idx] : null;
 
     const contact = sampleContact || {
       prenom: "Prenom",
       nom: "Nom",
       entreprise: "Entreprise",
-      phrase_perso: "J'ai vu que ton entreprise se developpait rapidement dans le secteur tech.",
+      phrase_perso: "J'ai vu que ton entreprise se développait rapidement dans le secteur tech.",
     };
 
     // Build email from template

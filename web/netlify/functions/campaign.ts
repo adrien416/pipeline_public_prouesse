@@ -119,7 +119,7 @@ export default async (request: Request) => {
       template_sujet,
       template_corps,
       mode: mode || "levee_de_fonds",
-      status: "active",
+      status: "paused",
       max_par_jour: String(max_par_jour || 15),
       jours_semaine: JSON.stringify(jours_semaine || ["lun", "mar", "mer", "jeu", "ven"]),
       heure_debut: heure_debut || "08:30",

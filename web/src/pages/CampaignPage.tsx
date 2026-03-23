@@ -86,6 +86,12 @@ const DAYS = [
   { id: "dim", label: "Dim" },
 ];
 
+const TEST_EMAILS = [
+  "adrien@lina.finance",
+  "phorrito@gmail.com",
+  "adpannetier@gmail.com",
+];
+
 export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const qc = useQueryClient();
   const [nom, setNom] = useState("");
@@ -105,12 +111,13 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState({ sent: 0, total: 0, errors: [] as string[], done: false });
   const [cancelConfirm, setCancelConfirm] = useState<string | null>(null);
-  const [testEmail, setTestEmail] = useState("");
+  const [testEmails, setTestEmails] = useState<Set<string>>(new Set(TEST_EMAILS));
   const [testSending, setTestSending] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Map<string, { success: boolean; message: string }>>(new Map());
   const [purgeConfirm, setPurgeConfirm] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [sendConfirm, setSendConfirm] = useState(false);
+  const cancelSendRef = useRef(false);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -311,12 +318,14 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   async function doSendAll() {
     if (!campaignId || sending) return;
     setSending(true);
+    cancelSendRef.current = false;
     const total = Math.max(0, parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0"));
     setSendProgress({ sent: 0, total, errors: [], done: false });
+    const intervalMs = (parseInt(intervalle) || 20) * 60 * 1000;
     try {
       let remaining = total;
       let sentCount = 0;
-      while (remaining > 0) {
+      while (remaining > 0 && !cancelSendRef.current) {
         let r: { sent: number; remaining?: number; error?: string; skipped_domain?: string };
         try {
           r = await triggerSend(campaignId, true);
@@ -341,8 +350,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           }
           break;
         }
-        if (remaining > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+        if (remaining > 0 && !cancelSendRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, intervalMs));
         }
       }
       setSendProgress((p) => ({ ...p, done: true }));
@@ -356,22 +365,28 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   }
 
   async function doSendTest() {
-    if (!campaignId || !testEmail || testSending) return;
+    if (!campaignId || testSending || testEmails.size === 0) return;
     setTestSending(true);
-    setTestResult(null);
-    setTestError(null);
-    try {
-      const r = await sendTestEmail(campaignId, testEmail);
-      if (r.sent) {
-        setTestResult(`Email de test envoyé à ${r.test_email} (contact: ${r.contact_used})`);
-      } else {
-        setTestError(r.error || "Erreur inconnue");
+    setTestResults(new Map());
+    const emails = Array.from(testEmails);
+    const results = new Map<string, { success: boolean; message: string }>();
+    for (let i = 0; i < emails.length; i++) {
+      const email = emails[i];
+      try {
+        const r = await sendTestEmail(campaignId, email, i);
+        results.set(email, {
+          success: r.sent,
+          message: r.sent ? `Envoyé (contact: ${r.contact_used})` : (r.error || "Erreur"),
+        });
+      } catch (err) {
+        results.set(email, {
+          success: false,
+          message: err instanceof Error ? err.message : String(err),
+        });
       }
-    } catch (err) {
-      setTestError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTestSending(false);
+      setTestResults(new Map(results));
     }
+    setTestSending(false);
   }
 
   const purge = useMutation({
@@ -521,11 +536,11 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                           : "bg-green-100 text-green-700 hover:bg-green-200"
                       }`}
                     >
-                      {campaignStatus === "active" ? "Pause" : "Reprendre"}
+                      {campaignStatus === "active" ? "Pause" : (sentCount === 0 ? "Activer" : "Reprendre")}
                     </button>
                     {campaignStatus === "active" && (
                       <button
-                        onClick={doSendAll}
+                        onClick={() => setSendConfirm(true)}
                         disabled={sending}
                         className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                       >
@@ -586,7 +601,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     <div className="flex justify-between text-xs text-gray-600 mb-1">
                       <span>
                         {sending
-                          ? "Envoi en cours..."
+                          ? `Envoi en cours... (~${Math.ceil((sendProgress.total - sendProgress.sent) * (parseInt(intervalle) || 20))} min restantes)`
                           : sendProgress.errors.length > 0 && sendProgress.sent === 0
                           ? "Échec de l'envoi"
                           : sendProgress.errors.length > 0
@@ -610,6 +625,15 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   </div>
                 </div>
 
+                {sending && (
+                  <button
+                    onClick={() => { cancelSendRef.current = true; }}
+                    className="w-full text-sm text-gray-500 hover:text-red-600 border border-gray-200 rounded-lg py-2 transition-colors"
+                  >
+                    Stopper l'envoi
+                  </button>
+                )}
+
                 {sendProgress.errors.length > 0 && (
                   <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700 space-y-0.5">
                     {sendProgress.errors.map((e, i) => <div key={i}>{e}</div>)}
@@ -619,35 +643,42 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             )}
           </div>
 
-          {/* Test email */}
-          {campaignStatus === "active" && (
+          {/* Test emails */}
+          {(campaignStatus === "active" || campaignStatus === "paused") && (
             <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-gray-700">Tester avant d'envoyer</h3>
-              <div className="flex gap-2">
-                <input
-                  value={testEmail}
-                  onChange={(e) => setTestEmail(e.target.value)}
-                  placeholder="ton@email.com"
-                  type="email"
-                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  onClick={doSendTest}
-                  disabled={testSending || !testEmail}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 shrink-0"
-                >
-                  {testSending ? "Envoi..." : "Envoyer un test"}
-                </button>
-              </div>
-              {testResult && (
-                <div className="bg-green-50 rounded-lg px-3 py-2 text-xs text-green-700">{testResult}</div>
-              )}
-              {testError && (
-                <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700">{testError}</div>
-              )}
+              <h3 className="text-sm font-semibold text-gray-700">Tester la campagne</h3>
               <p className="text-xs text-gray-400">
-                Envoie l'email avec les variables du premier contact, mais à ton adresse. Objet préfixé [TEST]. Aucun compteur modifié.
+                Envoie des emails de test avec [TEST] en objet. Un contact différent est utilisé pour chaque adresse. Aucun compteur modifié.
               </p>
+              <div className="space-y-2">
+                {TEST_EMAILS.map((email) => (
+                  <label key={email} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={testEmails.has(email)}
+                      onChange={() => {
+                        const next = new Set(testEmails);
+                        next.has(email) ? next.delete(email) : next.add(email);
+                        setTestEmails(next);
+                      }}
+                      className="rounded"
+                    />
+                    <span className="text-gray-700">{email}</span>
+                    {testResults.get(email) && (
+                      <span className={`text-xs ${testResults.get(email)!.success ? "text-green-600" : "text-red-600"}`}>
+                        — {testResults.get(email)!.message}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={doSendTest}
+                disabled={testSending || testEmails.size === 0}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              >
+                {testSending ? "Envoi en cours..." : `Envoyer ${testEmails.size} test${testEmails.size > 1 ? "s" : ""}`}
+              </button>
             </div>
           )}
 
@@ -976,7 +1007,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     Création de la campagne...
                   </>
                 ) : (
-                  `Lancer la campagne (${contactsList.length} contacts)`
+                  `Créer la campagne (${contactsList.length} contacts)`
                 )}
               </button>
 
@@ -1094,6 +1125,16 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         variant="danger"
         onConfirm={() => purge.mutate()}
         onCancel={() => setPurgeConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={sendConfirm}
+        title="Envoyer maintenant"
+        message={`L'envoi de ${Math.max(0, totalLeads - sentCount)} emails prendra environ ${Math.ceil(Math.max(0, totalLeads - sentCount) * (parseInt(intervalle) || 20))} minutes (intervalle de ${intervalle} min entre chaque envoi). La page doit rester ouverte. Continuer ?`}
+        confirmLabel="Lancer l'envoi"
+        variant="danger"
+        onConfirm={() => { setSendConfirm(false); doSendAll(); }}
+        onCancel={() => setSendConfirm(false)}
       />
     </div>
   );

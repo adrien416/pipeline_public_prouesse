@@ -184,10 +184,10 @@ export function purgeAllCampaigns() {
 }
 
 // ─── Send ───
-export function sendTestEmail(campagne_id: string, test_email: string) {
+export function sendTestEmail(campagne_id: string, test_email: string, contact_index?: number) {
   return request<{ sent: boolean; test_email: string; subject: string; contact_used: string; error?: string }>("/send-test", {
     method: "POST",
-    body: JSON.stringify({ campagne_id, test_email }),
+    body: JSON.stringify({ campagne_id, test_email, contact_index }),
   });
 }
 

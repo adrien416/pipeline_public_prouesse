@@ -8,6 +8,7 @@ interface Props {
   rechercheId: string;
   mode: "levee_de_fonds" | "cession";
   onComplete: () => void;
+  onBackToSearch?: () => void;
 }
 
 /** Inline editable score cell */
@@ -105,7 +106,7 @@ function FeedbackCell({
   );
 }
 
-export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
+export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
@@ -255,6 +256,14 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </div>
         <div className="flex gap-2">
+          {onBackToSearch && !scoring && (
+            <button
+              onClick={onBackToSearch}
+              className="border border-gray-300 text-gray-700 font-medium rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              ← Chercher plus de contacts
+            </button>
+          )}
           {scoring ? (
             <button
               onClick={() => { cancelRef.current = true; }}

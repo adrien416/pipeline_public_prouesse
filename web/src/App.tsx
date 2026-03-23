@@ -101,6 +101,7 @@ function AppContent() {
           rechercheId={rechercheId}
           mode={searchMode}
           onComplete={() => goTo("enrich")}
+          onBackToSearch={() => setTab("search")}
         />
       )}
       {tab === "scoring" && !rechercheId && (

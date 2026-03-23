@@ -307,7 +307,11 @@ export function AnalyticsPage({ campaignId }: Props) {
                   <td className="px-4 py-3 text-center text-gray-700">{c.sent || 0}</td>
                   <td className="px-4 py-3 text-center text-gray-700">{c.total_leads || 0}</td>
                   <td className="px-4 py-3 text-center text-gray-500 text-xs">
-                    {c.date_creation ? new Date(c.date_creation).toLocaleDateString("fr-FR") : "-"}
+                    {(() => {
+                      if (!c.date_creation) return "—";
+                      const d = new Date(c.date_creation);
+                      return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR") : "—";
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span

@@ -180,7 +180,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               onChange={(e) => setLimit(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm"
               min="1"
-              max="100"
+              max="500"
             />
           </div>
         </div>

@@ -426,53 +426,41 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 : "bg-gray-50 border-gray-200"
             }`}
           >
-            {/* Top row: name + status + actions */}
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                      campaignStatus === "active"
-                        ? "bg-green-500 animate-pulse"
-                        : campaignStatus === "cancelled"
-                        ? "bg-red-400"
-                        : campaignStatus === "completed"
-                        ? "bg-gray-400"
-                        : "bg-orange-500"
-                    }`}
-                  />
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+            {/* Status + actions row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full shrink-0 ${
                     campaignStatus === "active"
-                      ? "bg-green-100 text-green-700"
-                      : campaignStatus === "paused"
-                      ? "bg-orange-100 text-orange-700"
+                      ? "bg-green-500 animate-pulse"
                       : campaignStatus === "cancelled"
-                      ? "bg-red-100 text-red-600"
+                      ? "bg-red-400"
                       : campaignStatus === "completed"
-                      ? "bg-gray-100 text-gray-600"
-                      : "bg-gray-100 text-gray-600"
-                  }`}>
-                    {campaignStatus === "active" ? "Active"
-                      : campaignStatus === "paused" ? "En pause"
-                      : campaignStatus === "cancelled" ? "Annulee"
-                      : campaignStatus === "completed" ? "Terminee"
-                      : "Brouillon"}
-                  </span>
-                </div>
-                <h3 className="text-base font-semibold text-gray-900 break-words">
-                  {campaignData.nom || "Campagne sans nom"}
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Creee le {(() => {
-                    if (!campaignData.date_creation) return "—";
-                    const d = new Date(campaignData.date_creation);
-                    return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR") : "—";
-                  })()}
-                </p>
+                      ? "bg-gray-400"
+                      : "bg-orange-500"
+                  }`}
+                />
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  campaignStatus === "active"
+                    ? "bg-green-100 text-green-700"
+                    : campaignStatus === "paused"
+                    ? "bg-orange-100 text-orange-700"
+                    : campaignStatus === "cancelled"
+                    ? "bg-red-100 text-red-600"
+                    : campaignStatus === "completed"
+                    ? "bg-gray-100 text-gray-600"
+                    : "bg-gray-100 text-gray-600"
+                }`}>
+                  {campaignStatus === "active" ? "Active"
+                    : campaignStatus === "paused" ? "En pause"
+                    : campaignStatus === "cancelled" ? "Annulee"
+                    : campaignStatus === "completed" ? "Terminee"
+                    : "Brouillon"}
+                </span>
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap gap-1.5 shrink-0">
+              <div className="flex flex-wrap gap-1.5">
                 {campaignStatus !== "cancelled" && (
                   <>
                     <button
@@ -509,6 +497,20 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   Analytics
                 </button>
               </div>
+            </div>
+
+            {/* Campaign name + date */}
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                {campaignData.nom || "Campagne sans nom"}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Creee le {(() => {
+                  if (!campaignData.date_creation) return "—";
+                  const d = new Date(campaignData.date_creation);
+                  return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR") : "—";
+                })()}
+              </p>
             </div>
 
             {/* Progress bar */}

@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 import { mockEnrichEmail, mockCredits } from "./_demo.js";
 
@@ -31,7 +31,9 @@ export default async (request: Request) => {
 
     const allContacts = await readAll("Contacts");
     const sheetHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
-    const qualified = allContacts.filter(
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+    const visibleContacts = filterByUser(allContacts, auth, demoIds);
+    const qualified = visibleContacts.filter(
       (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
     );
 

@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import { mockScoreForContact } from "./_demo.js";
 import {
   readAll,
@@ -232,11 +232,13 @@ export default async (request: Request) => {
       mode = recherche.data.mode || "levee_de_fonds";
     }
 
-    // Read all contacts and filter by recherche_id
+    // Read all contacts and filter by user + recherche_id
     const allContacts = await readAll("Contacts");
     const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+    const visibleContacts = filterByUser(allContacts, auth, demoIds);
 
-    const searchContacts = allContacts.filter(
+    const searchContacts = visibleContacts.filter(
       (c) => c.recherche_id === body.recherche_id && c.statut !== "exclu"
     );
 

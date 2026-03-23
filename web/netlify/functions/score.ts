@@ -3,7 +3,6 @@ import { requireAuth, json } from "./_auth.js";
 import { mockScoreForContact } from "./_demo.js";
 import {
   readAll,
-  readRawRange,
   findRowById,
   batchUpdateRows,
   getHeadersForWrite,
@@ -243,40 +242,9 @@ export default async (request: Request) => {
 
     // DIAGNOSTIC: if 0 contacts found, return raw sheet data for debugging
     if (searchContacts.length === 0) {
-      const allRechercheIds = [...new Set(allContacts.map((c) => c.recherche_id).filter(Boolean))];
-
-      // Count empty vs non-empty entries
-      const emptyIdCount = allContacts.filter((c) => !c.id).length;
-      const emptyRechCount = allContacts.filter((c) => !c.recherche_id).length;
-
-      // Read column A to get true row count in the sheet
-      const rawColA = await readRawRange("Contacts!A:A");
-      const trueRowCount = rawColA.length;
-
-      // Read raw headers
-      const rawHeaders = await readRawRange("Contacts!1:1");
-      const rechercheIdColIndex = rawHeaders[0]?.indexOf("recherche_id") ?? -1;
-
-      // Read last 10 raw rows using the TRUE row count
-      const rawStartRow = Math.max(2, trueRowCount - 9);
-      const rawLastRows = await readRawRange(
-        `Contacts!A${rawStartRow}:W${trueRowCount + 2}`
-      );
-
-      // Build diagnostic string
-      const lastRowsSummary = rawLastRows.slice(-5).map((row, i) =>
-        `r${rawStartRow + rawLastRows.length - 5 + i}:[${row.length}c]id=${row[0] ?? "?"} rech=${rechercheIdColIndex >= 0 ? (row[rechercheIdColIndex] ?? "VIDE") : row[16] ?? "VIDE"}`
-      ).join(" | ");
-
-      const errorMsg = [
-        `0 contacts pour recherche_id=${body.recherche_id}`,
-        `readAll: ${allContacts.length} (${emptyIdCount} id_vide, ${emptyRechCount} rech_vide)`,
-        `IDs uniques: [${allRechercheIds.slice(0, 5).join(", ")}]`,
-        `Sheet: ${trueRowCount} vrais rows, ${rawHeaders[0]?.length ?? 0} cols, rech@col${rechercheIdColIndex}`,
-        lastRowsSummary,
-      ].join(" — ");
-
-      return json({ error: errorMsg }, 404);
+      // Log diagnostics server-side only (not exposed to client)
+      console.error(`score: 0 contacts for recherche_id=${body.recherche_id}, total contacts: ${allContacts.length}`);
+      return json({ error: "Aucun contact trouvé pour cette recherche" }, 404);
     }
 
     // Find unscored contacts (empty score_total = not yet scored)

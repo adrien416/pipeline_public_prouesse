@@ -73,7 +73,7 @@ async function handlePost(request: Request, user: UserContext) {
 }
 
 /** PUT /api/contacts */
-async function handlePut(request: Request) {
+async function handlePut(request: Request, user: UserContext) {
   const body = await request.json();
 
   // Bulk exclude contacts
@@ -85,6 +85,8 @@ async function handlePut(request: Request) {
     for (const id of body.exclude_ids) {
       const contact = allContacts.find((c) => c.id === id);
       if (!contact || !contact._rowIndex) continue;
+      // Ownership check
+      if (user.role !== "admin" && contact.user_id && contact.user_id !== user.userId) continue;
       const updated = { ...contact, statut: "exclu", date_modification: new Date().toISOString() };
       updates.push({ rowIndex: Number(contact._rowIndex), values: toRow(headers, updated) });
     }
@@ -101,6 +103,11 @@ async function handlePut(request: Request) {
   const found = await findRowById("Contacts", id);
   if (!found) return json({ error: "Contact introuvable" }, 404);
 
+  // Ownership check
+  if (user.role !== "admin" && found.data.user_id && found.data.user_id !== user.userId) {
+    return json({ error: "Accès non autorisé" }, 403);
+  }
+
   const updated = { ...found.data, ...updates, date_modification: new Date().toISOString() };
   const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
   await updateRow("Contacts", found.rowIndex, toRow(headers, updated));
@@ -116,7 +123,7 @@ export default async (request: Request, _context: Context) => {
     switch (request.method) {
       case "GET": return await handleGet(url, auth);
       case "POST": return await handlePost(request, auth);
-      case "PUT": return await handlePut(request);
+      case "PUT": return await handlePut(request, auth);
       default: return json({ error: "Methode non supportee" }, 405);
     }
   } catch (err) {

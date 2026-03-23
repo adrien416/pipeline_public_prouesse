@@ -87,10 +87,22 @@ export default async () => {
       }
     } catch { /* Users sheet may not exist yet */ }
 
+    // Build set of demo user IDs to skip
+    const demoUserIds = new Set<string>();
+    try {
+      const users = await readAll("Users");
+      for (const u of users) {
+        if (u.role === "demo") demoUserIds.add(u.id);
+      }
+    } catch { /* Users sheet may not exist yet */ }
+
     let totalSent = 0;
 
     for (const campaign of activeCampaigns) {
       try {
+        // Skip campaigns from demo users — never send real emails for demo
+        if (demoUserIds.has(campaign.user_id)) continue;
+
         // Check day-of-week
         const joursActifs: string[] = (() => {
           try { return JSON.parse(campaign.jours_semaine || "[]"); }

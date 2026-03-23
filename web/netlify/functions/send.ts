@@ -102,6 +102,11 @@ export default async (request: Request) => {
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
     const campaign = campFound.data;
 
+    // Ownership check
+    if (auth.role !== "admin" && campaign.user_id && campaign.user_id !== auth.userId) {
+      return json({ error: "Accès non autorisé" }, 403);
+    }
+
     if (campaign.status !== "active") {
       return json({ error: "Campagne non active", sent: 0, remaining: 0 });
     }

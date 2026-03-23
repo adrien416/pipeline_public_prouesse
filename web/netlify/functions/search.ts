@@ -415,7 +415,7 @@ export default async (request: Request) => {
       suggestions,
       retried,
       originalFilters: retried ? originalFilters : undefined,
-      _writeDebug: writeDebug,
+      // _writeDebug removed for production security
     });
   } catch (err) {
     console.error("search error:", err);

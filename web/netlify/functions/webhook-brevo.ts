@@ -17,10 +17,10 @@ export default async (request: Request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Verify webhook secret (set the same value in Brevo webhook URL as ?secret=XXX)
+  // Verify webhook secret (required — set the same value in Brevo webhook URL as ?secret=XXX)
   const url = new URL(request.url);
   const webhookSecret = process.env.BREVO_WEBHOOK_SECRET;
-  if (webhookSecret && url.searchParams.get("secret") !== webhookSecret) {
+  if (!webhookSecret || url.searchParams.get("secret") !== webhookSecret) {
     return new Response("Unauthorized", { status: 401 });
   }
 

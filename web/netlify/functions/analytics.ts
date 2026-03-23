@@ -16,10 +16,16 @@ export default async (request: Request) => {
     let campaign: Record<string, string> | null = null;
     if (campagneId) {
       const found = await findRowById("Campagnes", campagneId);
-      campaign = found?.data ?? null;
+      if (found) {
+        // Ownership check
+        if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
+          return json({ error: "Accès non autorisé" }, 403);
+        }
+        campaign = found.data;
+      }
     } else {
-      // Get latest campaign
-      const all = await readAll("Campagnes");
+      // Get latest campaign visible to this user
+      const all = filterByUser(await readAll("Campagnes"), auth);
       campaign = all.length > 0 ? all[all.length - 1] : null;
     }
 

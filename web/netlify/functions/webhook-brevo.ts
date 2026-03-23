@@ -52,26 +52,34 @@ export default async (request: Request) => {
       let newStatus = log.status;
       const updatedLog = { ...log };
 
+      // Track whether this is the first time we see this status (for counter dedup)
+      let isFirstOccurrence = false;
+
       switch (eventType) {
         case "opened":
         case "unique_opened":
           newStatus = "opened";
+          isFirstOccurrence = !log.opened_at; // only count if not already opened
           updatedLog.opened_at = updatedLog.opened_at || now;
           break;
         case "click":
           newStatus = "clicked";
+          isFirstOccurrence = !log.clicked_at;
           updatedLog.clicked_at = updatedLog.clicked_at || now;
           break;
         case "hard_bounce":
         case "soft_bounce":
           newStatus = "bounced";
+          isFirstOccurrence = log.status !== "bounced";
           break;
         case "reply":
           newStatus = "replied";
+          isFirstOccurrence = !log.replied_at;
           updatedLog.replied_at = updatedLog.replied_at || now;
           break;
         case "unsubscribed":
           newStatus = "bounced";
+          isFirstOccurrence = log.status !== "bounced";
           break;
         default:
           continue;
@@ -105,8 +113,8 @@ export default async (request: Request) => {
         }
       }
 
-      // Track campaign counter increments
-      if (log.campagne_id) {
+      // Track campaign counter increments (only for first occurrence to avoid double-counting)
+      if (log.campagne_id && isFirstOccurrence) {
         if (!campaignCounters[log.campagne_id]) {
           campaignCounters[log.campagne_id] = {};
         }

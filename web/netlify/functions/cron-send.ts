@@ -100,6 +100,23 @@ export default async () => {
 
     for (const campaign of activeCampaigns) {
       try {
+        // Check completion FIRST — regardless of schedule or demo status
+        const queued = allContacts.filter(
+          (c) => c.campagne_id === campaign.id && c.email_status === "queued" && c.email
+        );
+        if (queued.length === 0) {
+          // Campaign complete — mark as completed
+          const campFound = await findRowById("Campagnes", campaign.id);
+          if (campFound) {
+            await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
+              ...campaign,
+              status: "completed",
+            }));
+          }
+          console.log(`cron-send: campaign ${campaign.id} completed (no queued contacts)`);
+          continue;
+        }
+
         // Skip campaigns from demo users — never send real emails for demo
         if (demoUserIds.has(campaign.user_id)) continue;
 
@@ -133,22 +150,6 @@ export default async () => {
           const lastSentTime = new Date(lastSent.email_sent_at).getTime();
           const minSinceLastSend = (Date.now() - lastSentTime) / 60000;
           if (minSinceLastSend < intervalleMin) continue;
-        }
-
-        // Get next queued contact
-        const queued = allContacts.filter(
-          (c) => c.campagne_id === campaign.id && c.email_status === "queued" && c.email
-        );
-        if (queued.length === 0) {
-          // Campaign complete — mark as completed
-          const campFound = await findRowById("Campagnes", campaign.id);
-          if (campFound) {
-            await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
-              ...campaign,
-              status: "completed",
-            }));
-          }
-          continue;
         }
 
         const contact = queued[0];

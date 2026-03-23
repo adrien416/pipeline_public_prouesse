@@ -53,26 +53,29 @@ export default async (request: Request) => {
     ).length;
     const in_progress = total - queued - completed - bounced - skipped;
 
-    // Metrics — prefer actual contact data over campaign counters (which can desync)
+    // Metrics — compute from contact statuses (ground truth) + EmailLog for engagement
     const contactSent = campaignContacts.filter(
       (c) => c.email_status === "sent" || c.email_status === "opened" ||
              c.email_status === "clicked" || c.email_status === "replied" ||
              c.email_status === "bounced"
     ).length;
     const counterSent = parseInt(campaign.sent || "0");
-    // Use the higher of the two to avoid undercounting
     const sent = Math.max(contactSent, counterSent);
-    const opened = parseInt(campaign.opened || "0");
-    const clicked = parseInt(campaign.clicked || "0");
-    const replied = parseInt(campaign.replied || "0");
-    const bouncedCount = parseInt(campaign.bounced || "0");
-    const delivered = sent - bouncedCount;
 
-    // Daily stats from EmailLog
+    // Compute engagement metrics from EmailLog (unique per contact, not from campaign counters)
+    let opened = 0, clicked = 0, replied = 0, bouncedCount = 0;
     let daily: Array<{ date: string; sent: number; replied: number; bounced: number }> = [];
     try {
       const emailLogs = await readAll("EmailLog");
       const campaignLogs = emailLogs.filter((l) => l.campagne_id === campaign!.id);
+
+      // Unique counts from log statuses
+      for (const log of campaignLogs) {
+        if (log.opened_at) opened++;
+        if (log.clicked_at) clicked++;
+        if (log.replied_at) replied++;
+        if (log.status === "bounced") bouncedCount++;
+      }
 
       const byDay: Record<string, { sent: number; replied: number; bounced: number }> = {};
       for (const log of campaignLogs) {
@@ -87,7 +90,15 @@ export default async (request: Request) => {
       daily = Object.entries(byDay)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, stats]) => ({ date, ...stats }));
-    } catch { /* EmailLog tab might not exist yet */ }
+    } catch {
+      // EmailLog tab might not exist — fall back to campaign counters
+      opened = parseInt(campaign.opened || "0");
+      clicked = parseInt(campaign.clicked || "0");
+      replied = parseInt(campaign.replied || "0");
+      bouncedCount = parseInt(campaign.bounced || "0");
+    }
+
+    const delivered = sent - bouncedCount;
 
     return json({
       campaign,

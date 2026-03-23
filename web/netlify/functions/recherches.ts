@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json, filterByUser } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import { readAll } from "./_sheets.js";
 
 export default async (request: Request) => {
@@ -10,7 +10,8 @@ export default async (request: Request) => {
 
   try {
     const allRecherches = await readAll("Recherches");
-    const recherches = filterByUser(allRecherches, auth);
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+    const recherches = filterByUser(allRecherches, auth, demoIds);
     // Sort by date descending (most recent first)
     recherches.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     return json({ recherches });

@@ -1,6 +1,6 @@
 import type { Context, Config } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
-import { requireAuth, json, filterByUser, type UserContext } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds, type UserContext } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -18,7 +18,8 @@ async function handleGet(url: URL, user: UserContext) {
   const statutFilter = url.searchParams.get("statut")?.toLowerCase();
   const secteurFilter = url.searchParams.get("secteur")?.toLowerCase();
 
-  let contacts = filterByUser(await readAll("Contacts"), user);
+  const demoIds = user.role === "admin" ? await getDemoUserIds() : undefined;
+  let contacts = filterByUser(await readAll("Contacts"), user, demoIds);
 
   if (rechercheId) {
     contacts = contacts.filter((c) => c.recherche_id === rechercheId && c.statut !== "exclu");

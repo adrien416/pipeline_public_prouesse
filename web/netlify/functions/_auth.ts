@@ -140,10 +140,28 @@ export function requireAuth(request: Request): UserContext | Response {
  */
 export function filterByUser<T extends Record<string, string>>(
   rows: T[],
-  user: UserContext
+  user: UserContext,
+  demoUserIds?: Set<string>
 ): T[] {
-  if (user.role === "admin") return rows.filter((r) => (r as Record<string, string>).user_role !== "demo");
+  if (user.role === "admin") {
+    if (demoUserIds && demoUserIds.size > 0) {
+      return rows.filter((r) => !r.user_id || !demoUserIds.has(r.user_id));
+    }
+    return rows;
+  }
   return rows.filter((r) => r.user_id === user.userId || r.user_id === "");
+}
+
+/** Load the set of user IDs with role=demo from the Users sheet. */
+export async function getDemoUserIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const users = await readAll("Users");
+    for (const u of users) {
+      if (u.role === "demo") ids.add(u.id);
+    }
+  } catch { /* Users sheet may not exist */ }
+  return ids;
 }
 
 export function json(data: unknown, status = 200, extraHeaders?: Record<string, string>) {

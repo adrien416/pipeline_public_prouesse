@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json, filterByUser } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import { readAll, findRowById } from "./_sheets.js";
 
 export default async (request: Request) => {
@@ -25,7 +25,8 @@ export default async (request: Request) => {
       }
     } else {
       // Get latest campaign visible to this user
-      const all = filterByUser(await readAll("Campagnes"), auth);
+      const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+      const all = filterByUser(await readAll("Campagnes"), auth, demoIds);
       campaign = all.length > 0 ? all[all.length - 1] : null;
     }
 

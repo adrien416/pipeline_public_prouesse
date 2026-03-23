@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { v4 as uuid } from "uuid";
-import { requireAuth, json, filterByUser } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -48,15 +48,13 @@ export default async (request: Request) => {
 
     const allCampaigns = await readAll("Campagnes");
     const rechercheId = url.searchParams.get("recherche_id");
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
     const showAll = url.searchParams.get("all") === "true" && auth.role === "admin";
-    let visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth);
+    let visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth, demoIds);
 
-    // For admin: also filter out campaigns from demo users that lack user_role field
-    // (legacy rows created before user_role was added)
-    if (auth.role === "admin") {
-      const users = await readAll("Users");
-      const demoUserIds = new Set(users.filter((u) => u.role === "demo").map((u) => u.id));
-      visible = visible.filter((c) => !demoUserIds.has(c.user_id));
+    // Even in showAll mode, exclude demo data
+    if (showAll && demoIds && demoIds.size > 0) {
+      visible = visible.filter((c) => !c.user_id || !demoIds.has(c.user_id));
     }
 
     if (rechercheId) {

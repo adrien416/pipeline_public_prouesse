@@ -2,16 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchAnalytics, fetchCampaigns } from "../api/client";
 import { Spinner } from "../components/Spinner";
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
 
 interface Props {
   campaignId?: string;
@@ -58,7 +48,6 @@ export function AnalyticsPage({ campaignId }: Props) {
   const campaign = data?.campaign;
   const leads = data?.leads || { total: 0, queued: 0, in_progress: 0, completed: 0, skipped: 0 };
   const metrics = data?.metrics || { sent: 0, delivered: 0, opened: 0, clicked: 0, replied: 0, bounced: 0 };
-  const daily = data?.daily || [];
   const contactsByMetric: Record<string, ContactDetail[]> = data?.contactsByMetric || {};
   const campaignStatus = campaign?.status || "draft";
   const completionPct = leads.total > 0 ? Math.round((leads.completed / leads.total) * 100) : 0;
@@ -240,36 +229,12 @@ export function AnalyticsPage({ campaignId }: Props) {
             />
           )}
 
-          {/* Daily chart */}
-          {daily.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Stats par jour</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={daily}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(d) =>
-                      new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
-                    }
-                  />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    labelFormatter={(d) =>
-                      new Date(d as string).toLocaleDateString("fr-FR", {
-                        day: "numeric",
-                        month: "long",
-                      })
-                    }
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="sent" stroke="#8b5cf6" name="Envoyés" strokeWidth={2} />
-                  <Line type="monotone" dataKey="replied" stroke="#1e40af" name="Réponses" strokeWidth={2} />
-                  <Line type="monotone" dataKey="bounced" stroke="#ef4444" name="Bounces" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+          {/* Conversion funnel */}
+          {metrics.sent > 0 && <FunnelChart metrics={metrics} />}
+
+          {/* Contact timeline */}
+          {(contactsByMetric.sent?.length || 0) > 0 && (
+            <ContactTimeline contactsByMetric={contactsByMetric} />
           )}
         </>
       )}
@@ -378,6 +343,149 @@ function MetricCard({
       </div>
       <div className="text-xl font-bold text-gray-900">{value}</div>
       {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function FunnelChart({ metrics }: { metrics: { sent: number; delivered: number; opened: number; clicked: number; replied: number; bounced: number } }) {
+  const steps = [
+    { label: "Envoyés", count: metrics.sent, color: "#3b82f6" },
+    { label: "Délivrés", count: metrics.delivered, color: "#6366f1" },
+    { label: "Ouverts", count: metrics.opened, color: "#8b5cf6" },
+    { label: "Cliqués", count: metrics.clicked, color: "#10b981" },
+    { label: "Répondus", count: metrics.replied, color: "#059669" },
+  ];
+  const max = metrics.sent || 1;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">Funnel de conversion</h3>
+      <div className="space-y-2.5">
+        {steps.map((step, i) => {
+          const pct = max > 0 ? (step.count / max) * 100 : 0;
+          const prevCount = i > 0 ? steps[i - 1].count : null;
+          const convRate = prevCount && prevCount > 0 ? ((step.count / prevCount) * 100).toFixed(1) : null;
+          return (
+            <div key={step.label} className="flex items-center gap-3">
+              <div className="w-20 text-xs font-medium text-gray-600 text-right shrink-0">{step.label}</div>
+              <div className="flex-1 flex items-center gap-2">
+                <div className="flex-1 bg-gray-100 rounded-full h-7 relative overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
+                    style={{
+                      width: `${Math.max(pct, step.count > 0 ? 8 : 0)}%`,
+                      backgroundColor: step.color,
+                    }}
+                  >
+                    {step.count > 0 && (
+                      <span className="text-[11px] font-bold text-white">{step.count}</span>
+                    )}
+                  </div>
+                  {step.count === 0 && (
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400">0</span>
+                  )}
+                </div>
+                <div className="w-14 text-right shrink-0">
+                  {convRate !== null ? (
+                    <span className={`text-xs font-medium ${parseFloat(convRate) > 0 ? "text-gray-700" : "text-gray-400"}`}>
+                      {convRate}%
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-300">—</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {metrics.bounced > 0 && (
+        <div className="mt-3 pt-3 border-t flex items-center gap-3">
+          <div className="w-20 text-xs font-medium text-red-500 text-right shrink-0">Bounces</div>
+          <div className="flex-1 bg-gray-100 rounded-full h-7 relative overflow-hidden">
+            <div
+              className="h-full rounded-full bg-red-400 flex items-center justify-end pr-2"
+              style={{ width: `${Math.max((metrics.bounced / max) * 100, 8)}%` }}
+            >
+              <span className="text-[11px] font-bold text-white">{metrics.bounced}</span>
+            </div>
+          </div>
+          <div className="w-14 text-right shrink-0">
+            <span className="text-xs font-medium text-red-500">
+              {((metrics.bounced / max) * 100).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContactTimeline({ contactsByMetric }: { contactsByMetric: Record<string, ContactDetail[]> }) {
+  // Build sets for quick lookup
+  const openedEmails = new Set((contactsByMetric.opened || []).map((c) => c.email));
+  const clickedEmails = new Set((contactsByMetric.clicked || []).map((c) => c.email));
+  const repliedEmails = new Set((contactsByMetric.replied || []).map((c) => c.email));
+  const bouncedEmails = new Set((contactsByMetric.bounced || []).map((c) => c.email));
+
+  const contacts = contactsByMetric.sent || [];
+
+  const steps = [
+    { key: "sent", label: "Envoyé", color: "bg-blue-500" },
+    { key: "opened", label: "Ouvert", color: "bg-indigo-500" },
+    { key: "clicked", label: "Cliqué", color: "bg-violet-500" },
+    { key: "replied", label: "Répondu", color: "bg-emerald-500" },
+  ] as const;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50">
+        <h3 className="text-sm font-semibold text-gray-700">Parcours par contact</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-gray-500 text-xs uppercase">
+            <tr>
+              <th className="px-4 py-2 text-left">Contact</th>
+              {steps.map((s) => (
+                <th key={s.key} className="px-2 py-2 text-center">{s.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {contacts.map((c, i) => {
+              const isBounced = bouncedEmails.has(c.email);
+              const reached = {
+                sent: true,
+                opened: openedEmails.has(c.email),
+                clicked: clickedEmails.has(c.email),
+                replied: repliedEmails.has(c.email),
+              };
+              return (
+                <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-2.5">
+                    <div className="font-medium text-gray-900">{c.prenom} {c.nom}</div>
+                    <div className="text-xs text-gray-400">{c.entreprise}</div>
+                  </td>
+                  {steps.map((s) => (
+                    <td key={s.key} className="px-2 py-2.5 text-center">
+                      {isBounced && s.key === "sent" ? (
+                        <span className="inline-block h-3 w-3 rounded-full bg-red-400" title="Bounce" />
+                      ) : isBounced ? (
+                        <span className="inline-block h-3 w-3 rounded-full bg-gray-200" />
+                      ) : reached[s.key] ? (
+                        <span className={`inline-block h-3 w-3 rounded-full ${s.color}`} />
+                      ) : (
+                        <span className="inline-block h-3 w-3 rounded-full border-2 border-gray-200" />
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -17,8 +17,11 @@ interface Props {
   campaignId?: string;
 }
 
+type ContactDetail = { prenom: string; nom: string; email: string; entreprise: string; date: string };
+
 export function AnalyticsPage({ campaignId }: Props) {
   const [selectedId, setSelectedId] = useState<string | undefined>(campaignId);
+  const [drillDown, setDrillDown] = useState<{ label: string; key: string } | null>(null);
 
   const allCampaigns = useQuery({
     queryKey: ["campaigns-all"],
@@ -56,6 +59,7 @@ export function AnalyticsPage({ campaignId }: Props) {
   const leads = data?.leads || { total: 0, queued: 0, in_progress: 0, completed: 0, skipped: 0 };
   const metrics = data?.metrics || { sent: 0, delivered: 0, opened: 0, clicked: 0, replied: 0, bounced: 0 };
   const daily = data?.daily || [];
+  const contactsByMetric: Record<string, ContactDetail[]> = data?.contactsByMetric || {};
   const campaignStatus = campaign?.status || "draft";
   const completionPct = leads.total > 0 ? Math.round((leads.completed / leads.total) * 100) : 0;
   const deliveryRate = metrics.sent > 0 ? ((metrics.delivered / metrics.sent) * 100).toFixed(1) : "0";
@@ -212,19 +216,29 @@ export function AnalyticsPage({ campaignId }: Props) {
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Performance</h3>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              <MetricCard label="Envoyés" value={metrics.sent} />
+              <MetricCard label="Envoyés" value={metrics.sent} onClick={() => setDrillDown({ label: "Envoyés", key: "sent" })} />
               <MetricCard label="Delivery" value={`${deliveryRate}%`} />
               <MetricCard
                 label="Reply rate"
                 value={`${replyRate}%`}
                 sub={`${metrics.replied} réponses`}
                 highlight={parseFloat(replyRate) > 0}
+                onClick={() => setDrillDown({ label: "Réponses", key: "replied" })}
               />
-              <MetricCard label="Bounce" value={`${bounceRate}%`} sub={`${metrics.bounced} bounces`} />
-              <MetricCard label="Open rate" value={`${openRate}%`} />
-              <MetricCard label="Click rate" value={`${clickRate}%`} />
+              <MetricCard label="Bounce" value={`${bounceRate}%`} sub={`${metrics.bounced} bounces`} onClick={() => setDrillDown({ label: "Bounces", key: "bounced" })} />
+              <MetricCard label="Open rate" value={`${openRate}%`} onClick={() => setDrillDown({ label: "Ouvertures", key: "opened" })} />
+              <MetricCard label="Click rate" value={`${clickRate}%`} onClick={() => setDrillDown({ label: "Clics", key: "clicked" })} />
             </div>
           </div>
+
+          {/* Drill-down panel */}
+          {drillDown && (
+            <ContactDrillDown
+              label={drillDown.label}
+              contacts={contactsByMetric[drillDown.key] || []}
+              onClose={() => setDrillDown(null)}
+            />
+          )}
 
           {/* Daily chart */}
           {daily.length > 0 && (
@@ -337,17 +351,88 @@ function MetricCard({
   value,
   sub,
   highlight,
+  onClick,
 }: {
   label: string;
   value: number | string;
   sub?: string;
   highlight?: boolean;
+  onClick?: () => void;
 }) {
+  const clickable = !!onClick;
   return (
-    <div className={`bg-white rounded-xl shadow-sm border p-3 ${highlight ? "ring-1 ring-green-300" : ""}`}>
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+    <div
+      className={`bg-white rounded-xl shadow-sm border p-3 ${highlight ? "ring-1 ring-green-300" : ""} ${
+        clickable ? "cursor-pointer hover:border-blue-300 hover:shadow-md transition-all" : ""
+      }`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-500 mb-1">{label}</div>
+        {clickable && (
+          <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        )}
+      </div>
       <div className="text-xl font-bold text-gray-900">{value}</div>
       {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ContactDrillDown({
+  label,
+  contacts,
+  onClose,
+}: {
+  label: string;
+  contacts: ContactDetail[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">
+          {label} — {contacts.length} contact{contacts.length !== 1 ? "s" : ""}
+        </h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      {contacts.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-gray-400">Aucun contact</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
+            <tr>
+              <th className="px-4 py-2 text-left">Nom</th>
+              <th className="px-4 py-2 text-left">Email</th>
+              <th className="px-4 py-2 text-left">Entreprise</th>
+              <th className="px-4 py-2 text-left">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contacts.map((c, i) => (
+              <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-4 py-2.5 font-medium text-gray-900">
+                  {c.prenom} {c.nom}
+                </td>
+                <td className="px-4 py-2.5 text-gray-600">{c.email}</td>
+                <td className="px-4 py-2.5 text-gray-600">{c.entreprise}</td>
+                <td className="px-4 py-2.5 text-gray-500 text-xs">
+                  {c.date ? new Date(c.date).toLocaleString("fr-FR", {
+                    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                  }) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -65,16 +65,58 @@ export default async (request: Request) => {
     // Compute engagement metrics from EmailLog (unique per contact, not from campaign counters)
     let opened = 0, clicked = 0, replied = 0, bouncedCount = 0;
     let daily: Array<{ date: string; sent: number; replied: number; bounced: number }> = [];
+
+    // Contact details per metric category (for drill-down)
+    type ContactDetail = { prenom: string; nom: string; email: string; entreprise: string; date: string };
+    const contactsByMetric: Record<string, ContactDetail[]> = {
+      sent: [], opened: [], clicked: [], replied: [], bounced: [],
+    };
+
+    // Build contact lookup for enrichment
+    const contactMap = new Map<string, Record<string, string>>();
+    for (const c of campaignContacts) {
+      contactMap.set(c.id, c);
+    }
+
+    // Populate "sent" contacts (everyone who got the email)
+    for (const c of campaignContacts) {
+      if (["sent", "opened", "clicked", "replied", "bounced"].includes(c.email_status)) {
+        contactsByMetric.sent.push({
+          prenom: c.prenom || "", nom: c.nom || "", email: c.email || "",
+          entreprise: c.entreprise || "", date: c.email_sent_at || "",
+        });
+      }
+    }
+
     try {
       const emailLogs = await readAll("EmailLog");
       const campaignLogs = emailLogs.filter((l) => l.campagne_id === campaign!.id);
 
-      // Unique counts from log statuses
+      // Unique counts from log statuses + collect contact details
       for (const log of campaignLogs) {
-        if (log.opened_at) opened++;
-        if (log.clicked_at) clicked++;
-        if (log.replied_at) replied++;
-        if (log.status === "bounced") bouncedCount++;
+        const contact = contactMap.get(log.contact_id);
+        const detail: ContactDetail = {
+          prenom: contact?.prenom || "", nom: contact?.nom || "",
+          email: contact?.email || log.contact_id,
+          entreprise: contact?.entreprise || "", date: "",
+        };
+
+        if (log.opened_at) {
+          opened++;
+          contactsByMetric.opened.push({ ...detail, date: log.opened_at });
+        }
+        if (log.clicked_at) {
+          clicked++;
+          contactsByMetric.clicked.push({ ...detail, date: log.clicked_at });
+        }
+        if (log.replied_at) {
+          replied++;
+          contactsByMetric.replied.push({ ...detail, date: log.replied_at });
+        }
+        if (log.status === "bounced") {
+          bouncedCount++;
+          contactsByMetric.bounced.push({ ...detail, date: log.sent_at || "" });
+        }
       }
 
       const byDay: Record<string, { sent: number; replied: number; bounced: number }> = {};
@@ -104,6 +146,7 @@ export default async (request: Request) => {
       campaign,
       leads: { total, queued, in_progress, completed, skipped },
       metrics: { sent, delivered, opened, clicked, replied, bounced: bouncedCount },
+      contactsByMetric,
       daily,
     });
   } catch (err) {

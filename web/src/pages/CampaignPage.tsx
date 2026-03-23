@@ -107,12 +107,16 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const campaignStatus = campaignData?.status || "draft";
   const campaignsList = existingCampaigns.data?.campaigns || [];
 
-  // Derive active and past campaigns
+  // Derive active, past, and corrupted campaigns
   const activeCampaign = campaignsList.find(
     (c) => c.status === "active" || c.status === "paused"
   );
+  const knownStatuses = ["active", "paused", "cancelled", "completed"];
   const pastCampaigns = campaignsList.filter(
     (c) => c.status === "cancelled" || c.status === "completed"
+  );
+  const corruptedCampaigns = campaignsList.filter(
+    (c) => !knownStatuses.includes(c.status)
   );
   const hasActiveCampaign = !!activeCampaign;
 
@@ -410,7 +414,21 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       </div>
 
       {/* ─── ACTIVE CAMPAIGN VIEW ─── */}
-      {campaignData && (
+      {campaignData && !knownStatuses.includes(campaignData.status) && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-red-700">Campagne corrompue</h3>
+          <p className="text-xs text-red-600">
+            Cette campagne a des donnees corrompues (statut: "{campaignData.status || "(vide)"}"). Supprime-la et recree une campagne propre.
+          </p>
+          <button
+            onClick={() => { deleteCamp.mutate(campaignId!); setCampaignId(null); }}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700"
+          >
+            Supprimer cette campagne
+          </button>
+        </div>
+      )}
+      {campaignData && knownStatuses.includes(campaignData.status) && (
         <div className="space-y-4">
           {/* Campaign header card */}
           <div
@@ -939,6 +957,42 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </>
       ) : null}
+
+      {/* ─── CORRUPTED CAMPAIGNS ─── */}
+      {corruptedCampaigns.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-red-700">
+              {corruptedCampaigns.length} campagne{corruptedCampaigns.length > 1 ? "s" : ""} corrompue{corruptedCampaigns.length > 1 ? "s" : ""}
+            </h3>
+            <button
+              onClick={() => setPurgeConfirm(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200"
+            >
+              Tout supprimer
+            </button>
+          </div>
+          <p className="text-xs text-red-600">
+            Ces campagnes ont des donnees corrompues (colonnes decalees). Supprime-les et recree une campagne propre.
+          </p>
+          {corruptedCampaigns.map((c) => (
+            <div key={c.id} className="bg-white rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-gray-700 truncate block">
+                  {c.nom || "Sans nom"}
+                </span>
+                <span className="text-xs text-gray-400">statut: "{c.status || "(vide)"}"</span>
+              </div>
+              <button
+                onClick={() => deleteCamp.mutate(c.id)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-600 text-white hover:bg-red-700 shrink-0"
+              >
+                Supprimer
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ─── PAST CAMPAIGNS (collapsed) ─── */}
       {pastCampaigns.length > 0 && (

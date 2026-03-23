@@ -63,6 +63,7 @@ export function launchSearch(params: SearchParams) {
     suggestions: string[];
     retried: boolean;
     originalFilters?: Record<string, unknown>;
+    previously_failed_domains?: Record<string, { score: number; raison: string }>;
   }>("/search", {
     method: "POST",
     body: JSON.stringify(params),

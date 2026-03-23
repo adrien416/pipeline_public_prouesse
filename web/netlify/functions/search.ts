@@ -5,6 +5,7 @@ import { mockSearchContacts } from "./_demo.js";
 import {
   appendRows,
   appendRow,
+  readAll,
   readRawRange,
   getHeadersForWrite,
   CONTACTS_HEADERS,
@@ -407,6 +408,25 @@ export default async (request: Request) => {
       writeDebug.last_row_rech = verifyLast[0]?.[18] ?? "MISSING";
     }
 
+    // Cross-reference with previously scored contacts that failed (score_total < 7)
+    let previouslyFailedDomains: Record<string, { score: number; raison: string }> = {};
+    try {
+      const allContacts = await readAll("Contacts");
+      const userContacts = allContacts.filter(c => c.user_id === auth.userId);
+      for (const c of userContacts) {
+        const score = parseFloat(c.score_total);
+        if (!isNaN(score) && score < 7 && c.domaine) {
+          const domain = c.domaine.toLowerCase();
+          // Keep the most recent score for each domain
+          if (!previouslyFailedDomains[domain] || score > previouslyFailedDomains[domain].score) {
+            previouslyFailedDomains[domain] = { score, raison: c.score_raison || "" };
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error cross-referencing previous scores:", e);
+    }
+
     return json({
       recherche: { id: rechercheId, ...recherche },
       contacts,
@@ -415,7 +435,7 @@ export default async (request: Request) => {
       suggestions,
       retried,
       originalFilters: retried ? originalFilters : undefined,
-      // _writeDebug removed for production security
+      previously_failed_domains: previouslyFailedDomains,
     });
   } catch (err) {
     console.error("search error:", err);

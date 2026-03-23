@@ -27,6 +27,19 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
 
   const search = useMutation({
     mutationFn: (params: SearchParams) => launchSearch(params),
+    onSuccess: (data) => {
+      // Auto-exclude contacts whose domain previously failed scoring
+      if (data.previously_failed_domains && Object.keys(data.previously_failed_domains).length > 0) {
+        const autoExcluded = new Set<string>();
+        for (const c of data.contacts) {
+          const domain = (c.domaine || "").toLowerCase();
+          if (domain && data.previously_failed_domains[domain]) {
+            autoExcluded.add(c.id);
+          }
+        }
+        setExcluded(autoExcluded);
+      }
+    },
   });
 
   function handleSearch(e: React.FormEvent) {
@@ -277,6 +290,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               <h3 className="font-semibold text-gray-900">
                 {search.data.contacts.length - excluded.size} contacts trouvés
                 {excluded.size > 0 && <span className="text-gray-400 font-normal text-sm ml-2">({excluded.size} exclus)</span>}
+                {search.data.previously_failed_domains && Object.keys(search.data.previously_failed_domains).length > 0 && (
+                  <span className="text-amber-600 font-normal text-sm ml-2">
+                    — {search.data.contacts.filter(c => {
+                      const d = (c.domaine || "").toLowerCase();
+                      return d && search.data!.previously_failed_domains?.[d];
+                    }).length} déjà vus (score {"<"} 7)
+                  </span>
+                )}
               </h3>
               {search.data.explication && (
                 <p className="text-xs text-gray-500 mt-1">{search.data.explication}</p>
@@ -316,8 +337,10 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               <tbody>
                 {search.data.contacts.map((c, i) => {
                   const isExcluded = excluded.has(c.id);
+                  const domain = (c.domaine || "").toLowerCase();
+                  const failedBefore = domain && search.data!.previously_failed_domains?.[domain];
                   return (
-                  <tr key={c.id || i} className={`border-t border-gray-100 hover:bg-gray-50 ${isExcluded ? "opacity-30 line-through" : ""}`}>
+                  <tr key={c.id || i} className={`border-t border-gray-100 hover:bg-gray-50 ${isExcluded ? "opacity-40 line-through" : ""}`}>
                     <td className="px-2 py-2 text-center">
                       <button
                         onClick={() => {
@@ -326,14 +349,31 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                           else next.add(c.id);
                           setExcluded(next);
                         }}
-                        className={`text-xs px-1.5 py-0.5 rounded ${isExcluded ? "bg-gray-200 text-gray-500" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
-                        title={isExcluded ? "Réinclure" : "Exclure"}
+                        className={`text-xs px-1.5 py-0.5 rounded ${
+                          isExcluded
+                            ? failedBefore
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              : "bg-gray-200 text-gray-500"
+                            : "bg-red-100 text-red-600 hover:bg-red-200"
+                        }`}
+                        title={
+                          isExcluded && failedBefore
+                            ? `Déjà scoré (${failedBefore.score}/10) — Cliquer pour forcer`
+                            : isExcluded
+                              ? "Réinclure"
+                              : "Exclure"
+                        }
                       >
                         {isExcluded ? "+" : "x"}
                       </button>
                     </td>
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {c.prenom} {c.nom}
+                      {failedBefore && (
+                        <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full" title={failedBefore.raison}>
+                          Déjà scoré {failedBefore.score}/10
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
                     <td className="px-3 py-2 text-gray-600">{c.titre}</td>

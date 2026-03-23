@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -104,6 +104,8 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
   const [heureFin, setHeureFin] = useState("18:30");
   const [intervalle, setIntervalle] = useState("20");
   const [selectedContact, setSelectedContact] = useState<Record<string, string> | null>(null);
+  const [excludedContacts, setExcludedContacts] = useState<Set<string>>(new Set());
+  const [excludedInitialized, setExcludedInitialized] = useState(false);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<{
     count: number;
@@ -155,6 +157,29 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
   const [templateLoaded, setTemplateLoaded] = useState(false);
 
   const contactsList = contacts.data || [];
+
+  // Detect contacts already contacted in a previous campaign
+  const alreadyContactedIds = useMemo(() => {
+    const CONTACTED_STATUSES = new Set(["sent", "opened", "clicked", "replied", "bounced"]);
+    return new Set(
+      contactsList
+        .filter((c) => c.campagne_id && CONTACTED_STATUSES.has(c.email_status))
+        .map((c) => c.id)
+    );
+  }, [contactsList]);
+
+  // Auto-exclude already-contacted contacts on first load (only when no active campaign)
+  useEffect(() => {
+    if (!excludedInitialized && contactsList.length > 0 && !campaignId) {
+      if (alreadyContactedIds.size > 0) {
+        setExcludedContacts(new Set(alreadyContactedIds));
+      }
+      setExcludedInitialized(true);
+    }
+  }, [contactsList.length, excludedInitialized, campaignId, alreadyContactedIds]);
+
+  const activeContacts = contactsList.filter((c) => !excludedContacts.has(c.id));
+
   const campaignData = campaign.data?.campaign;
   const campaignStatus = campaignData?.status || "draft";
   const campaignsList = existingCampaigns.data?.campaigns || [];
@@ -289,6 +314,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
         heure_debut: heureDebut,
         heure_fin: heureFin,
         intervalle_min: parseInt(intervalle) || 20,
+        excluded_contacts: Array.from(excludedContacts),
       }),
     onSuccess: (data) => {
       if (data.campaign?.id) setCampaignId(data.campaign.id);
@@ -470,8 +496,8 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
     return parts;
   }
 
-  const estimatedDays = contactsList.length > 0
-    ? Math.ceil(contactsList.length / (parseInt(maxParJour) || 15))
+  const estimatedDays = activeContacts.length > 0
+    ? Math.ceil(activeContacts.length / (parseInt(maxParJour) || 15))
     : 0;
 
   const rawSent = parseInt(campaignData?.sent || "0");
@@ -976,24 +1002,66 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
 
             {/* Contact list (center) */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className="p-3 border-b bg-gray-50">
+              <div className="p-3 border-b bg-gray-50 flex items-center justify-between">
                 <h3 className="font-semibold text-sm text-gray-700">
-                  Leads ({contactsList.length})
+                  Leads ({activeContacts.length}/{contactsList.length})
                 </h3>
+                {alreadyContactedIds.size > 0 && !hasActiveCampaign && (
+                  <span className="text-xs text-amber-600">
+                    {alreadyContactedIds.size} déjà contacté{alreadyContactedIds.size > 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
               <div className="max-h-[500px] overflow-y-auto">
-                {contactsList.map((c, i) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedContact(c)}
-                    className={`w-full text-left px-3 py-2 text-sm border-b border-gray-50 hover:bg-blue-50 flex items-center gap-2 ${
-                      selectedContact?.id === c.id ? "bg-blue-50" : ""
-                    }`}
-                  >
-                    <span className="text-xs text-gray-400 w-5">{i + 1}</span>
-                    <span className="truncate text-gray-700">{c.email}</span>
-                  </button>
-                ))}
+                {contactsList.map((c, i) => {
+                  const isExcluded = excludedContacts.has(c.id);
+                  const wasContacted = alreadyContactedIds.has(c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      className={`w-full text-left px-3 py-2 text-sm border-b border-gray-50 flex items-center gap-2 ${
+                        selectedContact?.id === c.id ? "bg-blue-50" : ""
+                      } ${isExcluded ? "opacity-50" : ""}`}
+                    >
+                      {/* Checkbox — only show when creating (no active campaign) */}
+                      {!hasActiveCampaign && !campaignId && (
+                        <input
+                          type="checkbox"
+                          checked={!isExcluded}
+                          onChange={() => {
+                            setExcludedContacts((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(c.id)) {
+                                next.delete(c.id);
+                              } else {
+                                next.add(c.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          className="rounded shrink-0"
+                        />
+                      )}
+                      <button
+                        onClick={() => setSelectedContact(c)}
+                        className="flex items-center gap-2 min-w-0 flex-1 hover:text-blue-600"
+                      >
+                        <span className="text-xs text-gray-400 w-5 shrink-0">{i + 1}</span>
+                        <span className={`truncate ${isExcluded ? "line-through text-gray-400" : "text-gray-700"}`}>
+                          {c.prenom} {c.nom}
+                        </span>
+                        <span className="truncate text-xs text-gray-400 hidden sm:inline">
+                          {c.entreprise}
+                        </span>
+                      </button>
+                      {wasContacted && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0" title="Déjà contacté dans une campagne précédente">
+                          déjà contacté
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1114,7 +1182,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
 
               <button
                 onClick={() => create.mutate()}
-                disabled={create.isPending || contactsList.length === 0}
+                disabled={create.isPending || activeContacts.length === 0}
                 className="w-full bg-blue-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {create.isPending ? (
@@ -1123,7 +1191,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
                     Création de la campagne...
                   </>
                 ) : (
-                  `Créer la campagne (${contactsList.length} contacts)`
+                  `Créer la campagne (${activeContacts.length} contact${activeContacts.length > 1 ? "s" : ""})`
                 )}
               </button>
 

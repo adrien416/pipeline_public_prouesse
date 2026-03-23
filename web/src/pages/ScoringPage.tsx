@@ -113,6 +113,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState<Set<string>>(new Set());
+  const cancelRef = useRef(false);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -123,26 +124,30 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
     setScoring(true);
     setScoringComplete(false);
     setError(null);
+    cancelRef.current = false;
     try {
       let isDone = false;
-      while (!isDone) {
+      while (!isDone && !cancelRef.current) {
         const result = await launchScoring(rechercheId, mode);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         if (result.contacts?.length) {
           queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
         }
         isDone = result.done;
-        if (!isDone) {
+        if (!isDone && !cancelRef.current) {
           await new Promise((r) => setTimeout(r, 13000));
         }
       }
-      setScoringComplete(true);
+      if (!cancelRef.current) {
+        setScoringComplete(true);
+      }
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
     } finally {
       setScoring(false);
     }
-  }, [rechercheId, queryClient]);
+  }, [rechercheId, mode, queryClient]);
 
   /** Save a feedback comment to the backend */
   async function saveFeedback(contactId: string, feedback: string) {
@@ -253,17 +258,26 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={runScoring}
-            disabled={scoring || contactsList.length === 0}
-            className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {scoring
-              ? "Scoring en cours..."
-              : hasAnyScored
-              ? "Re-scorer"
-              : "Lancer le scoring IA"}
-          </button>
+          {scoring ? (
+            <button
+              onClick={() => { cancelRef.current = true; }}
+              className="bg-orange-500 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-orange-600"
+            >
+              Mettre en pause
+            </button>
+          ) : (
+            <button
+              onClick={runScoring}
+              disabled={contactsList.length === 0}
+              className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              {hasAnyScored && progress.scored < progress.total
+                ? `Reprendre le scoring (${progress.scored}/${progress.total})`
+                : hasAnyScored
+                ? "Re-scorer"
+                : "Lancer le scoring IA"}
+            </button>
+          )}
           {(scoringComplete || hasAnyScored) && !scoring && (
             <button
               onClick={onComplete}

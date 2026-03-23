@@ -86,6 +86,7 @@ export default async (request: Request) => {
       heure_fin,
       intervalle_min,
       include_duplicates,
+      excluded_contacts,
     } = body;
 
     if (!recherche_id || !template_sujet || !template_corps) {
@@ -128,9 +129,14 @@ export default async (request: Request) => {
     }
 
     const duplicates = enriched.filter((c) => contactedDomains.has(normalizeDomain(c.domaine)));
-    const contactsToAssign = include_duplicates
+
+    // Apply excluded contacts (user-deselected from UI)
+    const excludedSet = new Set<string>(Array.isArray(excluded_contacts) ? excluded_contacts : []);
+
+    const contactsToAssign = (include_duplicates
       ? enriched
-      : enriched.filter((c) => !contactedDomains.has(normalizeDomain(c.domaine)));
+      : enriched.filter((c) => !contactedDomains.has(normalizeDomain(c.domaine)))
+    ).filter((c) => !excludedSet.has(c.id));
 
     // Create campaign
     const campaign: Record<string, string> = {

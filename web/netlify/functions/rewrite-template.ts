@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
 import { readAll } from "./_sheets.js";
+import { DEMO_TEMPLATE_SUJET, DEMO_TEMPLATE_CORPS } from "./_demo.js";
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
@@ -11,6 +12,11 @@ export default async (request: Request) => {
   try {
     const { recherche_id, mode, template_sujet, template_corps } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
+
+    // Demo mode: return neutral template
+    if (auth.role === "demo") {
+      return json({ sujet: DEMO_TEMPLATE_SUJET, corps: DEMO_TEMPLATE_CORPS });
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return json({ error: "API key manquante" }, 500);

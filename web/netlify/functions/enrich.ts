@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
+import { mockEnrichEmail, mockCredits } from "./_demo.js";
 
 const FULLENRICH_BASE = "https://app.fullenrich.com";
 const STUCK_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes (was 10)
@@ -33,6 +34,49 @@ export default async (request: Request) => {
     const qualified = allContacts.filter(
       (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
     );
+
+    // Demo mode: simulate enrichment
+    if (auth.role === "demo") {
+      if (estimate_only) {
+        const mock = mockCredits();
+        const toEnrich = qualified.filter((c) => c.enrichissement_status !== "ok");
+        return json({
+          contacts_to_enrich: toEnrich.length,
+          estimated_credits: toEnrich.length,
+          current_balance: mock.credits,
+          pending_count: 0,
+          enriched_count: qualified.filter((c) => c.enrichissement_status === "ok").length,
+          total_qualified: qualified.length,
+        });
+      }
+      const toEnrich = qualified.filter(
+        (c) => c.enrichissement_status !== "ok" && c.enrichissement_status !== "pas_de_resultat"
+      );
+      if (toEnrich.length === 0) return json({ enriched: 0, not_found: 0, errors: 0, done: true });
+
+      const updates: Array<{ rowIndex: number; values: string[] }> = [];
+      let enriched = 0;
+      for (const c of toEnrich) {
+        if (!c._rowIndex) continue;
+        const fakeEmail = mockEnrichEmail({ prenom: c.prenom, domaine: c.domaine });
+        updates.push({
+          rowIndex: Number(c._rowIndex),
+          values: toRow(sheetHeaders, {
+            ...c,
+            email: fakeEmail,
+            enrichissement_status: "ok",
+            date_modification: new Date().toISOString(),
+          }),
+        });
+        enriched++;
+      }
+      if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+      const freshContacts = await readAll("Contacts");
+      const freshQualified = freshContacts.filter(
+        (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
+      );
+      return json({ enriched, not_found: 0, errors: 0, done: true, contacts: freshQualified });
+    }
 
     // Estimate only — quick return
     if (estimate_only) {

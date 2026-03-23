@@ -1,6 +1,6 @@
 import type { Context, Config } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, type UserContext } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -13,12 +13,12 @@ import {
 } from "./_sheets.js";
 
 /** GET /api/contacts?recherche_id=xxx&statut=nouveau&secteur=fintech */
-async function handleGet(url: URL) {
+async function handleGet(url: URL, user: UserContext) {
   const rechercheId = url.searchParams.get("recherche_id");
   const statutFilter = url.searchParams.get("statut")?.toLowerCase();
   const secteurFilter = url.searchParams.get("secteur")?.toLowerCase();
 
-  let contacts = await readAll("Contacts");
+  let contacts = filterByUser(await readAll("Contacts"), user);
 
   if (rechercheId) {
     contacts = contacts.filter((c) => c.recherche_id === rechercheId && c.statut !== "exclu");
@@ -34,7 +34,7 @@ async function handleGet(url: URL) {
 }
 
 /** POST /api/contacts */
-async function handlePost(request: Request) {
+async function handlePost(request: Request, user: UserContext) {
   const body = await request.json();
   const now = new Date().toISOString();
 
@@ -64,6 +64,7 @@ async function handlePost(request: Request) {
     phrase_perso: "",
     date_creation: now,
     date_modification: now,
+    user_id: user.userId,
   };
 
   const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
@@ -113,8 +114,8 @@ export default async (request: Request, _context: Context) => {
   try {
     const url = new URL(request.url);
     switch (request.method) {
-      case "GET": return await handleGet(url);
-      case "POST": return await handlePost(request);
+      case "GET": return await handleGet(url, auth);
+      case "POST": return await handlePost(request, auth);
       case "PUT": return await handlePut(request);
       default: return json({ error: "Methode non supportee" }, 405);
     }

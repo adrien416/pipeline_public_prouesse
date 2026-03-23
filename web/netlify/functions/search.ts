@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, type UserContext } from "./_auth.js";
+import { mockSearchContacts } from "./_demo.js";
 import {
   appendRows,
   appendRow,
@@ -226,6 +227,61 @@ export default async (request: Request) => {
       return json({ error: "description et mode requis" }, 400);
     }
 
+    // Demo mode: return mock contacts without calling any API
+    if (auth.role === "demo") {
+      const now = new Date().toISOString();
+      const rechercheId = uuidv4();
+      const mockResults = mockSearchContacts();
+
+      const recherche: Record<string, string> = {
+        id: rechercheId,
+        description: body.description,
+        mode: body.mode,
+        filtres_json: JSON.stringify({ demo: true }),
+        nb_resultats: String(mockResults.length),
+        date: now,
+        user_id: auth.userId,
+      };
+      await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
+
+      const contacts: Record<string, string>[] = mockResults.map((r) => ({
+        id: uuidv4(),
+        nom: r.nom,
+        prenom: r.prenom,
+        email: "",
+        entreprise: r.entreprise,
+        titre: r.titre,
+        domaine: r.domaine,
+        secteur: r.secteur,
+        linkedin: r.linkedin,
+        telephone: "",
+        statut: "nouveau",
+        enrichissement_status: "",
+        enrichissement_retry: "",
+        score_1: "", score_2: "", score_total: "", score_raison: "", score_feedback: "",
+        recherche_id: rechercheId,
+        campagne_id: "",
+        email_status: "", email_sent_at: "", phrase_perso: "",
+        date_creation: now,
+        date_modification: now,
+        user_id: auth.userId,
+      }));
+
+      if (contacts.length > 0) {
+        const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+        await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
+      }
+
+      return json({
+        recherche: { id: rechercheId, ...recherche },
+        contacts,
+        filters: { demo: true },
+        total: contacts.length,
+        suggestions: [],
+        retried: false,
+      });
+    }
+
     // 1. Translate description to Fullenrich filters via Claude
     let filters = await callClaude(body.description, body.mode);
 
@@ -285,6 +341,7 @@ export default async (request: Request) => {
       filtres_json: JSON.stringify(filters),
       nb_resultats: String(results.length),
       date: now,
+      user_id: auth.userId,
     };
 
     await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
@@ -316,6 +373,7 @@ export default async (request: Request) => {
       phrase_perso: "",
       date_creation: now,
       date_modification: now,
+      user_id: auth.userId,
     }));
 
     let writeDebug: Record<string, unknown> = {};

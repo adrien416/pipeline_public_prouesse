@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { v4 as uuid } from "uuid";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -41,16 +41,18 @@ export default async (request: Request) => {
       return json({ campaign: found?.data ?? null });
     }
 
-    const all = await readAll("Campagnes");
+    const allCampaigns = await readAll("Campagnes");
     const rechercheId = url.searchParams.get("recherche_id");
+    const showAll = url.searchParams.get("all") === "true" && auth.role === "admin";
+    const visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth);
 
     if (rechercheId) {
-      const filtered = all.filter((c) => c.recherche_id === rechercheId);
+      const filtered = visible.filter((c) => c.recherche_id === rechercheId);
       return json({ campaigns: filtered });
     }
 
-    // Default: return all campaigns
-    return json({ campaigns: all });
+    // Default: return campaigns visible to this user
+    return json({ campaigns: visible });
   }
 
   // POST — create campaign
@@ -132,6 +134,7 @@ export default async (request: Request) => {
       replied: "0",
       bounced: "0",
       date_creation: new Date().toISOString(),
+      user_id: auth.userId,
     };
 
     await appendRow("Campagnes", toRow(

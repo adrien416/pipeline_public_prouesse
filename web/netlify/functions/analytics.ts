@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser } from "./_auth.js";
 import { readAll, findRowById } from "./_sheets.js";
 
 export default async (request: Request) => {

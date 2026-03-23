@@ -21,10 +21,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Auth ───
 export function login(email: string, password: string) {
-  return request<{ ok: boolean }>("/login", {
+  return request<{ ok: boolean; user?: { email: string; nom: string; role: string } }>("/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+}
+
+export function fetchMe() {
+  return request<{
+    userId: string;
+    email: string;
+    nom: string;
+    role: string;
+    senderEmail: string;
+    senderName: string;
+  }>("/me");
 }
 
 // ─── Credits ───
@@ -170,8 +181,11 @@ export function fetchCampaign(id?: string) {
   return request<{ campaign: Record<string, string> | null }>(`/campaign${qs}`);
 }
 
-export function fetchCampaigns(recherche_id?: string) {
-  const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";
+export function fetchCampaigns(recherche_id?: string, all?: boolean) {
+  const params = new URLSearchParams();
+  if (recherche_id) params.set("recherche_id", recherche_id);
+  if (all) params.set("all", "true");
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return request<{ campaigns: Record<string, string>[] }>(`/campaign${qs}`);
 }
 

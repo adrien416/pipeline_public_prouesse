@@ -1,5 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
+import { mockScoreForContact } from "./_demo.js";
 import {
   readAll,
   readRawRange,
@@ -288,6 +289,41 @@ export default async (request: Request) => {
         qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
         done: true,
         contacts: searchContacts,
+      });
+    }
+
+    // Demo mode: assign mock scores to all unscored contacts at once
+    if (auth.role === "demo") {
+      const updates: Array<{ rowIndex: number; values: string[] }> = [];
+      const updatedMap = new Map<string, Record<string, string>>();
+      const now = new Date().toISOString();
+
+      for (const c of unscored) {
+        const rowIndex = Number(c._rowIndex);
+        if (!rowIndex || rowIndex < 2) continue;
+        const mock = mockScoreForContact();
+        const updated: Record<string, string> = {
+          ...c,
+          score_1: mock.score_1,
+          score_2: mock.score_2,
+          score_total: mock.score_total,
+          score_raison: mock.score_raison,
+          date_modification: now,
+        };
+        updates.push({ rowIndex, values: toRow(headers, updated) });
+        updatedMap.set(c.id, updated);
+      }
+      if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+
+      const responseContacts = searchContacts.map((c) =>
+        updatedMap.has(c.id) ? updatedMap.get(c.id)! : c
+      );
+      return json({
+        total: searchContacts.length,
+        scored: searchContacts.length,
+        qualified: responseContacts.filter((c) => Number(c.score_total) >= 7).length,
+        done: true,
+        contacts: responseContacts,
       });
     }
 

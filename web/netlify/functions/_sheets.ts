@@ -311,6 +311,11 @@ export async function getHeadersForWrite(
 }
 
 /** Headers des onglets pour construire les valeurs dans le bon ordre. */
+export const USERS_HEADERS = [
+  "id", "email", "password_hash", "nom", "role",
+  "sender_email", "sender_name", "date_creation",
+];
+
 export const CONTACTS_HEADERS = [
   "id", "nom", "prenom", "email", "entreprise", "titre",
   "domaine", "secteur", "linkedin", "telephone",
@@ -319,10 +324,12 @@ export const CONTACTS_HEADERS = [
   "recherche_id", "campagne_id",
   "email_status", "email_sent_at", "phrase_perso",
   "date_creation", "date_modification",
+  "user_id",
 ];
 
 export const RECHERCHES_HEADERS = [
   "id", "description", "mode", "filtres_json", "nb_resultats", "date",
+  "user_id",
 ];
 
 export const CAMPAGNES_HEADERS = [
@@ -330,6 +337,7 @@ export const CAMPAGNES_HEADERS = [
   "max_par_jour", "jours_semaine", "heure_debut", "heure_fin", "intervalle_min",
   "total_leads", "sent", "opened", "clicked", "replied", "bounced",
   "date_creation",
+  "user_id",
 ];
 
 export const EMAILLOG_HEADERS = [

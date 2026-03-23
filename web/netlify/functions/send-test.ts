@@ -3,8 +3,6 @@ import { requireAuth, json } from "./_auth.js";
 import { findRowById, readAll } from "./_sheets.js";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
-const SENDER_EMAIL = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-const SENDER_NAME = process.env.SENDER_NAME || "Adrien Pannetier";
 
 /** Strip all leading/trailing whitespace including BOM, NBSP, \r */
 function stripWhitespace(text: string): string {
@@ -35,7 +33,10 @@ export default async (request: Request) => {
     if (!test_email) return json({ error: "test_email requis" }, 400);
 
     const brevoKey = process.env.BREVO_API_KEY;
-    if (!brevoKey) return json({ error: "BREVO_API_KEY non configuree" }, 500);
+    if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
+
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
 
     const campFound = await findRowById("Campagnes", campagne_id);
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
@@ -73,22 +74,33 @@ export default async (request: Request) => {
       .replace(/\{Phrase\}/g, contact.phrase_perso || "");
     const corpsClean = stripWhitespace(corps);
 
+    // Demo mode: simulate test send
+    if (auth.role === "demo") {
+      return json({
+        sent: true,
+        test_email,
+        subject: `[TEST] ${sujet}`,
+        contact_used: contact.prenom ? `${contact.prenom} ${contact.nom || ""}`.trim() : "Donnees fictives",
+        demo: true,
+      });
+    }
+
     // Send test email — does NOT update any counters or statuses
     const brevoResp = await fetch(BREVO_API, {
       method: "POST",
       headers: {
-        "api-key": brevoKey,
+        "api-key": brevoKey!,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-        replyTo: { name: SENDER_NAME, email: SENDER_EMAIL },
+        sender: { name: senderName, email: senderEmail },
+        replyTo: { name: senderName, email: senderEmail },
         to: [{ email: test_email, name: "Test" }],
         subject: `[TEST] ${sujet}`,
         textContent: corpsClean,
         htmlContent: textToHtml(corpsClean),
         headers: {
-          "List-Unsubscribe": `<mailto:${SENDER_EMAIL}?subject=unsubscribe>`,
+          "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
         },
       }),
     });

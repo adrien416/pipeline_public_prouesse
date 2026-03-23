@@ -15,8 +15,6 @@ import {
 } from "./_sheets.js";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
-const SENDER_EMAIL = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-const SENDER_NAME = process.env.SENDER_NAME || "Adrien Pannetier";
 
 /** Strip all leading/trailing whitespace including BOM, NBSP, \r */
 function stripWhitespace(text: string): string {
@@ -91,7 +89,11 @@ export default async (request: Request) => {
     if (!campagne_id) return json({ error: "campagne_id requis" }, 400);
 
     const brevoKey = process.env.BREVO_API_KEY;
-    if (!brevoKey) return json({ error: "BREVO_API_KEY non configuree" }, 500);
+    if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
+
+    // Per-user sender identity
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
 
     // Ensure sheet headers are clean before reading
     const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
@@ -207,22 +209,45 @@ export default async (request: Request) => {
       .replace(/\{Phrase\}/g, contact.phrase_perso || "");
     const corpsClean = stripWhitespace(corps);
 
+    // Demo mode: simulate send without calling Brevo
+    if (auth.role === "demo") {
+      const now = new Date().toISOString();
+      if (contact._rowIndex) {
+        await batchUpdateRows("Contacts", [{
+          rowIndex: Number(contact._rowIndex),
+          values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), {
+            ...contact,
+            email_status: "sent",
+            email_sent_at: now,
+            statut: "contacte",
+            date_modification: now,
+          }),
+        }]);
+      }
+      const newSent = parseInt(campaign.sent || "0") + 1;
+      await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
+        ...campaign,
+        sent: String(newSent),
+      }));
+      return json({ sent: 1, remaining: queued.length - 1 });
+    }
+
     const brevoResp = await fetch(BREVO_API, {
       method: "POST",
       headers: {
-        "api-key": brevoKey,
+        "api-key": brevoKey!,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-        replyTo: { name: SENDER_NAME, email: SENDER_EMAIL },
+        sender: { name: senderName, email: senderEmail },
+        replyTo: { name: senderName, email: senderEmail },
         to: [{ email: contact.email, name: `${contact.prenom} ${contact.nom}` }],
         subject: sujet,
         textContent: corpsClean,
         htmlContent: textToHtml(corpsClean),
         headers: {
           "X-Campaign-Id": campagne_id,
-          "List-Unsubscribe": `<mailto:${SENDER_EMAIL}?subject=unsubscribe>`,
+          "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
         },
       }),
     });

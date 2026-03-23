@@ -301,7 +301,7 @@ export default async (request: Request) => {
       for (const c of unscored) {
         const rowIndex = Number(c._rowIndex);
         if (!rowIndex || rowIndex < 2) continue;
-        const mock = mockScoreForContact();
+        const mock = mockScoreForContact(c.secteur);
         const updated: Record<string, string> = {
           ...c,
           score_1: mock.score_1,

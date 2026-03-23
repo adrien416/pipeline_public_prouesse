@@ -350,7 +350,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     cancelSendRef.current = false;
     const total = Math.max(0, parseInt(campaignData?.total_leads || "0") - parseInt(campaignData?.sent || "0"));
     setSendProgress({ sent: 0, total, errors: [], done: false });
-    const intervalMs = (parseInt(intervalle) || 20) * 60 * 1000;
+    // "Envoyer maintenant" sends ALL emails immediately — no interval between sends
     try {
       let remaining = total;
       let sentCount = 0;
@@ -379,9 +379,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           }
           break;
         }
-        if (remaining > 0 && !cancelSendRef.current) {
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
-        }
+        // No delay — send next email immediately
       }
       setSendProgress((p) => ({ ...p, done: true }));
       qc.invalidateQueries({ queryKey: ["campaign"] });
@@ -623,6 +621,11 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     : campaignStatus === "completed" ? "Terminée"
                     : "Brouillon"}
                 </span>
+                {campaignStatus === "active" && (
+                  <span className="text-xs text-green-600 ml-1">
+                    — les emails sont envoyés selon les règles ci-dessous
+                  </span>
+                )}
               </div>
 
               {/* Actions */}
@@ -643,6 +646,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                       <button
                         onClick={() => setSendConfirm(true)}
                         disabled={sending}
+                        title="Envoie TOUS les emails d'un coup, sans respecter les intervalles ni les plages horaires"
                         className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                       >
                         {sending ? `Envoi ${sendProgress.sent}/${sendProgress.total}...` : "Envoyer maintenant"}
@@ -702,7 +706,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     <div className="flex justify-between text-xs text-gray-600 mb-1">
                       <span>
                         {sending
-                          ? `Envoi en cours... (~${Math.ceil((sendProgress.total - sendProgress.sent) * (parseInt(intervalle) || 20))} min restantes)`
+                          ? `Envoi en cours... (${sendProgress.total - sendProgress.sent} restant${sendProgress.total - sendProgress.sent > 1 ? "s" : ""})`
                           : sendProgress.errors.length > 0 && sendProgress.sent === 0
                           ? "Échec de l'envoi"
                           : sendProgress.errors.length > 0
@@ -1230,9 +1234,9 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
 
       <ConfirmDialog
         open={sendConfirm}
-        title="Envoyer maintenant"
-        message={`L'envoi de ${Math.max(0, totalLeads - sentCount)} emails prendra environ ${Math.ceil(Math.max(0, totalLeads - sentCount) * (parseInt(intervalle) || 20))} minutes (intervalle de ${intervalle} min entre chaque envoi). La page doit rester ouverte. Continuer ?`}
-        confirmLabel="Lancer l'envoi"
+        title="Envoyer TOUS les emails d'un coup"
+        message={`Attention : cela va envoyer les ${Math.max(0, totalLeads - sentCount)} emails restants immédiatement, sans respecter les intervalles ni les plages horaires. La page doit rester ouverte pendant l'envoi. Continuer ?`}
+        confirmLabel="Envoyer tout maintenant"
         variant="danger"
         onConfirm={() => { setSendConfirm(false); doSendAll(); }}
         onCancel={() => setSendConfirm(false)}

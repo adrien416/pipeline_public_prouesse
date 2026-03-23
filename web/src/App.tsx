@@ -142,7 +142,7 @@ function EmptyState({ message, onAction }: { message: string; onAction: () => vo
         onClick={onAction}
         className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700"
       >
-        Aller a la recherche
+        Aller à la recherche
       </button>
     </div>
   );

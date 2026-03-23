@@ -37,7 +37,7 @@ export function Layout({ children, activeTab, onTabChange, maxReachedStep }: Pro
               onClick={logout}
               className="text-xs text-gray-500 hover:text-gray-700"
             >
-              Deconnexion
+              Déconnexion
             </button>
           </div>
         </div>

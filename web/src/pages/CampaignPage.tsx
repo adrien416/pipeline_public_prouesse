@@ -6,13 +6,23 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lastSaved = useRef(value);
+  const saving = useRef(false);
 
   useEffect(() => {
     if (!campaignId || value === lastSaved.current) return;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      updateCampaign({ id: campaignId, [field]: value });
-      lastSaved.current = value;
+    timer.current = setTimeout(async () => {
+      if (saving.current) return;
+      saving.current = true;
+      try {
+        await updateCampaign({ id: campaignId, [field]: value });
+        lastSaved.current = value;
+      } catch (err) {
+        console.error(`Auto-save failed for ${field}:`, err);
+        // Don't update lastSaved — next change will retry
+      } finally {
+        saving.current = false;
+      }
     }, delay);
     return () => clearTimeout(timer.current);
   }, [campaignId, field, value, delay]);
@@ -22,6 +32,28 @@ function useDebouncedSave(campaignId: string | null, field: string, value: strin
     lastSaved.current = value;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
+
+  // Flush pending save on unmount / page close (best-effort)
+  useEffect(() => {
+    const flush = () => {
+      if (campaignId && value !== lastSaved.current) {
+        navigator.sendBeacon?.(
+          "/api/campaign",
+          new Blob(
+            [JSON.stringify({ id: campaignId, [field]: value })],
+            { type: "application/json" }
+          )
+        );
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      // Also flush when the hook unmounts (e.g. navigating away)
+      flush();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, field, value]);
 }
 import { Spinner } from "../components/Spinner";
 
@@ -35,13 +67,13 @@ const DEFAULT_TEMPLATE = `Bonjour {Prenom},
 
 {Phrase}
 
-Chez Prouesse, nous accompagnons les fondateurs comme toi a vendre leur entreprise ou a acceder a des investisseurs qualifies (fonds, family offices, impact investors). Tu trouveras nos references sur notre site.
+Chez Prouesse, nous accompagnons les fondateurs comme toi à vendre leur entreprise ou à accéder à des investisseurs qualifiés (fonds, family offices, impact investors). Tu trouveras nos références sur notre site.
 
-Est-ce que tu serais dispo pour un echange de 15 min cette semaine ?
+Est-ce que tu serais dispo pour un échange de 15 min cette semaine ?
 
-Objectif : comprendre tes objectifs et evaluer le fit avec notre reseau.
+Objectif : comprendre tes objectifs et évaluer le fit avec notre réseau.
 
-Bien a toi,
+Bien à toi,
 Adrien`;
 
 const DAYS = [
@@ -57,7 +89,7 @@ const DAYS = [
 export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
   const qc = useQueryClient();
   const [nom, setNom] = useState("");
-  const [sujet, setSujet] = useState("{Entreprise} — echange sur votre developpement");
+  const [sujet, setSujet] = useState("{Entreprise} — échange sur votre développement");
   const [corps, setCorps] = useState(DEFAULT_TEMPLATE);
   const [maxParJour, setMaxParJour] = useState("15");
   const [jours, setJours] = useState(["lun", "mar", "mer", "jeu", "ven"]);
@@ -331,7 +363,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     try {
       const r = await sendTestEmail(campaignId, testEmail);
       if (r.sent) {
-        setTestResult(`Email de test envoye a ${r.test_email} (contact: ${r.contact_used})`);
+        setTestResult(`Email de test envoyé à ${r.test_email} (contact: ${r.contact_used})`);
       } else {
         setTestError(r.error || "Erreur inconnue");
       }
@@ -372,7 +404,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
     const text = corps
       .replace(/\{Prenom\}/g, contact.prenom || "")
       .replace(/\{Entreprise\}/g, contact.entreprise || "")
-      .replace(/\{Phrase\}/g, contact.phrase_perso || "[Phrase personnalisee IA]");
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "[Phrase personnalisée IA]");
     // Split text on URLs and return React nodes with clickable links
     const urlRegex = /(https?:\/\/[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/g;
     const parts: (string | React.ReactElement)[] = [];
@@ -409,7 +441,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       <div>
         <h2 className="text-xl font-bold text-gray-900">4. Campagne email</h2>
         <p className="text-sm text-gray-500 mt-1">
-          {contactsList.length} contacts avec email a contacter
+          {contactsList.length} contacts avec email à contacter
         </p>
       </div>
 
@@ -418,7 +450,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-semibold text-red-700">Campagne corrompue</h3>
           <p className="text-xs text-red-600">
-            Cette campagne a des donnees corrompues (statut: "{campaignData.status || "(vide)"}"). Supprime-la et recree une campagne propre.
+            Cette campagne a des données corrompues (statut: "{campaignData.status || "(vide)"}"). Supprime-la et recrée une campagne propre.
           </p>
           <button
             onClick={() => { deleteCamp.mutate(campaignId!); setCampaignId(null); }}
@@ -471,8 +503,8 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 }`}>
                   {campaignStatus === "active" ? "Active"
                     : campaignStatus === "paused" ? "En pause"
-                    : campaignStatus === "cancelled" ? "Annulee"
-                    : campaignStatus === "completed" ? "Terminee"
+                    : campaignStatus === "cancelled" ? "Annulée"
+                    : campaignStatus === "completed" ? "Terminée"
                     : "Brouillon"}
                 </span>
               </div>
@@ -523,7 +555,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 {campaignData.nom || "Campagne sans nom"}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Creee le {(() => {
+                Créée le {(() => {
                   if (!campaignData.date_creation) return "—";
                   const d = new Date(campaignData.date_creation);
                   return d.getFullYear() > 2000 ? d.toLocaleDateString("fr-FR") : "—";
@@ -534,7 +566,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             {/* Progress bar */}
             <div>
               <div className="flex justify-between text-xs text-gray-600 mb-1">
-                <span>{sentCount} / {totalLeads} emails envoyes</span>
+                <span>{sentCount} / {totalLeads} emails envoyés</span>
                 <span>{campaignProgress}%</span>
               </div>
               <div className="w-full bg-white/60 rounded-full h-2.5">
@@ -556,10 +588,10 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                         {sending
                           ? "Envoi en cours..."
                           : sendProgress.errors.length > 0 && sendProgress.sent === 0
-                          ? "Echec de l'envoi"
+                          ? "Échec de l'envoi"
                           : sendProgress.errors.length > 0
-                          ? `Envoi arrete — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`
-                          : `Termine — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoye${sendProgress.sent > 1 ? "s" : ""}`}
+                          ? `Envoi arrêté — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoyé${sendProgress.sent > 1 ? "s" : ""}`
+                          : `Terminé — ${sendProgress.sent} email${sendProgress.sent > 1 ? "s" : ""} envoyé${sendProgress.sent > 1 ? "s" : ""}`}
                       </span>
                       <span>{sendProgress.sent}/{sendProgress.total}</span>
                     </div>
@@ -614,7 +646,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 <div className="bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700">{testError}</div>
               )}
               <p className="text-xs text-gray-400">
-                Envoie l'email avec les variables du premier contact, mais a ton adresse. Objet prefixe [TEST]. Aucun compteur modifie.
+                Envoie l'email avec les variables du premier contact, mais à ton adresse. Objet préfixé [TEST]. Aucun compteur modifié.
               </p>
             </div>
           )}
@@ -623,7 +655,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
           {campaignStatus !== "cancelled" && (
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-gray-700">Parametres d'envoi</h3>
+                <h3 className="text-sm font-semibold text-gray-700">Paramètres d'envoi</h3>
                 {campaignStatus === "paused" && (
                   <span className="text-xs text-amber-600 font-medium">Modifiable en pause</span>
                 )}
@@ -641,7 +673,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Heure debut</label>
+                      <label className="block text-xs text-gray-500 mb-1">Heure début</label>
                       <input
                         type="time"
                         value={heureDebut}
@@ -710,7 +742,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       {duplicateWarning && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
           <strong>{duplicateWarning.count} contact{duplicateWarning.count > 1 ? "s" : ""} exclu{duplicateWarning.count > 1 ? "s" : ""}</strong> car leur entreprise
-          a deja ete contactee dans une campagne precedente.
+          a déjà été contactée dans une campagne précédente.
           {duplicateWarning.domains.length > 0 && (
             <div className="text-xs mt-1 text-amber-600">
               Domaines : {[...new Set(duplicateWarning.domains)].slice(0, 10).join(", ")}
@@ -725,7 +757,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 flex items-center gap-3">
           <Spinner className="h-4 w-4 text-purple-600" />
           <span className="text-sm text-purple-700">
-            Generation des phrases personnalisees IA... ({phraseProgress.generated}/{phraseProgress.total})
+            Génération des phrases personnalisées IA... ({phraseProgress.generated}/{phraseProgress.total})
           </span>
         </div>
       )}
@@ -788,7 +820,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                       </svg>
-                      Ameliorer avec l'IA
+                      Améliorer avec l'IA
                     </>
                   )}
                 </button>
@@ -867,7 +899,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
 
               {estimatedDays > 0 && (
                 <div className="text-sm text-blue-600 font-medium">
-                  Duree estimee de la campagne : {estimatedDays} jours
+                  Durée estimée de la campagne : {estimatedDays} jours
                 </div>
               )}
 
@@ -882,7 +914,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Heure debut</label>
+                  <label className="block text-xs text-gray-500 mb-1">Heure début</label>
                   <input
                     type="time"
                     value={heureDebut}
@@ -930,7 +962,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
               </div>
 
               <div className="bg-blue-50 rounded-lg px-4 py-2 text-xs text-blue-700">
-                Au maximum {maxParJour} emails envoyes par jour depuis adrien@prouesse.vc
+                Au maximum {maxParJour} emails envoyés par jour depuis adrien@prouesse.vc
               </div>
 
               <button
@@ -941,7 +973,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                 {create.isPending ? (
                   <>
                     <Spinner className="h-4 w-4" />
-                    Creation de la campagne...
+                    Création de la campagne...
                   </>
                 ) : (
                   `Lancer la campagne (${contactsList.length} contacts)`
@@ -973,7 +1005,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
             </button>
           </div>
           <p className="text-xs text-red-600">
-            Ces campagnes ont des donnees corrompues (colonnes decalees). Supprime-les et recree une campagne propre.
+            Ces campagnes ont des données corrompues (colonnes décalées). Supprime-les et recrée une campagne propre.
           </p>
           {corruptedCampaigns.map((c) => (
             <div key={c.id} className="bg-white rounded-lg px-4 py-3 flex items-center justify-between gap-3">
@@ -998,7 +1030,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       {pastCampaigns.length > 0 && (
         <details className="bg-white rounded-xl shadow-sm border">
           <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-600 hover:bg-gray-50 select-none">
-            Campagnes precedentes ({pastCampaigns.length})
+            Campagnes précédentes ({pastCampaigns.length})
           </summary>
           <div className="px-4 pb-4 space-y-2 border-t pt-3">
             <div className="flex justify-end mb-1">
@@ -1024,9 +1056,9 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {c.sent || 0}/{c.total_leads || 0} envoyes
-                    {c.status === "cancelled" && " · Annulee"}
-                    {c.status === "completed" && " · Terminee"}
+                    {c.sent || 0}/{c.total_leads || 0} envoyés
+                    {c.status === "cancelled" && " · Annulée"}
+                    {c.status === "completed" && " · Terminée"}
                     {c.date_creation && new Date(c.date_creation).getFullYear() > 2000 && ` · ${new Date(c.date_creation).toLocaleDateString("fr-FR")}`}
                   </p>
                 </div>
@@ -1047,7 +1079,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       <ConfirmDialog
         open={!!cancelConfirm}
         title="Annuler la campagne"
-        message="Les emails non envoyes ne seront pas envoyes. Les contacts seront liberes et pourront etre reassignes a une nouvelle campagne. Les emails deja envoyes ne sont pas affectes."
+        message="Les emails non envoyés ne seront pas envoyés. Les contacts seront libérés et pourront être réassignés à une nouvelle campagne. Les emails déjà envoyés ne sont pas affectés."
         confirmLabel="Annuler la campagne"
         variant="danger"
         onConfirm={() => cancelConfirm && cancelCampaign.mutate(cancelConfirm)}
@@ -1057,7 +1089,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       <ConfirmDialog
         open={purgeConfirm}
         title="Supprimer toutes les campagnes"
-        message="Toutes les campagnes (actives, en pause, annulees) seront definitivement supprimees. Les contacts seront liberes. Les emails deja envoyes ne sont pas affectes."
+        message="Toutes les campagnes (actives, en pause, annulées) seront définitivement supprimées. Les contacts seront libérés. Les emails déjà envoyés ne sont pas affectés."
         confirmLabel="Tout supprimer"
         variant="danger"
         onConfirm={() => purge.mutate()}

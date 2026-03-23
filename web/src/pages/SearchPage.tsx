@@ -48,14 +48,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       <div>
         <h2 className="text-xl font-bold text-gray-900">1. Recherche de prospects</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Decris ta cible en francais, l'IA traduit en filtres Fullenrich
+          Décris ta cible en français, l'IA traduit en filtres Fullenrich
         </p>
       </div>
 
       {/* Previous searches */}
       {previousSearches.data?.recherches && previousSearches.data.recherches.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Recherches precedentes</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Recherches précédentes</h3>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {previousSearches.data.recherches.map((r) => (
               <div
@@ -65,7 +65,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 <div className="flex-1 min-w-0 mr-3">
                   <span className="font-medium text-gray-900 truncate block">{r.description}</span>
                   <span className="text-xs text-gray-400">
-                    {r.mode === "cession" ? "Cession" : "Levee"} — {r.nb_resultats} resultats — {r.date ? new Date(r.date).toLocaleDateString("fr-FR") : ""}
+                    {r.mode === "cession" ? "Cession" : "Levée"} — {r.nb_resultats} résultats — {r.date ? new Date(r.date).toLocaleDateString("fr-FR") : ""}
                   </span>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -94,14 +94,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         {/* Description */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Decris la liste que tu veux
+            Décris la liste que tu veux
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-            placeholder="Ex: Toutes les societes de gestion agreees AMF en France, avec un focus ESG ou impact..."
+            placeholder="Ex: Toutes les sociétés de gestion agréées AMF en France, avec un focus ESG ou impact..."
           />
         </div>
 
@@ -118,7 +118,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   : "border-gray-200 text-gray-600 hover:border-gray-300"
               }`}
             >
-              Levee de fonds
+              Levée de fonds
             </button>
             <button
               type="button"
@@ -146,7 +146,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Employes min</label>
+            <label className="block text-xs text-gray-500 mb-1">Employés min</label>
             <input
               type="number"
               value={headcountMin}
@@ -155,7 +155,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Employes max</label>
+            <label className="block text-xs text-gray-500 mb-1">Employés max</label>
             <input
               type="number"
               value={headcountMax}
@@ -173,7 +173,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Nb resultats</label>
+            <label className="block text-xs text-gray-500 mb-1">Nb résultats</label>
             <input
               type="number"
               value={limit}
@@ -213,9 +213,9 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         <div className={`rounded-xl p-4 ${search.data.retried ? "bg-green-50 border border-green-300" : "bg-gray-50 border border-gray-200"}`}>
           <h3 className="text-sm font-semibold text-gray-700 mb-2">
             {search.data.retried ? (
-              <span className="text-green-700">Filtres elargis automatiquement (les filtres initiaux donnaient 0 resultats)</span>
+              <span className="text-green-700">Filtres élargis automatiquement (les filtres initiaux donnaient 0 résultats)</span>
             ) : (
-              "Filtres generes par l'IA"
+              "Filtres générés par l'IA"
             )}
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -251,7 +251,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             <span className="text-2xl flex-shrink-0">💡</span>
             <div>
               <h3 className="font-semibold text-amber-900 text-sm">
-                Aucun resultat — Suggestions de l'IA pour elargir la recherche
+                Aucun résultat — Suggestions de l'IA pour élargir la recherche
               </h3>
               <ul className="mt-3 space-y-2">
                 {search.data.suggestions.map((s, i) => (
@@ -262,7 +262,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 ))}
               </ul>
               <p className="mt-3 text-xs text-amber-600">
-                Modifie les criteres ci-dessus puis relance la recherche.
+                Modifie les critères ci-dessus puis relance la recherche.
               </p>
             </div>
           </div>
@@ -275,7 +275,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
           <div className="p-4 border-b flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-gray-900">
-                {search.data.contacts.length - excluded.size} contacts trouves
+                {search.data.contacts.length - excluded.size} contacts trouvés
                 {excluded.size > 0 && <span className="text-gray-400 font-normal text-sm ml-2">({excluded.size} exclus)</span>}
               </h3>
               {search.data.explication && (
@@ -327,7 +327,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                           setExcluded(next);
                         }}
                         className={`text-xs px-1.5 py-0.5 rounded ${isExcluded ? "bg-gray-200 text-gray-500" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
-                        title={isExcluded ? "Reinclure" : "Exclure"}
+                        title={isExcluded ? "Réinclure" : "Exclure"}
                       >
                         {isExcluded ? "+" : "x"}
                       </button>

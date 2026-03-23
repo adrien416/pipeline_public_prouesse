@@ -101,7 +101,7 @@ export function AnalyticsPage({ campaignId }: Props) {
                     }`}>
                       {c.status === "active" ? "Active" :
                        c.status === "paused" ? "Pause" :
-                       c.status === "cancelled" ? "Annulee" : "Terminee"}
+                       c.status === "cancelled" ? "Annulée" : "Terminée"}
                     </span>
                   </div>
 
@@ -132,7 +132,7 @@ export function AnalyticsPage({ campaignId }: Props) {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <div className="text-[11px] text-gray-500">{Math.min(sent, total)}/{total} envoyes</div>
+                  <div className="text-[11px] text-gray-500">{Math.min(sent, total)}/{total} envoyés</div>
                 </button>
               );
             })}
@@ -143,7 +143,7 @@ export function AnalyticsPage({ campaignId }: Props) {
       {/* No campaign selected */}
       {!campaign && campaigns.length > 0 && (
         <div className="text-center py-10 text-gray-500">
-          <p className="text-sm">Selectionne une campagne ci-dessus</p>
+          <p className="text-sm">Sélectionne une campagne ci-dessus</p>
         </div>
       )}
 
@@ -171,12 +171,12 @@ export function AnalyticsPage({ campaignId }: Props) {
                   : campaignStatus === "paused"
                   ? "Campagne en pause"
                   : campaignStatus === "completed"
-                  ? "Campagne terminee"
+                  ? "Campagne terminée"
                   : "Brouillon")}
               </span>
             </div>
             <span className="text-xs text-gray-500">
-              Derniere MAJ : {new Date().toLocaleString("fr-FR")}
+              Dernière MAJ : {new Date().toLocaleString("fr-FR")}
             </span>
           </div>
 
@@ -187,7 +187,7 @@ export function AnalyticsPage({ campaignId }: Props) {
               <MetricCard label="Total leads" value={leads.total} />
               <MetricCard label="En attente" value={leads.queued} />
               <MetricCard label="En cours" value={leads.in_progress} />
-              <MetricCard label="Completes" value={leads.completed} />
+              <MetricCard label="Complétés" value={leads.completed} />
               {(leads as any).skipped > 0 && (
                 <MetricCard label="Doublons exclus" value={(leads as any).skipped} />
               )}
@@ -195,7 +195,7 @@ export function AnalyticsPage({ campaignId }: Props) {
             <div className="mt-3">
               <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                 <span>
-                  {leads.completed} sur {leads.total} leads completes
+                  {leads.completed} sur {leads.total} leads complétés
                 </span>
                 <span>{completionPct}%</span>
               </div>
@@ -212,12 +212,12 @@ export function AnalyticsPage({ campaignId }: Props) {
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Performance</h3>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              <MetricCard label="Envoyes" value={metrics.sent} />
+              <MetricCard label="Envoyés" value={metrics.sent} />
               <MetricCard label="Delivery" value={`${deliveryRate}%`} />
               <MetricCard
                 label="Reply rate"
                 value={`${replyRate}%`}
-                sub={`${metrics.replied} reponses`}
+                sub={`${metrics.replied} réponses`}
                 highlight={parseFloat(replyRate) > 0}
               />
               <MetricCard label="Bounce" value={`${bounceRate}%`} sub={`${metrics.bounced} bounces`} />
@@ -250,8 +250,8 @@ export function AnalyticsPage({ campaignId }: Props) {
                     }
                   />
                   <Legend />
-                  <Line type="monotone" dataKey="sent" stroke="#8b5cf6" name="Envoyes" strokeWidth={2} />
-                  <Line type="monotone" dataKey="replied" stroke="#1e40af" name="Reponses" strokeWidth={2} />
+                  <Line type="monotone" dataKey="sent" stroke="#8b5cf6" name="Envoyés" strokeWidth={2} />
+                  <Line type="monotone" dataKey="replied" stroke="#1e40af" name="Réponses" strokeWidth={2} />
                   <Line type="monotone" dataKey="bounced" stroke="#ef4444" name="Bounces" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
@@ -271,7 +271,7 @@ export function AnalyticsPage({ campaignId }: Props) {
               <tr>
                 <th className="px-4 py-2 text-left">Nom</th>
                 <th className="px-4 py-2 text-center">Statut</th>
-                <th className="px-4 py-2 text-center">Envoyes</th>
+                <th className="px-4 py-2 text-center">Envoyés</th>
                 <th className="px-4 py-2 text-center">Total</th>
                 <th className="px-4 py-2 text-center">Date</th>
                 <th className="px-4 py-2"></th>
@@ -301,7 +301,7 @@ export function AnalyticsPage({ campaignId }: Props) {
                           : "bg-gray-100 text-gray-600"
                       }`}
                     >
-                      {c.status === "active" ? "Active" : c.status === "paused" ? "Pause" : c.status === "cancelled" ? "Annulee" : c.status}
+                      {c.status === "active" ? "Active" : c.status === "paused" ? "Pause" : c.status === "cancelled" ? "Annulée" : c.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center text-gray-700">{c.sent || 0}</td>
@@ -319,7 +319,7 @@ export function AnalyticsPage({ campaignId }: Props) {
                         selectedId === c.id ? "text-blue-700" : "text-blue-500"
                       }`}
                     >
-                      {selectedId === c.id ? "Selectionnee" : "Voir"}
+                      {selectedId === c.id ? "Sélectionnée" : "Voir"}
                     </span>
                   </td>
                 </tr>

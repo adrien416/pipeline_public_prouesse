@@ -80,7 +80,7 @@ export default async (request: Request) => {
       updatedLog.status = newStatus;
       logUpdates.push({
         rowIndex: Number(updatedLog._rowIndex),
-        values: toRow(EMAILLOG_HEADERS, updatedLog),
+        values: toRow(await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS), updatedLog),
       });
 
       // Update contact email_status
@@ -118,10 +118,12 @@ export default async (request: Request) => {
     }
 
     // Apply updates
+    const emailLogHeaders = await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS);
     if (logUpdates.length > 0) await batchUpdateRows("EmailLog", logUpdates);
     if (contactUpdates.length > 0) await batchUpdateRows("Contacts", contactUpdates);
 
     // Update campaign counters
+    const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
     for (const [campId, counters] of Object.entries(campaignCounters)) {
       const found = await findRowById("Campagnes", campId);
       if (found) {
@@ -129,7 +131,7 @@ export default async (request: Request) => {
         for (const [key, count] of Object.entries(counters)) {
           updated[key] = String((parseInt(updated[key] || "0") + count));
         }
-        await updateRow("Campagnes", found.rowIndex, toRow(CAMPAGNES_HEADERS, updated));
+        await updateRow("Campagnes", found.rowIndex, toRow(campagneHeaders, updated));
       }
     }
 

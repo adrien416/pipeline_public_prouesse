@@ -191,10 +191,10 @@ export function sendTestEmail(campagne_id: string, test_email: string) {
   });
 }
 
-export function triggerSend(campagne_id: string) {
+export function triggerSend(campagne_id: string, force = false) {
   return request<{ sent: number; remaining: number; error?: string; skipped_domain?: string }>("/send", {
     method: "POST",
-    body: JSON.stringify({ campagne_id }),
+    body: JSON.stringify({ campagne_id, force }),
   });
 }
 

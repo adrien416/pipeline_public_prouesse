@@ -87,11 +87,14 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { campagne_id } = await request.json();
+    const { campagne_id, force } = await request.json();
     if (!campagne_id) return json({ error: "campagne_id requis" }, 400);
 
     const brevoKey = process.env.BREVO_API_KEY;
     if (!brevoKey) return json({ error: "BREVO_API_KEY non configuree" }, 500);
+
+    // Ensure sheet headers are clean before reading
+    const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
 
     const campFound = await findRowById("Campagnes", campagne_id);
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
@@ -102,41 +105,44 @@ export default async (request: Request) => {
     }
 
     // Check day-of-week and time window (Paris timezone)
-    const parisFmt = new Intl.DateTimeFormat("fr-FR", {
-      timeZone: "Europe/Paris",
-      hour: "2-digit", minute: "2-digit", weekday: "short",
-      hour12: false,
-    });
-    const parts = parisFmt.formatToParts(new Date());
-    const parisWeekday = parts.find((p) => p.type === "weekday")?.value || "";
-    const parisHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
-    const parisMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
+    // Skip these checks when force=true (manual "Envoyer maintenant")
+    if (!force) {
+      const parisFmt = new Intl.DateTimeFormat("fr-FR", {
+        timeZone: "Europe/Paris",
+        hour: "2-digit", minute: "2-digit", weekday: "short",
+        hour12: false,
+      });
+      const parts = parisFmt.formatToParts(new Date());
+      const parisWeekday = parts.find((p) => p.type === "weekday")?.value || "";
+      const parisHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
+      const parisMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
 
-    const weekdayMap: Record<string, string> = {
-      lun: "lun", mar: "mar", mer: "mer", jeu: "jeu", ven: "ven", sam: "sam", dim: "dim",
-      "lun.": "lun", "mar.": "mar", "mer.": "mer", "jeu.": "jeu", "ven.": "ven", "sam.": "sam", "dim.": "dim",
-    };
-    const todayDay = weekdayMap[parisWeekday.toLowerCase()] || parisWeekday.toLowerCase().slice(0, 3);
+      const weekdayMap: Record<string, string> = {
+        lun: "lun", mar: "mar", mer: "mer", jeu: "jeu", ven: "ven", sam: "sam", dim: "dim",
+        "lun.": "lun", "mar.": "mar", "mer.": "mer", "jeu.": "jeu", "ven.": "ven", "sam.": "sam", "dim.": "dim",
+      };
+      const todayDay = weekdayMap[parisWeekday.toLowerCase()] || parisWeekday.toLowerCase().slice(0, 3);
 
-    const joursActifs: string[] = (() => {
-      try { return JSON.parse(campaign.jours_semaine || "[]"); }
-      catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
-    })();
+      const joursActifs: string[] = (() => {
+        try { return JSON.parse(campaign.jours_semaine || "[]"); }
+        catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
+      })();
 
-    if (!joursActifs.includes(todayDay)) {
-      return json({ error: `Pas d'envoi le ${todayDay} (heure de Paris)`, sent: 0, remaining: 0 });
-    }
+      if (!joursActifs.includes(todayDay)) {
+        return json({ error: `Pas d'envoi le ${todayDay} (heure de Paris)`, sent: 0, remaining: 0 });
+      }
 
-    const heureDebut = campaign.heure_debut || "08:30";
-    const heureFin = campaign.heure_fin || "18:30";
-    const nowMinutes = parisHour * 60 + parisMinute;
-    const [dH, dM] = heureDebut.split(":").map(Number);
-    const [fH, fM] = heureFin.split(":").map(Number);
-    const debutMinutes = dH * 60 + dM;
-    const finMinutes = fH * 60 + fM;
+      const heureDebut = campaign.heure_debut || "08:30";
+      const heureFin = campaign.heure_fin || "18:30";
+      const nowMinutes = parisHour * 60 + parisMinute;
+      const [dH, dM] = heureDebut.split(":").map(Number);
+      const [fH, fM] = heureFin.split(":").map(Number);
+      const debutMinutes = dH * 60 + dM;
+      const finMinutes = fH * 60 + fM;
 
-    if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
-      return json({ error: `Hors plage horaire ${heureDebut}-${heureFin} (heure de Paris, il est ${String(parisHour).padStart(2,"0")}:${String(parisMinute).padStart(2,"0")})`, sent: 0, remaining: 0 });
+      if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
+        return json({ error: `Hors plage horaire ${heureDebut}-${heureFin} (heure de Paris, il est ${String(parisHour).padStart(2,"0")}:${String(parisMinute).padStart(2,"0")})`, sent: 0, remaining: 0 });
+      }
     }
 
     const allContacts = await readAll("Contacts");
@@ -238,7 +244,7 @@ export default async (request: Request) => {
         }]);
       }
 
-      await appendRow("EmailLog", toRow(EMAILLOG_HEADERS, {
+      await appendRow("EmailLog", toRow(await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS), {
         id: uuid(),
         campagne_id,
         contact_id: contact.id,
@@ -251,7 +257,7 @@ export default async (request: Request) => {
       }));
 
       const newSent = parseInt(campaign.sent || "0") + 1;
-      await updateRow("Campagnes", campFound.rowIndex, toRow(CAMPAGNES_HEADERS, {
+      await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
         ...campaign,
         sent: String(newSent),
       }));

@@ -283,7 +283,7 @@ export function CampaignPage({ rechercheId, mode, onComplete }: Props) {
       while (remaining > 0) {
         let r: { sent: number; remaining?: number; error?: string; skipped_domain?: string };
         try {
-          r = await triggerSend(campaignId);
+          r = await triggerSend(campaignId, true);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           setSendProgress((p) => ({ ...p, errors: [...p.errors, msg], done: true }));

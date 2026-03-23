@@ -30,6 +30,9 @@ export default async (request: Request) => {
 
   // GET — list campaigns or fetch one
   if (request.method === "GET") {
+    // Ensure sheet headers are clean before reading
+    await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
+
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 

@@ -245,10 +245,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
               <span className="text-gray-500">{contactsList.length} contacts a scorer</span>
               {contactsList.length > 0 && (
                 <span className="text-gray-400 ml-2">
-                  (cout IA estime : ~{mode === "cession"
-                    ? `$${(contactsList.length * 0.012).toFixed(2)}`
-                    : `$${(contactsList.length * 0.0003).toFixed(2)}`
-                  })
+                  (cout IA estime : ~${(contactsList.length * 0.001).toFixed(2)})
                 </span>
               )}
             </div>
@@ -323,7 +320,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                   {mode === "levee_de_fonds" ? "Scalabilite" : "Impact env."}
                 </th>
                 <th className="px-3 py-2 text-center">
-                  {mode === "levee_de_fonds" ? "Impact" : "Signaux vente"}
+                  {mode === "levee_de_fonds" ? "Impact" : "Potentiel cession"}
                 </th>
                 <th className="px-3 py-2 text-center">Total</th>
                 <th className="px-3 py-2 text-left">Raison</th>

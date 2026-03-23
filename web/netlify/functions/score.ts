@@ -78,18 +78,25 @@ JSON uniquement :
 
 function buildCessionPrompt(contact: Record<string, string>, metaDesc: string): string {
   const host = safeDomain(contact.domaine);
-  return `Tu es un analyste M&A spécialisé en cessions d'entreprises.
+  return `Tu es un analyste M&A spécialisé en cessions d'entreprises à impact.
 
 Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
 Description du site : ${metaDesc || "Non disponible"}
 
 Évalue sur 2 critères :
-1. IMPACT ENVIRONNEMENTAL (1-5) : impact environnemental positif ?
-   1=aucun, 5=transformateur
-2. SIGNAUX DE CESSION (1-5) : indices que cette entreprise pourrait être à vendre ?
-   Cherche : dirigeant âgé, pas de succession, croissance en baisse,
-   consolidation du secteur, PE actif dans le secteur, stagnation recrutements.
-   1=aucun signal, 5=signaux très forts
+1. IMPACT ENVIRONNEMENTAL (1-5) : l'activité de l'entreprise contribue-t-elle positivement à l'environnement ou à la société ?
+   1=activité sans lien avec l'impact (ex: consulting généraliste, immobilier classique)
+   2=impact indirect ou marginal (ex: service B2B neutre mais pas polluant)
+   3=contribution positive modérée (ex: éducation, santé, alimentation saine, mobilité douce, économie circulaire)
+   4=impact significatif et mesurable (ex: cleantech, énergies renouvelables, agriculture durable, inclusion sociale)
+   5=impact transformateur sur un enjeu majeur (ex: dépollution, reforestation, accès à l'eau)
+   Note : l'éducation, la formation, la santé, l'alimentation bio/responsable, et les services sociaux comptent comme impact positif (>=3).
+
+2. POTENTIEL DE CESSION (1-5) : cette entreprise est-elle un bon candidat pour une acquisition ?
+   Évalue selon : taille et maturité de l'entreprise, secteur en consolidation,
+   type de business (récurrent vs one-shot), attractivité pour un acquéreur stratégique ou financier,
+   positionnement de niche, potentiel de croissance externe.
+   1=peu attractif pour un acquéreur, 5=cible idéale
 
 IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
 - une association, charité, coopérative, organisme public, ONG

@@ -163,6 +163,196 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
   return data.results ?? data.people ?? data.data ?? [];
 }
 
+// ─── Pappers API (données légales entreprises françaises) ───
+
+interface PappersFilters {
+  q?: string;
+  code_naf?: string;
+  departement?: string;
+  region?: string;
+  code_postal?: string;
+  tranche_effectif_min?: string;
+  tranche_effectif_max?: string;
+  chiffre_affaires_min?: string;
+  chiffre_affaires_max?: string;
+  date_creation_min?: string;
+  date_creation_max?: string;
+  objet_social?: string;
+  categorie_juridique?: string;
+}
+
+async function callClaudeForPappers(description: string, mode: string, location?: string, secteur?: string): Promise<PappersFilters> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
+
+  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres pour l'API Pappers (recherche d'entreprises françaises).
+
+Filtres disponibles :
+- q: Recherche textuelle (nom d'entreprise, mot-clé dans l'objet social). Mets des mots-clés larges séparés par des espaces.
+- code_naf: Code NAF (ex: "6201Z" pour programmation informatique). Peut contenir plusieurs codes séparés par des virgules.
+- departement: Numéro de département (ex: "75" pour Paris, "69" pour Rhône). Plusieurs séparés par virgules.
+- region: Nom de région (ex: "Île-de-France", "Auvergne-Rhône-Alpes").
+- code_postal: Code postal (ex: "75001").
+- objet_social: Mots-clés dans l'objet social de l'entreprise.
+
+RÈGLES :
+1. Utilise "q" pour la recherche principale — mets des mots-clés pertinents en français.
+2. Si un secteur est mentionné, utilise "q" et/ou "code_naf" (recherche le code NAF correspondant).
+3. Si une localisation est mentionnée, utilise "departement" ou "region" selon la précision.
+4. Ne mets que les filtres pertinents. Préfère peu de filtres larges.
+5. Le mode est "${mode}" :
+   - "levee_de_fonds" : cible les entreprises en croissance, startups, tech, innovation
+   - "cession" : cible les entreprises établies, PME, transmission
+
+Réponds UNIQUEMENT avec un JSON valide. Exemple :
+{"q": "fintech paiement", "region": "Île-de-France", "code_naf": "6419Z,6492Z"}`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: `Description : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API error (Pappers) ${response.status}: ${errText}`);
+  }
+
+  const result = await response.json();
+  const text = result.content?.[0]?.text ?? "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return { q: description };
+
+  return JSON.parse(jsonMatch[0]);
+}
+
+async function searchPappers(filters: PappersFilters, limit: number = 20): Promise<unknown[]> {
+  const apiKey = process.env.PAPPERS_API_KEY;
+  if (!apiKey) return []; // Pappers optionnel — pas d'erreur si clé absente
+
+  const params = new URLSearchParams();
+  params.set("api_token", apiKey);
+  params.set("par_page", String(Math.min(limit, 100)));
+  params.set("page", "1");
+
+  // Exclure les entreprises cessées
+  params.set("entreprise_cessee", "false");
+
+  if (filters.q) params.set("q", filters.q);
+  if (filters.code_naf) params.set("code_naf", filters.code_naf);
+  if (filters.departement) params.set("departement", filters.departement);
+  if (filters.region) params.set("region", filters.region);
+  if (filters.code_postal) params.set("code_postal", filters.code_postal);
+  if (filters.objet_social) params.set("objet_social", filters.objet_social);
+  if (filters.categorie_juridique) params.set("categorie_juridique", filters.categorie_juridique);
+  if (filters.chiffre_affaires_min) params.set("chiffre_affaires_min", filters.chiffre_affaires_min);
+  if (filters.chiffre_affaires_max) params.set("chiffre_affaires_max", filters.chiffre_affaires_max);
+  if (filters.date_creation_min) params.set("date_creation_min", filters.date_creation_min);
+  if (filters.date_creation_max) params.set("date_creation_max", filters.date_creation_max);
+
+  const url = `https://api.pappers.fr/v2/recherche?${params.toString()}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    console.error(`Pappers API error ${response.status}: ${await response.text()}`);
+    return []; // Fail silently — Pappers is supplementary
+  }
+
+  const data = await response.json();
+  const resultats = data.resultats ?? [];
+
+  // Map Pappers companies to contact-like objects with dirigeant info
+  const contacts: unknown[] = [];
+  for (const entreprise of resultats) {
+    // Get the main dirigeant (président, gérant, DG)
+    const representants = entreprise.representants ?? entreprise.dirigeants ?? [];
+    const dirigeant = representants.find((r: any) =>
+      r.qualite && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(r.qualite)
+    ) ?? representants[0];
+
+    if (!dirigeant) continue; // Skip companies without known dirigeants
+
+    contacts.push({
+      _source: "pappers",
+      first_name: dirigeant.prenom ?? dirigeant.prenom_usuel ?? "",
+      last_name: dirigeant.nom ?? "",
+      employment: {
+        current: {
+          title: dirigeant.qualite ?? "Dirigeant",
+          company: {
+            name: entreprise.nom_entreprise ?? entreprise.denomination ?? "",
+            domain: entreprise.site_web
+              ? entreprise.site_web.replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+              : "",
+            industry: {
+              main_industry: entreprise.libelle_code_naf ?? entreprise.domaine_activite ?? "",
+            },
+          },
+        },
+      },
+      social_profiles: {
+        linkedin: { url: "" },
+      },
+      _pappers_extra: {
+        siren: entreprise.siren ?? "",
+        code_naf: entreprise.code_naf ?? "",
+        ville: entreprise.siege?.ville ?? entreprise.ville ?? "",
+        effectifs: entreprise.effectif ?? entreprise.tranche_effectifs ?? "",
+        chiffre_affaires: entreprise.chiffre_affaires ?? "",
+        date_creation: entreprise.date_creation ?? "",
+      },
+    });
+  }
+
+  return contacts;
+}
+
+function deduplicateResults(fullenrichResults: unknown[], pappersResults: unknown[]): unknown[] {
+  // Tag Fullenrich results
+  const tagged = fullenrichResults.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
+
+  // Deduplicate by company domain or company name
+  const seenDomains = new Set<string>();
+  const seenCompanies = new Set<string>();
+
+  for (const r of tagged) {
+    const domain = r.employment?.current?.company?.domain?.toLowerCase();
+    const company = r.employment?.current?.company?.name?.toLowerCase();
+    if (domain) seenDomains.add(domain);
+    if (company) seenCompanies.add(company);
+  }
+
+  for (const r of pappersResults as any[]) {
+    const domain = r.employment?.current?.company?.domain?.toLowerCase();
+    const company = r.employment?.current?.company?.name?.toLowerCase();
+
+    // Skip if already present from Fullenrich
+    if (domain && seenDomains.has(domain)) continue;
+    if (company && seenCompanies.has(company)) continue;
+
+    tagged.push(r);
+    if (domain) seenDomains.add(domain);
+    if (company) seenCompanies.add(company);
+  }
+
+  return tagged;
+}
+
 async function suggestFilterChanges(
   body: SearchBody,
   filters: Record<string, unknown>
@@ -283,8 +473,13 @@ export default async (request: Request) => {
       });
     }
 
-    // 1. Translate description to Fullenrich filters via Claude
-    let filters = await callClaude(body.description, body.mode);
+    // 1. Translate description to filters via Claude (Fullenrich + Pappers in parallel)
+    const [filters, pappersFilters] = await Promise.all([
+      callClaude(body.description, body.mode),
+      process.env.PAPPERS_API_KEY
+        ? callClaudeForPappers(body.description, body.mode, body.location, body.secteur)
+        : Promise.resolve(null),
+    ]);
 
     // Apply optional overrides in Fullenrich v2 format
     function applyOverrides(f: Record<string, unknown>) {
@@ -307,20 +502,28 @@ export default async (request: Request) => {
 
     applyOverrides(filters);
 
-    // 2. Call Fullenrich Search API
-    let results = await searchFullenrich(filters, body.limit ?? 100);
+    // 2. Call Fullenrich + Pappers in parallel
+    const fullenrichLimit = body.limit ?? 100;
+    const pappersLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50); // ~30% extra from Pappers
 
-    // 2b. If 0 results, auto-retry with broader filters
+    const [fullenrichResults, pappersResults] = await Promise.all([
+      searchFullenrich(filters, fullenrichLimit),
+      pappersFilters ? searchPappers(pappersFilters, pappersLimit) : Promise.resolve([]),
+    ]);
+
+    let results = deduplicateResults(fullenrichResults, pappersResults);
+
+    // 2b. If 0 Fullenrich results, auto-retry with broader filters
     let retried = false;
     let originalFilters: Record<string, unknown> | undefined;
-    if (results.length === 0) {
+    if (fullenrichResults.length === 0) {
       originalFilters = { ...filters };
       const broaderFilters = await callClaude(body.description, body.mode, true);
       applyOverrides(broaderFilters);
-      const retryResults = await searchFullenrich(broaderFilters, body.limit ?? 100);
+      const retryResults = await searchFullenrich(broaderFilters, fullenrichLimit);
       if (retryResults.length > 0) {
-        filters = broaderFilters;
-        results = retryResults;
+        Object.assign(filters, broaderFilters);
+        results = deduplicateResults(retryResults, pappersResults);
         retried = true;
       }
     }
@@ -372,6 +575,7 @@ export default async (request: Request) => {
       email_status: "",
       email_sent_at: "",
       phrase_perso: "",
+      source: r._source ?? "fullenrich",
       date_creation: now,
       date_modification: now,
       user_id: auth.userId,
@@ -431,7 +635,12 @@ export default async (request: Request) => {
       recherche: { id: rechercheId, ...recherche },
       contacts,
       filters,
+      pappers_filters: pappersFilters ?? undefined,
       total: contacts.length,
+      sources: {
+        fullenrich: contacts.filter((c) => c.source !== "pappers").length,
+        pappers: contacts.filter((c) => c.source === "pappers").length,
+      },
       suggestions,
       retried,
       originalFilters: retried ? originalFilters : undefined,

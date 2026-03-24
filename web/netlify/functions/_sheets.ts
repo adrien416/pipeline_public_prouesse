@@ -323,6 +323,7 @@ export const CONTACTS_HEADERS = [
   "score_1", "score_2", "score_total", "score_raison", "score_feedback",
   "recherche_id", "campagne_id",
   "email_status", "email_sent_at", "phrase_perso",
+  "source",
   "date_creation", "date_modification",
   "user_id",
 ];

@@ -61,7 +61,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       <div>
         <h2 className="text-xl font-bold text-gray-900">1. Recherche de prospects</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Décris ta cible en français, l'IA traduit en filtres Fullenrich
+          Décris ta cible en français, l'IA cherche sur Fullenrich + Pappers
         </p>
       </div>
 
@@ -206,7 +206,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
           {search.isPending ? (
             <>
               <Spinner className="h-4 w-4" />
-              Recherche en cours... (IA + Fullenrich)
+              Recherche en cours... (IA + Fullenrich + Pappers)
             </>
           ) : (
             "Rechercher"
@@ -299,6 +299,16 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   </span>
                 )}
               </h3>
+              {search.data.contacts.length > 0 && (() => {
+                const fullenrichCount = search.data!.contacts.filter(c => c.source !== "pappers").length;
+                const pappersCount = search.data!.contacts.filter(c => c.source === "pappers").length;
+                return (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>
+                    {pappersCount > 0 && <span className="inline-block bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">{pappersCount} Pappers</span>}
+                  </p>
+                );
+              })()}
               {search.data.explication && (
                 <p className="text-xs text-gray-500 mt-1">{search.data.explication}</p>
               )}
@@ -332,6 +342,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   <th className="px-3 py-2 text-left">Titre</th>
                   <th className="px-3 py-2 text-left">Secteur</th>
                   <th className="px-3 py-2 text-left">Domaine</th>
+                  <th className="px-3 py-2 text-left">Source</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,6 +390,15 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                     <td className="px-3 py-2 text-gray-600">{c.titre}</td>
                     <td className="px-3 py-2 text-gray-600">{c.secteur}</td>
                     <td className="px-3 py-2 text-gray-500">{c.domaine}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                        c.source === "pappers"
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {c.source === "pappers" ? "Pappers" : "Fullenrich"}
+                      </span>
+                    </td>
                   </tr>
                   );
                 })}

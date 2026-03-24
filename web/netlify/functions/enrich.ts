@@ -282,7 +282,67 @@ export default async (request: Request) => {
       return json({ enriched: 0, not_found: 0, errors: 0, done: false });
     }
 
-    // Step 2: Start new enrichment batch (exclude already ok, failed, or pending)
+    // Step 2: Cascade — for INSEE/SIRENE contacts with "pas_de_resultat", try Fullenrich search to find LinkedIn
+    const cascadeCandidates = qualified.filter(
+      (c) => c.enrichissement_status === "pas_de_resultat" &&
+             c.source === "entreprises_gouv" &&
+             !c.linkedin && c.prenom && c.nom && c.entreprise
+    );
+
+    if (cascadeCandidates.length > 0) {
+      console.log(`Cascade enrichissement: ${cascadeCandidates.length} contacts INSEE sans LinkedIn, recherche Fullenrich...`);
+      const cascadeUpdates: Array<{ rowIndex: number; values: string[] }> = [];
+      let cascadeFound = 0;
+
+      // Search Fullenrich for each candidate to find their LinkedIn + domain
+      for (const c of cascadeCandidates) {
+        if (!c._rowIndex) continue;
+        try {
+          const searchBody = {
+            offset: 0,
+            limit: 1,
+            person_names: [{ value: `${c.prenom} ${c.nom}`, exact_match: false, exclude: false }],
+            current_company_names: [{ value: c.entreprise, exact_match: false, exclude: false }],
+          };
+          const searchResp = await fetch("https://app.fullenrich.com/api/v2/people/search", {
+            method: "POST",
+            headers: fullenrichHeaders(),
+            body: JSON.stringify(searchBody),
+          });
+          if (searchResp.ok) {
+            const searchData = await searchResp.json();
+            const person = (searchData.results ?? searchData.people ?? searchData.data ?? [])[0];
+            if (person) {
+              const linkedinUrl = person.social_profiles?.linkedin?.url ?? "";
+              const domain = person.employment?.current?.company?.domain ?? "";
+              if (linkedinUrl || domain) {
+                cascadeUpdates.push({
+                  rowIndex: Number(c._rowIndex),
+                  values: toRow(sheetHeaders, {
+                    ...c,
+                    ...(linkedinUrl && { linkedin: linkedinUrl }),
+                    ...(domain && { domaine: domain }),
+                    enrichissement_status: "", // Reset to allow re-enrichment
+                    date_modification: new Date().toISOString(),
+                  }),
+                });
+                cascadeFound++;
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`Cascade search failed for ${c.prenom} ${c.nom}:`, e);
+        }
+      }
+
+      if (cascadeUpdates.length > 0) {
+        await batchUpdateRows("Contacts", cascadeUpdates);
+        console.log(`Cascade: ${cascadeFound} contacts enrichis avec LinkedIn/domaine, re-soumission au prochain poll`);
+        return json({ enriched: 0, not_found: 0, errors: 0, done: false, cascade_found: cascadeFound });
+      }
+    }
+
+    // Step 3: Start new enrichment batch (exclude already ok, failed, or pending)
     const toEnrich = qualified.filter(
       (c) => c.enrichissement_status !== "ok" &&
              c.enrichissement_status !== "pas_de_resultat" &&

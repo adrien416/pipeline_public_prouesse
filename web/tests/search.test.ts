@@ -101,7 +101,7 @@ beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   process.env.FULLENRICH_API_KEY = "test-key";
 
-  // Default mock: Anthropic returns filters, Fullenrich returns 1 result
+  // Default mock: Anthropic returns filters, Fullenrich returns 1 result, API Entreprises returns results
   globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
     const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 
@@ -118,6 +118,11 @@ beforeEach(() => {
 
     if (urlStr.includes("fullenrich")) {
       return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
+    }
+
+    // API Recherche d'Entreprises (gouv.fr) — return empty by default
+    if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+      return new Response(JSON.stringify({ results: [], total_results: 0 }));
     }
 
     return new Response("Not found", { status: 404 });
@@ -183,8 +188,8 @@ describe("search handler — success", () => {
       makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
     );
 
-    // Only 1 Anthropic call (filters) and 1 Fullenrich call
-    expect(countCalls("anthropic")).toBe(1);
+    // 2 Anthropic calls (Fullenrich filters + Entreprises filters) and 1 Fullenrich call
+    expect(countCalls("anthropic")).toBe(2);
     expect(countCalls("fullenrich")).toBe(1);
   });
 
@@ -223,6 +228,9 @@ describe("search handler — auto-retry", () => {
         }
         return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
       }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
+      }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
@@ -235,8 +243,8 @@ describe("search handler — auto-retry", () => {
     expect(body.retried).toBe(true);
     expect(body.originalFilters).toBeDefined();
     expect(body.suggestions).toEqual([]);
-    // 2 Anthropic calls (normal + broad) + 2 Fullenrich calls
-    expect(countCalls("anthropic")).toBe(2);
+    // 3 Anthropic calls (Fullenrich filters + Entreprises filters + broad retry) + 2 Fullenrich calls
+    expect(countCalls("anthropic")).toBe(3);
     expect(fullenrichCallCount).toBe(2);
   });
 
@@ -246,13 +254,13 @@ describe("search handler — auto-retry", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         anthropicCallCount++;
-        if (anthropicCallCount <= 2) {
-          // First 2 calls: filter generation (normal + broad)
+        if (anthropicCallCount <= 3) {
+          // First 3 calls: Fullenrich filters + Entreprises filters + broad retry
           return new Response(JSON.stringify({
             content: [{ text: '{"current_company_industries": [{"value": "Niche"}]}' }],
           }));
         }
-        // Third call: suggestions
+        // Fourth call: suggestions
         return new Response(JSON.stringify({
           content: [{
             text: '{"suggestions": ["Elargir le secteur", "Retirer la localisation"]}',
@@ -261,6 +269,9 @@ describe("search handler — auto-retry", () => {
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
+      }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
       }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
@@ -273,8 +284,8 @@ describe("search handler — auto-retry", () => {
     expect(body.contacts).toHaveLength(0);
     expect(body.retried).toBe(false); // retry didn't succeed
     expect(body.suggestions).toHaveLength(2);
-    // 3 Anthropic calls: filters + broad filters + suggestions
-    expect(anthropicCallCount).toBe(3);
+    // 4 Anthropic calls: Fullenrich filters + Entreprises filters + broad retry + suggestions
+    expect(anthropicCallCount).toBe(4);
   });
 
   it("does not save contacts to Sheets when both attempts return 0", async () => {
@@ -287,6 +298,9 @@ describe("search handler — auto-retry", () => {
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
+      }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
       }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
@@ -381,6 +395,9 @@ describe("search handler — filter overrides", () => {
         }
         return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
       }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
+      }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
@@ -422,12 +439,13 @@ describe("search handler — suggestion context", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         anthropicCallCount++;
-        if (anthropicCallCount <= 2) {
+        if (anthropicCallCount <= 3) {
+          // 3 calls: Fullenrich filters + Entreprises filters + broad retry
           return new Response(JSON.stringify({
             content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
           }));
         }
-        // 3rd call is suggestions
+        // 4th call is suggestions
         suggestionCallBody = init?.body as string ?? "";
         return new Response(JSON.stringify({
           content: [{ text: '{"suggestions": ["Suggestion A"]}' }],
@@ -435,6 +453,9 @@ describe("search handler — suggestion context", () => {
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
+      }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
       }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
@@ -499,7 +520,8 @@ describe("search handler — errors", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         anthropicCallCount++;
-        if (anthropicCallCount <= 2) {
+        if (anthropicCallCount <= 3) {
+          // 3 calls: Fullenrich filters + Entreprises filters + broad retry
           return new Response(JSON.stringify({
             content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
           }));
@@ -508,6 +530,9 @@ describe("search handler — errors", () => {
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
+      }
+      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
+        return new Response(JSON.stringify({ results: [], total_results: 0 }));
       }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;

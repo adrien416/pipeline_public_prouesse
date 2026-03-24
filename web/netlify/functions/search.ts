@@ -163,49 +163,48 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
   return data.results ?? data.people ?? data.data ?? [];
 }
 
-// ─── Pappers API (données légales entreprises françaises) ───
+// ─── API Recherche d'Entreprises (données légales entreprises françaises — gratuit, sans clé) ───
 
-interface PappersFilters {
+interface EntreprisesGovFilters {
   q?: string;
-  code_naf?: string;
-  departement?: string;
-  region?: string;
+  activite_principale?: string;       // Code NAF avec point (ex: "62.01Z")
+  section_activite_principale?: string; // Section NAF (A-U)
+  departement?: string;               // Code département (ex: "75")
+  region?: string;                    // Code région numérique (ex: "11" pour IDF)
   code_postal?: string;
-  tranche_effectif_min?: string;
-  tranche_effectif_max?: string;
-  chiffre_affaires_min?: string;
-  chiffre_affaires_max?: string;
-  date_creation_min?: string;
-  date_creation_max?: string;
-  objet_social?: string;
-  categorie_juridique?: string;
+  nature_juridique?: string;
+  tranche_effectif_salarie?: string;
+  categorie_entreprise?: string;      // PME, ETI, GE
+  etat_administratif?: string;        // A (active), C (cessée)
 }
 
-async function callClaudeForPappers(description: string, mode: string, location?: string, secteur?: string): Promise<PappersFilters> {
+async function callClaudeForEntreprises(description: string, mode: string, location?: string, secteur?: string): Promise<EntreprisesGovFilters> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
-  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres pour l'API Pappers (recherche d'entreprises françaises).
+  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres pour l'API Recherche d'Entreprises du gouvernement français (recherche-entreprises.api.gouv.fr).
 
 Filtres disponibles :
-- q: Recherche textuelle (nom d'entreprise, mot-clé dans l'objet social). Mets des mots-clés larges séparés par des espaces.
-- code_naf: Code NAF (ex: "6201Z" pour programmation informatique). Peut contenir plusieurs codes séparés par des virgules.
-- departement: Numéro de département (ex: "75" pour Paris, "69" pour Rhône). Plusieurs séparés par virgules.
-- region: Nom de région (ex: "Île-de-France", "Auvergne-Rhône-Alpes").
+- q: Recherche textuelle (nom d'entreprise, mots-clés). Mets des mots-clés larges séparés par des espaces.
+- activite_principale: Code NAF AVEC UN POINT (ex: "62.01Z" pour programmation informatique, "64.19Z" pour banques). Plusieurs codes séparés par des virgules.
+- section_activite_principale: Section NAF large (lettre A-U, ex: "J" pour information et communication, "K" pour finance).
+- departement: Code département (ex: "75" pour Paris, "69" pour Rhône). Plusieurs séparés par virgules.
+- region: Code NUMÉRIQUE de région (ex: "11" pour Île-de-France, "84" pour Auvergne-Rhône-Alpes, "93" pour PACA, "75" pour Nouvelle-Aquitaine, "44" pour Grand Est, "32" pour Hauts-de-France, "28" pour Normandie, "53" pour Bretagne, "52" pour Pays de la Loire, "76" pour Occitanie, "27" pour Bourgogne-Franche-Comté, "24" pour Centre-Val de Loire).
 - code_postal: Code postal (ex: "75001").
-- objet_social: Mots-clés dans l'objet social de l'entreprise.
+- categorie_entreprise: Catégorie de taille — "PME", "ETI", ou "GE" (grande entreprise).
+- tranche_effectif_salarie: Tranche d'effectifs (ex: "11" pour 10-19 salariés, "12" pour 20-49, "21" pour 50-99, "22" pour 100-199, "31" pour 200-249, "32" pour 250-499, "41" pour 500-999, "42" pour 1000-1999, "51" pour 2000-4999, "52" pour 5000-9999).
 
 RÈGLES :
 1. Utilise "q" pour la recherche principale — mets des mots-clés pertinents en français.
-2. Si un secteur est mentionné, utilise "q" et/ou "code_naf" (recherche le code NAF correspondant).
-3. Si une localisation est mentionnée, utilise "departement" ou "region" selon la précision.
+2. Si un secteur est mentionné, utilise "q" et/ou "activite_principale" (avec le point dans le code NAF !).
+3. Si une localisation est mentionnée, utilise "departement" ou "region" (code numérique !).
 4. Ne mets que les filtres pertinents. Préfère peu de filtres larges.
 5. Le mode est "${mode}" :
    - "levee_de_fonds" : cible les entreprises en croissance, startups, tech, innovation
-   - "cession" : cible les entreprises établies, PME, transmission
+   - "cession" : cible les entreprises établies, PME, transmission → utilise categorie_entreprise: "PME"
 
 Réponds UNIQUEMENT avec un JSON valide. Exemple :
-{"q": "fintech paiement", "region": "Île-de-France", "code_naf": "6419Z,6492Z"}`;
+{"q": "fintech paiement", "region": "11", "activite_principale": "64.19Z,64.92Z"}`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -229,7 +228,7 @@ Réponds UNIQUEMENT avec un JSON valide. Exemple :
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Anthropic API error (Pappers) ${response.status}: ${errText}`);
+    throw new Error(`Anthropic API error (Entreprises) ${response.status}: ${errText}`);
   }
 
   const result = await response.json();
@@ -240,89 +239,93 @@ Réponds UNIQUEMENT avec un JSON valide. Exemple :
   return JSON.parse(jsonMatch[0]);
 }
 
-async function searchPappers(filters: PappersFilters, limit: number = 20): Promise<unknown[]> {
-  const apiKey = process.env.PAPPERS_API_KEY;
-  if (!apiKey) return []; // Pappers optionnel — pas d'erreur si clé absente
+async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: number = 25): Promise<unknown[]> {
+  const perPage = 25; // Max autorisé par l'API
+  const maxPages = Math.ceil(Math.min(limit, 100) / perPage);
+  const allContacts: unknown[] = [];
 
-  const params = new URLSearchParams();
-  params.set("api_token", apiKey);
-  params.set("par_page", String(Math.min(limit, 100)));
-  params.set("page", "1");
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams();
+    params.set("per_page", String(perPage));
+    params.set("page", String(page));
+    params.set("etat_administratif", "A"); // Entreprises actives uniquement
 
-  // Exclure les entreprises cessées
-  params.set("entreprise_cessee", "false");
+    if (filters.q) params.set("q", filters.q);
+    if (filters.activite_principale) params.set("activite_principale", filters.activite_principale);
+    if (filters.section_activite_principale) params.set("section_activite_principale", filters.section_activite_principale);
+    if (filters.departement) params.set("departement", filters.departement);
+    if (filters.region) params.set("region", filters.region);
+    if (filters.code_postal) params.set("code_postal", filters.code_postal);
+    if (filters.nature_juridique) params.set("nature_juridique", filters.nature_juridique);
+    if (filters.tranche_effectif_salarie) params.set("tranche_effectif_salarie", filters.tranche_effectif_salarie);
+    if (filters.categorie_entreprise) params.set("categorie_entreprise", filters.categorie_entreprise);
 
-  if (filters.q) params.set("q", filters.q);
-  if (filters.code_naf) params.set("code_naf", filters.code_naf);
-  if (filters.departement) params.set("departement", filters.departement);
-  if (filters.region) params.set("region", filters.region);
-  if (filters.code_postal) params.set("code_postal", filters.code_postal);
-  if (filters.objet_social) params.set("objet_social", filters.objet_social);
-  if (filters.categorie_juridique) params.set("categorie_juridique", filters.categorie_juridique);
-  if (filters.chiffre_affaires_min) params.set("chiffre_affaires_min", filters.chiffre_affaires_min);
-  if (filters.chiffre_affaires_max) params.set("chiffre_affaires_max", filters.chiffre_affaires_max);
-  if (filters.date_creation_min) params.set("date_creation_min", filters.date_creation_min);
-  if (filters.date_creation_max) params.set("date_creation_max", filters.date_creation_max);
+    const url = `https://recherche-entreprises.api.gouv.fr/search?${params.toString()}`;
 
-  const url = `https://api.pappers.fr/v2/recherche?${params.toString()}`;
+    const response = await fetch(url);
 
-  const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`API Entreprises gouv error ${response.status}: ${await response.text()}`);
+      break; // Stop paginating on error
+    }
 
-  if (!response.ok) {
-    console.error(`Pappers API error ${response.status}: ${await response.text()}`);
-    return []; // Fail silently — Pappers is supplementary
-  }
+    const data = await response.json();
+    const resultats = data.results ?? [];
 
-  const data = await response.json();
-  const resultats = data.resultats ?? [];
+    // Map each entreprise to contact-like objects with dirigeant info
+    for (const entreprise of resultats) {
+      const dirigeants = entreprise.dirigeants ?? [];
+      // Get the main dirigeant (président, gérant, DG)
+      const dirigeant = dirigeants.find((d: any) =>
+        d.qualite && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.qualite)
+      ) ?? dirigeants.find((d: any) =>
+        d.fonction && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.fonction)
+      ) ?? dirigeants[0];
 
-  // Map Pappers companies to contact-like objects with dirigeant info
-  const contacts: unknown[] = [];
-  for (const entreprise of resultats) {
-    // Get the main dirigeant (président, gérant, DG)
-    const representants = entreprise.representants ?? entreprise.dirigeants ?? [];
-    const dirigeant = representants.find((r: any) =>
-      r.qualite && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(r.qualite)
-    ) ?? representants[0];
+      if (!dirigeant) continue; // Skip companies without known dirigeants
 
-    if (!dirigeant) continue; // Skip companies without known dirigeants
+      // Extract first name: API returns "prenoms" (may contain multiple)
+      const prenoms = dirigeant.prenoms ?? dirigeant.prenom ?? "";
+      const firstName = prenoms.split(/[\s,]+/)[0] ?? "";
 
-    contacts.push({
-      _source: "pappers",
-      first_name: dirigeant.prenom ?? dirigeant.prenom_usuel ?? "",
-      last_name: dirigeant.nom ?? "",
-      employment: {
-        current: {
-          title: dirigeant.qualite ?? "Dirigeant",
-          company: {
-            name: entreprise.nom_entreprise ?? entreprise.denomination ?? "",
-            domain: entreprise.site_web
-              ? entreprise.site_web.replace(/^https?:\/\//, "").replace(/\/.*$/, "")
-              : "",
-            industry: {
-              main_industry: entreprise.libelle_code_naf ?? entreprise.domaine_activite ?? "",
+      allContacts.push({
+        _source: "entreprises_gouv",
+        first_name: firstName,
+        last_name: dirigeant.nom ?? "",
+        employment: {
+          current: {
+            title: dirigeant.qualite ?? dirigeant.fonction ?? "Dirigeant",
+            company: {
+              name: entreprise.nom_complet ?? entreprise.nom_raison_sociale ?? "",
+              domain: "", // API gouv.fr ne fournit pas le site web
+              industry: {
+                main_industry: entreprise.libelle_activite_principale ?? "",
+              },
             },
           },
         },
-      },
-      social_profiles: {
-        linkedin: { url: "" },
-      },
-      _pappers_extra: {
-        siren: entreprise.siren ?? "",
-        code_naf: entreprise.code_naf ?? "",
-        ville: entreprise.siege?.ville ?? entreprise.ville ?? "",
-        effectifs: entreprise.effectif ?? entreprise.tranche_effectifs ?? "",
-        chiffre_affaires: entreprise.chiffre_affaires ?? "",
-        date_creation: entreprise.date_creation ?? "",
-      },
-    });
+        social_profiles: {
+          linkedin: { url: "" }, // Pas de LinkedIn dans les données publiques
+        },
+        _entreprise_extra: {
+          siren: entreprise.siren ?? "",
+          code_naf: entreprise.activite_principale ?? "",
+          ville: entreprise.siege?.libelle_commune ?? entreprise.siege?.commune ?? "",
+          effectifs: entreprise.tranche_effectif_salarie ?? "",
+          categorie: entreprise.categorie_entreprise ?? "",
+          date_creation: entreprise.date_creation ?? "",
+        },
+      });
+    }
+
+    // Stop if less than a full page (no more results)
+    if (resultats.length < perPage) break;
   }
 
-  return contacts;
+  return allContacts.slice(0, limit);
 }
 
-function deduplicateResults(fullenrichResults: unknown[], pappersResults: unknown[]): unknown[] {
+function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: unknown[]): unknown[] {
   // Tag Fullenrich results
   const tagged = fullenrichResults.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
 
@@ -337,7 +340,7 @@ function deduplicateResults(fullenrichResults: unknown[], pappersResults: unknow
     if (company) seenCompanies.add(company);
   }
 
-  for (const r of pappersResults as any[]) {
+  for (const r of entreprisesResults as any[]) {
     const domain = r.employment?.current?.company?.domain?.toLowerCase();
     const company = r.employment?.current?.company?.name?.toLowerCase();
 
@@ -473,12 +476,10 @@ export default async (request: Request) => {
       });
     }
 
-    // 1. Translate description to filters via Claude (Fullenrich + Pappers in parallel)
-    const [filters, pappersFilters] = await Promise.all([
+    // 1. Translate description to filters via Claude (Fullenrich + Entreprises gouv.fr in parallel)
+    const [filters, entreprisesFilters] = await Promise.all([
       callClaude(body.description, body.mode),
-      process.env.PAPPERS_API_KEY
-        ? callClaudeForPappers(body.description, body.mode, body.location, body.secteur)
-        : Promise.resolve(null),
+      callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur),
     ]);
 
     // Apply optional overrides in Fullenrich v2 format
@@ -502,16 +503,16 @@ export default async (request: Request) => {
 
     applyOverrides(filters);
 
-    // 2. Call Fullenrich + Pappers in parallel
+    // 2. Call Fullenrich + API Entreprises gouv.fr in parallel
     const fullenrichLimit = body.limit ?? 100;
-    const pappersLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50); // ~30% extra from Pappers
+    const entreprisesLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50); // ~30% extra from Entreprises
 
-    const [fullenrichResults, pappersResults] = await Promise.all([
+    const [fullenrichResults, entreprisesResults] = await Promise.all([
       searchFullenrich(filters, fullenrichLimit),
-      pappersFilters ? searchPappers(pappersFilters, pappersLimit) : Promise.resolve([]),
+      searchEntreprisesGov(entreprisesFilters, entreprisesLimit),
     ]);
 
-    let results = deduplicateResults(fullenrichResults, pappersResults);
+    let results = deduplicateResults(fullenrichResults, entreprisesResults);
 
     // 2b. If 0 Fullenrich results, auto-retry with broader filters
     let retried = false;
@@ -523,7 +524,7 @@ export default async (request: Request) => {
       const retryResults = await searchFullenrich(broaderFilters, fullenrichLimit);
       if (retryResults.length > 0) {
         Object.assign(filters, broaderFilters);
-        results = deduplicateResults(retryResults, pappersResults);
+        results = deduplicateResults(retryResults, entreprisesResults);
         retried = true;
       }
     }
@@ -635,11 +636,11 @@ export default async (request: Request) => {
       recherche: { id: rechercheId, ...recherche },
       contacts,
       filters,
-      pappers_filters: pappersFilters ?? undefined,
+      entreprises_filters: entreprisesFilters,
       total: contacts.length,
       sources: {
-        fullenrich: contacts.filter((c) => c.source !== "pappers").length,
-        pappers: contacts.filter((c) => c.source === "pappers").length,
+        fullenrich: contacts.filter((c) => c.source === "fullenrich" || !c.source).length,
+        entreprises_gouv: contacts.filter((c) => c.source === "entreprises_gouv").length,
       },
       suggestions,
       retried,

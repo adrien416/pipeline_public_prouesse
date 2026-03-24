@@ -1,5 +1,5 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Mis a jour le : 2026-03-22*
+*Mis a jour le : 2026-03-24*
 
 ## 1. Snapshot du projet
 - **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. L'outil permet de rechercher des dirigeants d'entreprises (via Fullenrich), de les scorer par IA selon des criteres de scalabilite/impact ou cession, d'enrichir leurs emails, puis d'envoyer des campagnes email personnalisees — le tout depuis une interface web.
@@ -100,6 +100,17 @@
 
 ## 4. Historique des changements
 
+### Session 5 (2026-03-24)
+
+11. **Limite resultats 100 → 500** (`36449c9`) — Le champ "Nb resultats" avait un `max="100"` en dur. Augmente a 500.
+
+12. **Flag et auto-exclusion des entreprises deja scorees** (`1444aac`) — Quand une recherche retourne des entreprises deja scorees < 7/10 dans des recherches precedentes :
+    - Backend : cross-reference les domaines des nouveaux resultats avec les contacts existants de l'utilisateur ayant un `score_total < 7`
+    - Frontend : auto-exclure ces contacts a l'arrivee des resultats (ajoutes au set `excluded`)
+    - Badge ambre "Deja score X/10" sur chaque contact concerne (avec raison au survol)
+    - L'utilisateur peut forcer l'inclusion en cliquant "+" (bouton ambre au lieu de gris)
+    - Compteur en header : "— N deja vus (score < 7)"
+
 ### Session 4 (2026-03-22)
 
 10. **Fix bugs campagne & analytics** (`427a4e1`) :
@@ -161,6 +172,18 @@
 4. **Augmenter le rate limit Anthropic** — Le scoring est lent (~25 min pour 100 contacts a 5 req/min).
 
 5. **Auto-pause sur metriques** — Pauser automatiquement une campagne si le bounce rate depasse 15% ou l'open rate est < 5% (code ebauche puis retire en session 4, a reimplementer proprement).
+
+6. **Canal LinkedIn (2e canal de prospection)** — Ajouter LinkedIn comme canal d'outreach en complement de l'email. Decision prise : **extension Chrome maison** (Option B). Recherche effectuee sur les projets open source existants :
+   - **[OpenOutreach](https://github.com/eracle/OpenOutreach)** (1.2k stars, Python, GPLv3) : Le plus complet. Playwright + stealth + API Voyager interne LinkedIn + ML (Gaussian Process) pour qualifier. Mais c'est un outil standalone serveur Docker, pas une extension Chrome. Potentiellement utilisable comme reference d'architecture.
+   - **[LinkVit](https://github.com/Tchangang/LinkVit)** (JS, 2017, mort) : Extension Chrome simple — mass invitations + messages personnalises avec placeholders `%firstname%`, `%lastname%`. Bonne reference pour la structure manifest/content scripts.
+   - **[Swapptoo/Linkedin-Automation-Extension](https://github.com/Swapptoo/Linkedin-Automation-Extension)** (React + Webpack) : Extension multi-navigateur auto-connect + message.
+   - **[Harddiikk/Linkedin-Outreach](https://github.com/Harddiikk/Linkedin-Outreach)** (fork OpenOutreach, Python) : Utilise l'API Voyager pour les donnees structurees, Jinja templates pour messages perso.
+
+   **Plan envisage** : Extension Chrome legere qui communique avec l'app via API pour recuperer la liste de prospects LinkedIn + messages IA personnalises. L'extension ouvre chaque profil, envoie l'invitation avec message perso, et reporte le statut. L'app a deja les URLs LinkedIn dans le champ `linkedin` des contacts. Points d'attention : fragilite (DOM LinkedIn change), rate limiting, risque de ban du compte LinkedIn.
+
+   **Alternatives ecartees** :
+   - *WhatsApp / SMS* : Prospection a froid interdite (WhatsApp TOS + RGPD/CNIL pour SMS sans opt-in). Utilisable uniquement en follow-up apres premier contact.
+   - *Option C hybride* (copier-coller message + ouvrir profil LinkedIn) : Fallback possible si l'extension Chrome s'avere trop fragile.
 
 ## 7. Problemes connus
 

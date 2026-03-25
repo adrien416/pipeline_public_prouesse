@@ -722,8 +722,9 @@ export default async (request: Request) => {
       previously_failed_domains: previouslyFailedDomains,
     });
   } catch (err) {
-    console.error("search error:", err);
-    return json({ error: "Erreur interne" }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("search error:", message);
+    return json({ error: `Erreur: ${message}` }, 500);
   }
 };
 

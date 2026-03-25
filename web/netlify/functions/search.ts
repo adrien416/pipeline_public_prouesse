@@ -541,9 +541,14 @@ export default async (request: Request) => {
     }
 
     // 1. Translate description to filters via Claude (Fullenrich + Entreprises gouv.fr in parallel)
+    // INSEE is supplementary — never let it crash the main search
     const [filters, entreprisesFilters] = await Promise.all([
       callClaude(body.description, body.mode, false, body.location, body.secteur),
-      callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur),
+      callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
+        .catch((err) => {
+          console.error("callClaudeForEntreprises failed (non-blocking):", err);
+          return null;
+        }),
     ]);
 
     // Apply optional overrides in Fullenrich v2 format
@@ -569,7 +574,13 @@ export default async (request: Request) => {
 
     const [fullenrichResults, entreprisesGovResult] = await Promise.all([
       searchFullenrich(filters, fullenrichLimit),
-      searchEntreprisesGov(entreprisesFilters, entreprisesLimit),
+      entreprisesFilters
+        ? searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
+            .catch((err): EntreprisesGovResult => {
+              console.error("searchEntreprisesGov failed (non-blocking):", err);
+              return { contacts: [], debug: { status: "crash", error: err instanceof Error ? err.message : String(err) } };
+            })
+        : Promise.resolve({ contacts: [], debug: { status: "skipped", error: "Génération des filtres INSEE a échoué" } } as EntreprisesGovResult),
     ]);
     const entreprisesContacts = entreprisesGovResult.contacts;
     const entreprisesDebug = entreprisesGovResult.debug;

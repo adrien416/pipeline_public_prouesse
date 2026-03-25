@@ -67,7 +67,8 @@ RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
 3. **exact_match: false PARTOUT** pour les inclusions. Seules les exclusions peuvent avoir exact_match: true.
 4. **Titres LIMITÉS — selon le mode** :
    - Mode "levee_de_fonds" : CEO, Founder, CTO (max 3 titres orientés startups/tech)
-   - Mode "cession" : CEO, Founder, Owner, Managing Director, President, General Manager (max 5 titres, inclure propriétaires/gérants)
+   - Mode "cession" : CEO, Founder, Managing Director, President, General Manager, Gérant, Directeur Général, Président (max 5 titres dirigeants/propriétaires)
+   ATTENTION : N'utilise JAMAIS "Owner" seul car ça matche "Product Owner", "Account Owner" etc. Utilise des titres de DIRIGEANTS explicites.
 5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
 6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
 7. **URLs et noms d'entreprise** : Si la description contient une URL ou un nom d'entreprise, tu DOIS identifier le VRAI secteur d'activité de cette entreprise. ATTENTION AUX PIÈGES :
@@ -95,11 +96,45 @@ IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec
 N'inclus que les filtres pertinents par rapport à la description.${breadthInstruction}`;
 }
 
+/** Extract URL from description text, fetch it, and return site context (title + meta description). */
+async function fetchSiteContext(description: string): Promise<string> {
+  const urlMatch = description.match(/https?:\/\/[^\s]+/);
+  if (!urlMatch) return "";
+
+  try {
+    const url = urlMatch[0].replace(/[.,;!?)]+$/, ""); // trim trailing punctuation
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ProuesseBot/1.0)" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(5000), // 5s timeout
+    });
+    if (!response.ok) return "";
+
+    const html = await response.text();
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
+    const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+
+    const title = titleMatch?.[1]?.trim() ?? "";
+    const desc = descMatch?.[1]?.trim() ?? ogDescMatch?.[1]?.trim() ?? "";
+
+    if (!title && !desc) return "";
+    return `\n\nContexte du site web (${url}) :\nTitre : ${title}\nDescription : ${desc}`;
+  } catch {
+    return ""; // Network error, timeout — ignore silently
+  }
+}
+
 async function callClaude(description: string, mode: string, broad = false, location?: string, secteur?: string): Promise<Record<string, unknown>> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
   const systemPrompt = buildSystemPrompt(mode, broad);
+
+  // If description contains a URL, fetch the site to get real context
+  const siteContext = await fetchSiteContext(description);
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -117,7 +152,7 @@ async function callClaude(description: string, mode: string, broad = false, loca
         messages: [
           {
             role: "user",
-            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
+            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}${siteContext}`,
           },
         ],
       }),

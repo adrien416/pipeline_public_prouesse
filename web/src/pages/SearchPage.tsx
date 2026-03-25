@@ -257,6 +257,38 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
+      {/* Filtres INSEE */}
+      {(search.data as any)?.entreprises_filters && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            Filtres INSEE générés
+            {(search.data as any)?.entreprises_debug && (
+              <span className={`ml-2 text-xs font-normal px-2 py-0.5 rounded-full ${
+                (search.data as any).entreprises_debug.status === "ok"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+              }`}>
+                {(search.data as any).entreprises_debug.status === "ok"
+                  ? `${(search.data as any).entreprises_debug.totalFromApi ?? 0} résultats API`
+                  : (search.data as any).entreprises_debug.status}
+              </span>
+            )}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries((search.data as any).entreprises_filters).map(([key, value]) => (
+              <span key={key} className="inline-block text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">
+                {key}: {String(value)}
+              </span>
+            ))}
+          </div>
+          {(search.data as any)?.entreprises_debug?.error && (
+            <p className="text-xs text-red-600 mt-2">
+              {(search.data as any).entreprises_debug.error.slice(0, 200)}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* AI Suggestions when 0 results */}
       {search.data && search.data.contacts.length === 0 && search.data.suggestions?.length > 0 && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-5">

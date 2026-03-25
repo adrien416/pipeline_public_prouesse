@@ -221,11 +221,21 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
-      {/* Raisonnement IA */}
-      {(search.data as any)?.ai_reasoning && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-indigo-700 mb-1">Raisonnement de l'IA</h3>
-          <p className="text-sm text-indigo-900">{(search.data as any).ai_reasoning}</p>
+      {/* Raisonnement IA + Raffinage */}
+      {((search.data as any)?.ai_reasoning || (search.data as any)?.refinement_reasoning) && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">
+          {(search.data as any)?.ai_reasoning && (
+            <div>
+              <h3 className="text-sm font-semibold text-indigo-700 mb-1">Raisonnement de l'IA</h3>
+              <p className="text-sm text-indigo-900">{(search.data as any).ai_reasoning}</p>
+            </div>
+          )}
+          {(search.data as any)?.refinement_reasoning && (
+            <div>
+              <h3 className="text-sm font-semibold text-amber-700 mb-1">Raffinage IA</h3>
+              <p className="text-sm text-amber-900">{(search.data as any).refinement_reasoning}</p>
+            </div>
+          )}
         </div>
       )}
 

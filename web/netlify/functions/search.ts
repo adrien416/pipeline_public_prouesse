@@ -378,12 +378,13 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     // Map each entreprise to contact-like objects with dirigeant info
     for (const entreprise of resultats) {
       const dirigeants = entreprise.dirigeants ?? [];
-      // Get the main dirigeant (président, gérant, DG)
-      const dirigeant = dirigeants.find((d: any) =>
-        d.qualite && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.qualite)
-      ) ?? dirigeants.find((d: any) =>
-        d.fonction && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.fonction)
-      ) ?? dirigeants[0];
+      // Get the main dirigeant (président, gérant, DG) — exclude CAC, auditeurs, suppléants
+      const isRealDirector = (d: any) => {
+        const q = (d.qualite ?? d.fonction ?? "").toLowerCase();
+        if (/commissaire|suppl[eé]ant|auditeur|greffier/i.test(q)) return false;
+        return /pr[eé]sident|g[eé]rant|directeur|CEO|fondateur|associ[eé]/i.test(q);
+      };
+      const dirigeant = dirigeants.find((d: any) => isRealDirector(d)) ?? dirigeants[0];
 
       if (!dirigeant) continue; // Skip companies without known dirigeants
 
@@ -461,6 +462,94 @@ function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: un
   }
 
   return tagged;
+}
+
+/**
+ * AI refinement: Claude evaluates each contact's relevance to the search description.
+ * Filters out companies that don't match (e.g. "Mining" when searching silver economy).
+ * Returns filtered results + reasoning.
+ */
+async function refineWithAI(
+  description: string,
+  mode: string,
+  siteContext: string,
+  contacts: Record<string, unknown>[],
+): Promise<{ refined: Record<string, unknown>[]; refinement_reasoning: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || contacts.length === 0) return { refined: contacts as any, refinement_reasoning: "" };
+
+  // Build a compact summary of contacts for Claude to evaluate
+  const contactSummary = contacts.slice(0, 100).map((c: any, i) => (
+    `${i + 1}. ${c.prenom} ${c.nom} — ${c.titre} @ ${c.entreprise} (${c.secteur || "?"}) [${c.domaine || "?"}]`
+  )).join("\n");
+
+  const prompt = `Tu es un assistant de prospection. L'utilisateur cherche :
+"${description}" (mode: ${mode})
+${siteContext ? `\nContexte du site web mentionné :${siteContext}` : ""}
+
+Voici les ${contacts.length} contacts trouvés. Pour CHACUN, décide s'il est PERTINENT ou NON pour cette recherche.
+
+CRITÈRES D'EXCLUSION — Marque "NON" si :
+- L'entreprise n'a rien à voir avec le secteur recherché
+- Le titre n'est pas celui d'un dirigeant/décideur (Product Owner, développeur, consultant junior, stagiaire, etc.)
+- C'est un commissaire aux comptes, auditeur, expert-comptable (sauf s'il est aussi gérant)
+- L'entreprise est un grand groupe / CAC40 (pas une PME/startup à prospecter)
+
+CONTACTS :
+${contactSummary}
+
+Réponds avec un JSON :
+{
+  "keep": [1, 3, 5, ...],  // numéros des contacts à GARDER
+  "reasoning": "Explication courte de pourquoi certains ont été exclus"
+}`;
+
+  try {
+    let result: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (response.status === 429) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      if (!response.ok) break;
+      result = await response.json();
+      break;
+    }
+
+    if (!result) return { refined: contacts as any, refinement_reasoning: "Raffinage IA indisponible (rate limit)" };
+
+    const text = result.content?.[0]?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: pas de JSON valide" };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const keepIndices = new Set<number>((parsed.keep ?? []).map((n: number) => n - 1)); // 1-indexed → 0-indexed
+
+    if (keepIndices.size === 0) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: aucun filtre appliqué" };
+
+    const refined = contacts.filter((_, i) => keepIndices.has(i));
+    const removed = contacts.length - refined.length;
+    const reasoning = `${removed} contacts exclus par l'IA : ${parsed.reasoning ?? ""}`;
+    console.log(`AI refinement: ${contacts.length} → ${refined.length} (removed ${removed})`);
+    return { refined, refinement_reasoning: reasoning };
+  } catch (err) {
+    console.error("refineWithAI error:", err);
+    return { refined: contacts as any, refinement_reasoning: "Raffinage IA: erreur" };
+  }
 }
 
 async function suggestFilterChanges(
@@ -646,6 +735,16 @@ export default async (request: Request) => {
 
     let results = deduplicateResults(fullenrichResults, entreprisesContacts);
 
+    // 2a. Filter out non-director titles (Product Owner, CAC, etc.)
+    const excludedTitles = /product\s*owner|product\s*manager|project\s*manager|account\s*(owner|manager|executive)|commissaire\s*aux?\s*comptes?|suppl[eé]ant|auditeur|expert[\s-]*comptable|greffier|secr[eé]taire\s*g[eé]n[eé]ral|community\s*manager|scrum\s*master|data\s*(analyst|scientist|engineer)|d[eé]veloppeur|developer|designer|consultant\s*(junior|senior)?$/i;
+    const beforeFilter = results.length;
+    results = results.filter((r: any) => {
+      const title = r.employment?.current?.title ?? "";
+      return !excludedTitles.test(title);
+    });
+    const filteredOut = beforeFilter - results.length;
+    if (filteredOut > 0) console.log(`Filtered out ${filteredOut} non-director contacts`);
+
     // 2b. If 0 Fullenrich results, auto-retry with broader filters
     let retried = false;
     let originalFilters: Record<string, unknown> | undefined;
@@ -683,8 +782,8 @@ export default async (request: Request) => {
 
     await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
 
-    // 4. Save contacts to Google Sheets
-    const contacts: Record<string, string>[] = results.map((r: any) => ({
+    // 4. Map results to contact objects
+    let contacts: Record<string, string>[] = results.map((r: any) => ({
       id: uuidv4(),
       nom: r.last_name ?? "",
       prenom: r.first_name ?? "",
@@ -713,6 +812,19 @@ export default async (request: Request) => {
       date_modification: now,
       user_id: auth.userId,
     }));
+
+    // 4b. AI refinement — Claude filters out irrelevant contacts
+    let refinementReasoning = "";
+    if (contacts.length > 0) {
+      const siteContext = await fetchSiteContext(body.description).catch(() => "");
+      const { refined, refinement_reasoning } = await refineWithAI(
+        body.description, body.mode, siteContext, contacts,
+      );
+      contacts = refined as Record<string, string>[];
+      refinementReasoning = refinement_reasoning;
+    }
+
+    // 5. Save contacts to Google Sheets
 
     let writeDebug: Record<string, unknown> = {};
     if (contacts.length > 0) {
@@ -769,6 +881,7 @@ export default async (request: Request) => {
       contacts,
       filters,
       ai_reasoning: aiReasoning,
+      refinement_reasoning: refinementReasoning,
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,

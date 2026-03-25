@@ -11,6 +11,7 @@ const mockAppendRows = vi.fn();
 vi.mock("../netlify/functions/_sheets.js", () => ({
   appendRow: (...args: unknown[]) => mockAppendRow(...args),
   appendRows: (...args: unknown[]) => mockAppendRows(...args),
+  readAll: vi.fn().mockResolvedValue([]),
   CONTACTS_HEADERS: [
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
@@ -194,8 +195,8 @@ describe("search handler — success", () => {
       makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
     );
 
-    // 2 Anthropic calls (Fullenrich filters + Entreprises filters) and 1 Fullenrich call
-    expect(countCalls("anthropic")).toBe(2);
+    // 3 Anthropic calls (Fullenrich filters + Entreprises filters + AI refinement) and 1 Fullenrich call
+    expect(countCalls("anthropic")).toBe(3);
     expect(countCalls("fullenrich")).toBe(1);
   });
 
@@ -249,8 +250,8 @@ describe("search handler — auto-retry", () => {
     expect(body.retried).toBe(true);
     expect(body.originalFilters).toBeDefined();
     expect(body.suggestions).toEqual([]);
-    // 3 Anthropic calls (Fullenrich filters + Entreprises filters + broad retry) + 2 Fullenrich calls
-    expect(countCalls("anthropic")).toBe(3);
+    // 4 Anthropic calls (Fullenrich filters + INSEE filters + broad retry + AI refinement) + 2 Fullenrich calls
+    expect(countCalls("anthropic")).toBe(4);
     expect(fullenrichCallCount).toBe(2);
   });
 

@@ -299,14 +299,26 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   </span>
                 )}
               </h3>
-              {search.data.contacts.length > 0 && (() => {
+              {(() => {
                 const fullenrichCount = search.data!.contacts.filter(c => c.source !== "entreprises_gouv").length;
                 const inseeCount = search.data!.contacts.filter(c => c.source === "entreprises_gouv").length;
+                const inseeDebug = (search.data as any)?.entreprises_debug;
+                const inseeError = inseeDebug && inseeDebug.status !== "ok";
                 return (
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>
-                    {inseeCount > 0 && <span className="inline-block bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">{inseeCount} INSEE</span>}
-                  </p>
+                  <div className="text-xs mt-0.5 space-y-0.5">
+                    <p>
+                      <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>
+                      <span className={`inline-block px-1.5 py-0.5 rounded-full ${inseeError ? "bg-red-100 text-red-700" : inseeCount > 0 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
+                        {inseeCount} INSEE
+                        {inseeError && ` (${inseeDebug.status})`}
+                      </span>
+                    </p>
+                    {inseeError && (
+                      <p className="text-red-500 text-xs">
+                        INSEE erreur : {inseeDebug.error?.slice(0, 100) || inseeDebug.status}
+                      </p>
+                    )}
+                  </div>
                 );
               })()}
               {search.data.explication && (

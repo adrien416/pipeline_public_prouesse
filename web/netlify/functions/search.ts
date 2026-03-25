@@ -255,10 +255,16 @@ Réponds UNIQUEMENT avec un JSON valide. Exemple :
   return JSON.parse(jsonMatch[0]);
 }
 
-async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: number = 25): Promise<unknown[]> {
+interface EntreprisesGovResult {
+  contacts: unknown[];
+  debug: { status: string; error?: string; url?: string; totalFromApi?: number };
+}
+
+async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: number = 25): Promise<EntreprisesGovResult> {
   const perPage = 25; // Max autorisé par l'API
   const maxPages = Math.ceil(Math.min(limit, 100) / perPage);
   const allContacts: unknown[] = [];
+  let debugInfo: EntreprisesGovResult["debug"] = { status: "ok" };
 
   for (let page = 1; page <= maxPages; page++) {
     const params = new URLSearchParams();
@@ -282,13 +288,17 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     try {
       response = await fetch(url);
     } catch (err) {
-      console.error("API Entreprises gouv network error:", err);
-      break; // Fail gracefully — Entreprises is supplementary
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("API Entreprises gouv network error:", msg);
+      debugInfo = { status: "network_error", error: msg, url };
+      break;
     }
 
     if (!response.ok) {
-      console.error(`API Entreprises gouv error ${response.status}: ${await response.text()}`);
-      break; // Stop paginating on error
+      const errText = await response.text();
+      console.error(`API Entreprises gouv error ${response.status}: ${errText}`);
+      debugInfo = { status: `http_${response.status}`, error: errText.slice(0, 200), url };
+      break;
     }
 
     const data = await response.json();
@@ -344,8 +354,11 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     if (resultats.length < perPage) break;
   }
 
-  console.log(`API Entreprises gouv: ${allContacts.length} contacts trouvés (filters: ${JSON.stringify(filters)})`);
-  return allContacts.slice(0, limit);
+  if (debugInfo.status === "ok") {
+    debugInfo.totalFromApi = allContacts.length;
+  }
+  console.log(`API Entreprises gouv: ${allContacts.length} contacts (status: ${debugInfo.status}, filters: ${JSON.stringify(filters)})`);
+  return { contacts: allContacts.slice(0, limit), debug: debugInfo };
 }
 
 function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: unknown[]): unknown[] {
@@ -526,12 +539,14 @@ export default async (request: Request) => {
     const fullenrichLimit = body.limit ?? 100;
     const entreprisesLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50); // ~30% extra from Entreprises
 
-    const [fullenrichResults, entreprisesResults] = await Promise.all([
+    const [fullenrichResults, entreprisesGovResult] = await Promise.all([
       searchFullenrich(filters, fullenrichLimit),
       searchEntreprisesGov(entreprisesFilters, entreprisesLimit),
     ]);
+    const entreprisesContacts = entreprisesGovResult.contacts;
+    const entreprisesDebug = entreprisesGovResult.debug;
 
-    let results = deduplicateResults(fullenrichResults, entreprisesResults);
+    let results = deduplicateResults(fullenrichResults, entreprisesContacts);
 
     // 2b. If 0 Fullenrich results, auto-retry with broader filters
     let retried = false;
@@ -543,7 +558,7 @@ export default async (request: Request) => {
       const retryResults = await searchFullenrich(broaderFilters, fullenrichLimit);
       if (retryResults.length > 0) {
         Object.assign(filters, broaderFilters);
-        results = deduplicateResults(retryResults, entreprisesResults);
+        results = deduplicateResults(retryResults, entreprisesContacts);
         retried = true;
       }
     }
@@ -656,6 +671,7 @@ export default async (request: Request) => {
       contacts,
       filters,
       entreprises_filters: entreprisesFilters,
+      entreprises_debug: entreprisesDebug,
       total: contacts.length,
       sources: {
         fullenrich: contacts.filter((c) => c.source === "fullenrich" || !c.source).length,

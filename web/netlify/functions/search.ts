@@ -186,29 +186,40 @@ async function callClaudeForEntreprises(description: string, mode: string, locat
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
-  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en français en filtres pour l'API Recherche d'Entreprises du gouvernement français (recherche-entreprises.api.gouv.fr).
+  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en filtres pour l'API Recherche d'Entreprises du gouvernement français (recherche-entreprises.api.gouv.fr).
+
+IMPORTANT : Cette API cherche dans la base SIRENE (registre officiel des entreprises françaises).
+Le paramètre "q" cherche UNIQUEMENT dans le NOM de l'entreprise et l'ADRESSE — PAS dans le secteur d'activité.
 
 Filtres disponibles :
-- q: Recherche textuelle (nom d'entreprise, mots-clés). Mets des mots-clés larges séparés par des espaces.
-- activite_principale: Code NAF AVEC UN POINT (ex: "62.01Z" pour programmation informatique, "64.19Z" pour banques). Plusieurs codes séparés par des virgules.
-- section_activite_principale: Section NAF large (lettre A-U, ex: "J" pour information et communication, "K" pour finance).
-- departement: Code département (ex: "75" pour Paris, "69" pour Rhône). Plusieurs séparés par virgules.
-- region: Code NUMÉRIQUE de région (ex: "11" pour Île-de-France, "84" pour Auvergne-Rhône-Alpes, "93" pour PACA, "75" pour Nouvelle-Aquitaine, "44" pour Grand Est, "32" pour Hauts-de-France, "28" pour Normandie, "53" pour Bretagne, "52" pour Pays de la Loire, "76" pour Occitanie, "27" pour Bourgogne-Franche-Comté, "24" pour Centre-Val de Loire).
+- q: Recherche dans le nom de l'entreprise UNIQUEMENT. N'utilise "q" QUE pour chercher une entreprise par son nom. NE METS PAS de mots-clés sectoriels dans "q" (ça ne marchera pas).
+- section_activite_principale: Section NAF (lettre A-U). C'est le filtre PRINCIPAL pour le secteur. Exemples :
+  A=Agriculture, B=Industries extractives, C=Industrie manufacturière, D=Énergie, E=Eau/déchets,
+  F=Construction, G=Commerce, H=Transport, I=Hébergement/restauration,
+  J=Information/communication, K=Finance/assurance, L=Immobilier,
+  M=Activités scientifiques/techniques, N=Services administratifs,
+  O=Administration publique, P=Enseignement, Q=Santé/action sociale,
+  R=Arts/spectacles, S=Autres services, T=Ménages, U=Organisations extraterritoriales.
+- activite_principale: Code NAF exact au format XX.XXY (ex: "62.01Z"). UNIQUEMENT si tu es 100% sûr du code.
+- departement: Code département (ex: "75" pour Paris). Plusieurs séparés par virgules.
+- region: Code NUMÉRIQUE de région (ex: "11"=Île-de-France, "84"=Auvergne-Rhône-Alpes, "93"=PACA, "75"=Nouvelle-Aquitaine, "44"=Grand Est, "32"=Hauts-de-France, "28"=Normandie, "53"=Bretagne, "52"=Pays de la Loire, "76"=Occitanie, "27"=Bourgogne-Franche-Comté, "24"=Centre-Val de Loire).
 - code_postal: Code postal (ex: "75001").
-- categorie_entreprise: Catégorie de taille — "PME", "ETI", ou "GE" (grande entreprise).
-- tranche_effectif_salarie: Tranche d'effectifs (ex: "11" pour 10-19 salariés, "12" pour 20-49, "21" pour 50-99, "22" pour 100-199, "31" pour 200-249, "32" pour 250-499, "41" pour 500-999, "42" pour 1000-1999, "51" pour 2000-4999, "52" pour 5000-9999).
+- categorie_entreprise: "PME", "ETI", ou "GE".
+- tranche_effectif_salarie: "11"=10-19, "12"=20-49, "21"=50-99, "22"=100-199, "31"=200-249, "32"=250-499, "41"=500-999, "42"=1000-1999, "51"=2000-4999, "52"=5000-9999.
 
 RÈGLES :
-1. Utilise "q" pour la recherche principale — mets des mots-clés pertinents en français.
-2. Pour le secteur, PRÉFÈRE "section_activite_principale" (lettre A-U) qui est plus fiable que "activite_principale". N'utilise "activite_principale" QUE si tu es SÛR du code NAF exact au format XX.XXY (ex: "62.01Z"). Si tu n'es pas sûr, utilise section_activite_principale + q.
-3. Si une localisation est mentionnée, utilise "departement" ou "region" (code numérique !).
-4. Ne mets que les filtres pertinents. Préfère peu de filtres larges.
+1. Pour chercher par SECTEUR → utilise "section_activite_principale" (JAMAIS "q" pour ça).
+2. Pour chercher une entreprise par NOM → utilise "q" avec le nom exact.
+3. Combine section_activite_principale + localisation pour trouver des entreprises d'un secteur dans une zone.
+4. NE METS PAS de "q" si tu ne cherches pas une entreprise par nom. Laisse "q" vide ou absent.
 5. Le mode est "${mode}" :
-   - "levee_de_fonds" : cible les entreprises en croissance, startups, tech, innovation
-   - "cession" : cible les entreprises établies, PME, transmission → utilise categorie_entreprise: "PME"
+   - "levee_de_fonds" : startup/innovation → section J (info/comm), K (finance), M (scientifique)
+   - "cession" : PME établies → categorie_entreprise: "PME" + section pertinente
 
-Réponds UNIQUEMENT avec un JSON valide. Exemple :
-{"q": "fintech paiement", "region": "11", "activite_principale": "64.19Z,64.92Z"}`;
+Réponds UNIQUEMENT avec un JSON valide. Exemples :
+Recherche sectorielle : {"section_activite_principale": "K", "categorie_entreprise": "PME"}
+Recherche géographique + secteur : {"section_activite_principale": "J", "departement": "75,92,93,94"}
+Recherche par nom : {"q": "Neosilver"}`;
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {

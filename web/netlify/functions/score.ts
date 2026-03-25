@@ -1,8 +1,8 @@
 import type { Config } from "@netlify/functions";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
+import { mockScoreForContact } from "./_demo.js";
 import {
   readAll,
-  readRawRange,
   findRowById,
   batchUpdateRows,
   getHeadersForWrite,
@@ -78,18 +78,25 @@ JSON uniquement :
 
 function buildCessionPrompt(contact: Record<string, string>, metaDesc: string): string {
   const host = safeDomain(contact.domaine);
-  return `Tu es un analyste M&A spécialisé en cessions d'entreprises.
+  return `Tu es un analyste M&A spécialisé en cessions d'entreprises à impact.
 
 Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
 Description du site : ${metaDesc || "Non disponible"}
 
 Évalue sur 2 critères :
-1. IMPACT ENVIRONNEMENTAL (1-5) : impact environnemental positif ?
-   1=aucun, 5=transformateur
-2. SIGNAUX DE CESSION (1-5) : indices que cette entreprise pourrait être à vendre ?
-   Cherche : dirigeant âgé, pas de succession, croissance en baisse,
-   consolidation du secteur, PE actif dans le secteur, stagnation recrutements.
-   1=aucun signal, 5=signaux très forts
+1. IMPACT ENVIRONNEMENTAL (1-5) : l'activité de l'entreprise contribue-t-elle positivement à l'environnement ou à la société ?
+   1=activité sans lien avec l'impact (ex: consulting généraliste, immobilier classique)
+   2=impact indirect ou marginal (ex: service B2B neutre mais pas polluant)
+   3=contribution positive modérée (ex: éducation, santé, alimentation saine, mobilité douce, économie circulaire)
+   4=impact significatif et mesurable (ex: cleantech, énergies renouvelables, agriculture durable, inclusion sociale)
+   5=impact transformateur sur un enjeu majeur (ex: dépollution, reforestation, accès à l'eau)
+   Note : l'éducation, la formation, la santé, l'alimentation bio/responsable, et les services sociaux comptent comme impact positif (>=3).
+
+2. POTENTIEL DE CESSION (1-5) : cette entreprise est-elle un bon candidat pour une acquisition ?
+   Évalue selon : taille et maturité de l'entreprise, secteur en consolidation,
+   type de business (récurrent vs one-shot), attractivité pour un acquéreur stratégique ou financier,
+   positionnement de niche, potentiel de croissance externe.
+   1=peu attractif pour un acquéreur, 5=cible idéale
 
 IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
 - une association, charité, coopérative, organisme public, ONG
@@ -232,50 +239,21 @@ export default async (request: Request) => {
       mode = recherche.data.mode || "levee_de_fonds";
     }
 
-    // Read all contacts and filter by recherche_id
+    // Read all contacts and filter by user + recherche_id
     const allContacts = await readAll("Contacts");
     const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+    const visibleContacts = filterByUser(allContacts, auth, demoIds);
 
-    const searchContacts = allContacts.filter(
+    const searchContacts = visibleContacts.filter(
       (c) => c.recherche_id === body.recherche_id && c.statut !== "exclu"
     );
 
     // DIAGNOSTIC: if 0 contacts found, return raw sheet data for debugging
     if (searchContacts.length === 0) {
-      const allRechercheIds = [...new Set(allContacts.map((c) => c.recherche_id).filter(Boolean))];
-
-      // Count empty vs non-empty entries
-      const emptyIdCount = allContacts.filter((c) => !c.id).length;
-      const emptyRechCount = allContacts.filter((c) => !c.recherche_id).length;
-
-      // Read column A to get true row count in the sheet
-      const rawColA = await readRawRange("Contacts!A:A");
-      const trueRowCount = rawColA.length;
-
-      // Read raw headers
-      const rawHeaders = await readRawRange("Contacts!1:1");
-      const rechercheIdColIndex = rawHeaders[0]?.indexOf("recherche_id") ?? -1;
-
-      // Read last 10 raw rows using the TRUE row count
-      const rawStartRow = Math.max(2, trueRowCount - 9);
-      const rawLastRows = await readRawRange(
-        `Contacts!A${rawStartRow}:W${trueRowCount + 2}`
-      );
-
-      // Build diagnostic string
-      const lastRowsSummary = rawLastRows.slice(-5).map((row, i) =>
-        `r${rawStartRow + rawLastRows.length - 5 + i}:[${row.length}c]id=${row[0] ?? "?"} rech=${rechercheIdColIndex >= 0 ? (row[rechercheIdColIndex] ?? "VIDE") : row[16] ?? "VIDE"}`
-      ).join(" | ");
-
-      const errorMsg = [
-        `0 contacts pour recherche_id=${body.recherche_id}`,
-        `readAll: ${allContacts.length} (${emptyIdCount} id_vide, ${emptyRechCount} rech_vide)`,
-        `IDs uniques: [${allRechercheIds.slice(0, 5).join(", ")}]`,
-        `Sheet: ${trueRowCount} vrais rows, ${rawHeaders[0]?.length ?? 0} cols, rech@col${rechercheIdColIndex}`,
-        lastRowsSummary,
-      ].join(" — ");
-
-      return json({ error: errorMsg }, 404);
+      // Log diagnostics server-side only (not exposed to client)
+      console.error(`score: 0 contacts for recherche_id=${body.recherche_id}, total contacts: ${allContacts.length}`);
+      return json({ error: "Aucun contact trouvé pour cette recherche" }, 404);
     }
 
     // Find unscored contacts (empty score_total = not yet scored)
@@ -288,6 +266,41 @@ export default async (request: Request) => {
         qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
         done: true,
         contacts: searchContacts,
+      });
+    }
+
+    // Demo mode: assign mock scores to all unscored contacts at once
+    if (auth.role === "demo") {
+      const updates: Array<{ rowIndex: number; values: string[] }> = [];
+      const updatedMap = new Map<string, Record<string, string>>();
+      const now = new Date().toISOString();
+
+      for (const c of unscored) {
+        const rowIndex = Number(c._rowIndex);
+        if (!rowIndex || rowIndex < 2) continue;
+        const mock = mockScoreForContact(c.secteur);
+        const updated: Record<string, string> = {
+          ...c,
+          score_1: mock.score_1,
+          score_2: mock.score_2,
+          score_total: mock.score_total,
+          score_raison: mock.score_raison,
+          date_modification: now,
+        };
+        updates.push({ rowIndex, values: toRow(headers, updated) });
+        updatedMap.set(c.id, updated);
+      }
+      if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+
+      const responseContacts = searchContacts.map((c) =>
+        updatedMap.has(c.id) ? updatedMap.get(c.id)! : c
+      );
+      return json({
+        total: searchContacts.length,
+        scored: searchContacts.length,
+        qualified: responseContacts.filter((c) => Number(c.score_total) >= 7).length,
+        done: true,
+        contacts: responseContacts,
       });
     }
 

@@ -13,18 +13,18 @@ describe("toRow", () => {
   it("maps object to array in header order", () => {
     const obj = { id: "123", description: "test", mode: "cession", filtres_json: "{}", nb_resultats: "5", date: "2024-01-01" };
     const row = toRow(RECHERCHES_HEADERS, obj);
-    expect(row).toEqual(["123", "test", "cession", "{}", "5", "2024-01-01"]);
+    expect(row).toEqual(["123", "test", "cession", "{}", "5", "2024-01-01", ""]);
   });
 
   it("fills missing keys with empty string", () => {
     const obj = { id: "123", description: "test" };
     const row = toRow(RECHERCHES_HEADERS, obj);
-    expect(row).toEqual(["123", "test", "", "", "", ""]);
+    expect(row).toEqual(["123", "test", "", "", "", "", ""]);
   });
 
   it("handles empty object", () => {
     const row = toRow(RECHERCHES_HEADERS, {});
-    expect(row).toEqual(["", "", "", "", "", ""]);
+    expect(row).toEqual(["", "", "", "", "", "", ""]);
   });
 
   it("ignores extra keys not in headers", () => {
@@ -77,8 +77,8 @@ describe("toRow", () => {
 // ─── Headers constants ───
 
 describe("CONTACTS_HEADERS", () => {
-  it("has 25 columns", () => {
-    expect(CONTACTS_HEADERS).toHaveLength(25);
+  it("has 27 columns", () => {
+    expect(CONTACTS_HEADERS).toHaveLength(27);
   });
 
   it("starts with id", () => {
@@ -93,7 +93,9 @@ describe("CONTACTS_HEADERS", () => {
       "score_1", "score_2", "score_total", "score_raison", "score_feedback",
       "recherche_id", "campagne_id",
       "email_status", "email_sent_at", "phrase_perso",
+      "source",
       "date_creation", "date_modification",
+      "user_id",
     ];
     for (const field of required) {
       expect(CONTACTS_HEADERS).toContain(field);
@@ -102,23 +104,23 @@ describe("CONTACTS_HEADERS", () => {
 });
 
 describe("RECHERCHES_HEADERS", () => {
-  it("has 6 columns", () => {
-    expect(RECHERCHES_HEADERS).toHaveLength(6);
+  it("has 7 columns", () => {
+    expect(RECHERCHES_HEADERS).toHaveLength(7);
   });
 
   it("contains all fields", () => {
-    expect(RECHERCHES_HEADERS).toEqual(["id", "description", "mode", "filtres_json", "nb_resultats", "date"]);
+    expect(RECHERCHES_HEADERS).toEqual(["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id"]);
   });
 });
 
 describe("CAMPAGNES_HEADERS", () => {
-  it("has 19 columns", () => {
-    expect(CAMPAGNES_HEADERS).toHaveLength(19);
+  it("has 21 columns", () => {
+    expect(CAMPAGNES_HEADERS).toHaveLength(21);
   });
 
-  it("starts with id and ends with date_creation", () => {
+  it("starts with id and ends with user_role", () => {
     expect(CAMPAGNES_HEADERS[0]).toBe("id");
-    expect(CAMPAGNES_HEADERS[CAMPAGNES_HEADERS.length - 1]).toBe("date_creation");
+    expect(CAMPAGNES_HEADERS[CAMPAGNES_HEADERS.length - 1]).toBe("user_role");
   });
 });
 

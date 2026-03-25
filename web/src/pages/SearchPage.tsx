@@ -27,6 +27,19 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
 
   const search = useMutation({
     mutationFn: (params: SearchParams) => launchSearch(params),
+    onSuccess: (data) => {
+      // Auto-exclude contacts whose domain previously failed scoring
+      if (data.previously_failed_domains && Object.keys(data.previously_failed_domains).length > 0) {
+        const autoExcluded = new Set<string>();
+        for (const c of data.contacts) {
+          const domain = (c.domaine || "").toLowerCase();
+          if (domain && data.previously_failed_domains[domain]) {
+            autoExcluded.add(c.id);
+          }
+        }
+        setExcluded(autoExcluded);
+      }
+    },
   });
 
   function handleSearch(e: React.FormEvent) {
@@ -48,14 +61,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       <div>
         <h2 className="text-xl font-bold text-gray-900">1. Recherche de prospects</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Decris ta cible en francais, l'IA traduit en filtres Fullenrich
+          Décris ta cible en français, l'IA cherche sur Fullenrich + INSEE/SIRENE
         </p>
       </div>
 
       {/* Previous searches */}
       {previousSearches.data?.recherches && previousSearches.data.recherches.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Recherches precedentes</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Recherches précédentes</h3>
           <div className="space-y-1 max-h-48 overflow-y-auto">
             {previousSearches.data.recherches.map((r) => (
               <div
@@ -65,7 +78,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 <div className="flex-1 min-w-0 mr-3">
                   <span className="font-medium text-gray-900 truncate block">{r.description}</span>
                   <span className="text-xs text-gray-400">
-                    {r.mode === "cession" ? "Cession" : "Levee"} — {r.nb_resultats} resultats — {r.date ? new Date(r.date).toLocaleDateString("fr-FR") : ""}
+                    {r.mode === "cession" ? "Cession" : "Levée"} — {r.nb_resultats} résultats — {r.date ? new Date(r.date).toLocaleDateString("fr-FR") : ""}
                   </span>
                 </div>
                 <div className="flex gap-1 shrink-0">
@@ -94,14 +107,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         {/* Description */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Decris la liste que tu veux
+            Décris la liste que tu veux
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-            placeholder="Ex: Toutes les societes de gestion agreees AMF en France, avec un focus ESG ou impact..."
+            placeholder="Ex: Toutes les sociétés de gestion agréées AMF en France, avec un focus ESG ou impact..."
           />
         </div>
 
@@ -118,7 +131,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   : "border-gray-200 text-gray-600 hover:border-gray-300"
               }`}
             >
-              Levee de fonds
+              Levée de fonds
             </button>
             <button
               type="button"
@@ -146,7 +159,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Employes min</label>
+            <label className="block text-xs text-gray-500 mb-1">Employés min</label>
             <input
               type="number"
               value={headcountMin}
@@ -155,7 +168,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Employes max</label>
+            <label className="block text-xs text-gray-500 mb-1">Employés max</label>
             <input
               type="number"
               value={headcountMax}
@@ -173,14 +186,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Nb resultats</label>
+            <label className="block text-xs text-gray-500 mb-1">Nb résultats</label>
             <input
               type="number"
               value={limit}
               onChange={(e) => setLimit(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm"
               min="1"
-              max="100"
+              max="500"
             />
           </div>
         </div>
@@ -193,7 +206,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
           {search.isPending ? (
             <>
               <Spinner className="h-4 w-4" />
-              Recherche en cours... (IA + Fullenrich)
+              Recherche en cours... (IA + Fullenrich + INSEE)
             </>
           ) : (
             "Rechercher"
@@ -213,9 +226,9 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         <div className={`rounded-xl p-4 ${search.data.retried ? "bg-green-50 border border-green-300" : "bg-gray-50 border border-gray-200"}`}>
           <h3 className="text-sm font-semibold text-gray-700 mb-2">
             {search.data.retried ? (
-              <span className="text-green-700">Filtres elargis automatiquement (les filtres initiaux donnaient 0 resultats)</span>
+              <span className="text-green-700">Filtres élargis automatiquement (les filtres initiaux donnaient 0 résultats)</span>
             ) : (
-              "Filtres generes par l'IA"
+              "Filtres générés par l'IA"
             )}
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -244,6 +257,38 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
+      {/* Filtres INSEE */}
+      {(search.data as any)?.entreprises_filters && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">
+            Filtres INSEE générés
+            {(search.data as any)?.entreprises_debug && (
+              <span className={`ml-2 text-xs font-normal px-2 py-0.5 rounded-full ${
+                (search.data as any).entreprises_debug.status === "ok"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+              }`}>
+                {(search.data as any).entreprises_debug.status === "ok"
+                  ? `${(search.data as any).entreprises_debug.totalFromApi ?? 0} résultats API`
+                  : (search.data as any).entreprises_debug.status}
+              </span>
+            )}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries((search.data as any).entreprises_filters).map(([key, value]) => (
+              <span key={key} className="inline-block text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">
+                {key}: {String(value)}
+              </span>
+            ))}
+          </div>
+          {(search.data as any)?.entreprises_debug?.error && (
+            <p className="text-xs text-red-600 mt-2">
+              {(search.data as any).entreprises_debug.error.slice(0, 200)}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* AI Suggestions when 0 results */}
       {search.data && search.data.contacts.length === 0 && search.data.suggestions?.length > 0 && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-5">
@@ -251,7 +296,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             <span className="text-2xl flex-shrink-0">💡</span>
             <div>
               <h3 className="font-semibold text-amber-900 text-sm">
-                Aucun resultat — Suggestions de l'IA pour elargir la recherche
+                Aucun résultat — Suggestions de l'IA pour élargir la recherche
               </h3>
               <ul className="mt-3 space-y-2">
                 {search.data.suggestions.map((s, i) => (
@@ -262,7 +307,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 ))}
               </ul>
               <p className="mt-3 text-xs text-amber-600">
-                Modifie les criteres ci-dessus puis relance la recherche.
+                Modifie les critères ci-dessus puis relance la recherche.
               </p>
             </div>
           </div>
@@ -275,9 +320,39 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
           <div className="p-4 border-b flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-gray-900">
-                {search.data.contacts.length - excluded.size} contacts trouves
+                {search.data.contacts.length - excluded.size} contacts trouvés
                 {excluded.size > 0 && <span className="text-gray-400 font-normal text-sm ml-2">({excluded.size} exclus)</span>}
+                {search.data.previously_failed_domains && Object.keys(search.data.previously_failed_domains).length > 0 && (
+                  <span className="text-amber-600 font-normal text-sm ml-2">
+                    — {search.data.contacts.filter(c => {
+                      const d = (c.domaine || "").toLowerCase();
+                      return d && search.data!.previously_failed_domains?.[d];
+                    }).length} déjà vus (score {"<"} 7)
+                  </span>
+                )}
               </h3>
+              {(() => {
+                const fullenrichCount = search.data!.contacts.filter(c => c.source !== "entreprises_gouv").length;
+                const inseeCount = search.data!.contacts.filter(c => c.source === "entreprises_gouv").length;
+                const inseeDebug = (search.data as any)?.entreprises_debug;
+                const inseeError = inseeDebug && inseeDebug.status !== "ok";
+                return (
+                  <div className="text-xs mt-0.5 space-y-0.5">
+                    <p>
+                      <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>
+                      <span className={`inline-block px-1.5 py-0.5 rounded-full ${inseeError ? "bg-red-100 text-red-700" : inseeCount > 0 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>
+                        {inseeCount} INSEE
+                        {inseeError && ` (${inseeDebug.status})`}
+                      </span>
+                    </p>
+                    {inseeError && (
+                      <p className="text-red-500 text-xs">
+                        INSEE erreur : {inseeDebug.error?.slice(0, 100) || inseeDebug.status}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
               {search.data.explication && (
                 <p className="text-xs text-gray-500 mt-1">{search.data.explication}</p>
               )}
@@ -311,13 +386,16 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   <th className="px-3 py-2 text-left">Titre</th>
                   <th className="px-3 py-2 text-left">Secteur</th>
                   <th className="px-3 py-2 text-left">Domaine</th>
+                  <th className="px-3 py-2 text-left">Source</th>
                 </tr>
               </thead>
               <tbody>
                 {search.data.contacts.map((c, i) => {
                   const isExcluded = excluded.has(c.id);
+                  const domain = (c.domaine || "").toLowerCase();
+                  const failedBefore = domain && search.data!.previously_failed_domains?.[domain];
                   return (
-                  <tr key={c.id || i} className={`border-t border-gray-100 hover:bg-gray-50 ${isExcluded ? "opacity-30 line-through" : ""}`}>
+                  <tr key={c.id || i} className={`border-t border-gray-100 hover:bg-gray-50 ${isExcluded ? "opacity-40 line-through" : ""}`}>
                     <td className="px-2 py-2 text-center">
                       <button
                         onClick={() => {
@@ -326,19 +404,51 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                           else next.add(c.id);
                           setExcluded(next);
                         }}
-                        className={`text-xs px-1.5 py-0.5 rounded ${isExcluded ? "bg-gray-200 text-gray-500" : "bg-red-100 text-red-600 hover:bg-red-200"}`}
-                        title={isExcluded ? "Reinclure" : "Exclure"}
+                        className={`text-xs px-1.5 py-0.5 rounded ${
+                          isExcluded
+                            ? failedBefore
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              : "bg-gray-200 text-gray-500"
+                            : "bg-red-100 text-red-600 hover:bg-red-200"
+                        }`}
+                        title={
+                          isExcluded && failedBefore
+                            ? `Déjà scoré (${failedBefore.score}/10) — Cliquer pour forcer`
+                            : isExcluded
+                              ? "Réinclure"
+                              : "Exclure"
+                        }
                       >
                         {isExcluded ? "+" : "x"}
                       </button>
                     </td>
                     <td className="px-3 py-2 font-medium text-gray-900">
                       {c.prenom} {c.nom}
+                      {failedBefore && (
+                        <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full" title={failedBefore.raison}>
+                          Déjà scoré {failedBefore.score}/10
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
                     <td className="px-3 py-2 text-gray-600">{c.titre}</td>
                     <td className="px-3 py-2 text-gray-600">{c.secteur}</td>
-                    <td className="px-3 py-2 text-gray-500">{c.domaine}</td>
+                    <td className="px-3 py-2 text-gray-500">
+                      {c.domaine ? (
+                        <a href={`https://${c.domaine}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {c.domaine}
+                        </a>
+                      ) : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
+                        c.source === "entreprises_gouv"
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {c.source === "entreprises_gouv" ? "INSEE" : "Fullenrich"}
+                      </span>
+                    </td>
                   </tr>
                   );
                 })}

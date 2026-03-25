@@ -7,16 +7,26 @@ export default async (request: Request) => {
   const { email, password } = await request.json();
   if (!email || !password) return json({ error: "Email et mot de passe requis" }, 400);
 
-  const token = verifyLogin(email, password);
-  if (!token) return json({ error: "Email ou mot de passe incorrect" }, 401);
+  const result = await verifyLogin(email, password);
+  if (!result) return json({ error: "Email ou mot de passe incorrect" }, 401);
 
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": `auth_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200`,
-    },
-  });
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      user: {
+        email: result.user.email,
+        nom: result.user.nom,
+        role: result.user.role,
+      },
+    }),
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Set-Cookie": `auth_token=${result.token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=7200`,
+      },
+    }
+  );
 };
 
 export const config: Config = { path: ["/api/login"] };

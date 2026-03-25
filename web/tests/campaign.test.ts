@@ -20,26 +20,33 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
   CAMPAGNES_HEADERS: [
     "id", "nom", "recherche_id", "template_sujet", "template_corps", "mode", "status",
     "max_par_jour", "jours_semaine", "heure_debut", "heure_fin", "intervalle_min",
-    "total_leads", "sent", "opened", "clicked", "replied", "bounced", "date_creation",
+    "total_leads", "sent", "opened", "clicked", "replied", "bounced",
+    "date_creation",
+    "user_id",
+    "user_role",
   ],
   CONTACTS_HEADERS: [
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status",
+    "statut", "enrichissement_status", "enrichissement_retry",
     "score_1", "score_2", "score_total", "score_raison", "score_feedback",
     "recherche_id", "campagne_id",
     "email_status", "email_sent_at", "phrase_perso",
+    "source",
     "date_creation", "date_modification",
+    "user_id",
   ],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
   readHeaders: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status",
+    "statut", "enrichissement_status", "enrichissement_retry",
     "score_1", "score_2", "score_total", "score_raison", "score_feedback",
     "recherche_id", "campagne_id",
     "email_status", "email_sent_at", "phrase_perso",
+    "source",
     "date_creation", "date_modification",
+    "user_id",
   ]),
   getHeadersForWrite: vi.fn().mockImplementation((tabName: string) => {
     if (tabName === "Campagnes") {
@@ -63,12 +70,14 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
 
 // ─── Mock _auth ───
 vi.mock("../netlify/functions/_auth.js", () => ({
-  requireAuth: () => ({ email: "adrien@prouesse.vc" }),
+  requireAuth: () => ({ userId: "admin", email: "adrien@prouesse.vc", role: "admin", nom: "Admin" }),
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
       headers: { "Content-Type": "application/json" },
     }),
+  filterByUser: <T extends Record<string, string>>(rows: T[]) => rows,
+  getDemoUserIds: async () => new Set<string>(),
 }));
 
 // ─── Mock uuid ───
@@ -176,7 +185,7 @@ describe("campaign POST", () => {
     const body = await res.json();
 
     expect(body.campaign.id).toBe("camp-uuid");
-    expect(body.campaign.status).toBe("active");
+    expect(body.campaign.status).toBe("paused");
     expect(body.campaign.total_leads).toBe("1");
     expect(mockAppendRow).toHaveBeenCalledWith("Campagnes", expect.any(Array));
     expect(mockBatchUpdateRows).toHaveBeenCalledWith("Contacts", expect.any(Array));

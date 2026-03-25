@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { v4 as uuid } from "uuid";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -30,24 +30,45 @@ export default async (request: Request) => {
 
   // GET — list campaigns or fetch one
   if (request.method === "GET") {
+    // Ensure sheet headers are clean before reading
+    await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
+
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
 
+    const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
+
     if (id) {
       const found = await findRowById("Campagnes", id);
-      return json({ campaign: found?.data ?? null });
+      if (!found) return json({ campaign: null });
+      // Ownership check: non-admin users can only see their own + unowned campaigns
+      if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
+        return json({ campaign: null });
+      }
+      // Admin: hide demo campaigns
+      if (auth.role === "admin" && demoIds && found.data.user_id && demoIds.has(found.data.user_id)) {
+        return json({ campaign: null });
+      }
+      return json({ campaign: found.data });
     }
 
-    const all = await readAll("Campagnes");
+    const allCampaigns = await readAll("Campagnes");
     const rechercheId = url.searchParams.get("recherche_id");
+    const showAll = url.searchParams.get("all") === "true" && auth.role === "admin";
+    let visible = showAll ? allCampaigns : filterByUser(allCampaigns, auth, demoIds);
+
+    // Even in showAll mode, exclude demo data
+    if (showAll && demoIds && demoIds.size > 0) {
+      visible = visible.filter((c) => !c.user_id || !demoIds.has(c.user_id));
+    }
 
     if (rechercheId) {
-      const filtered = all.filter((c) => c.recherche_id === rechercheId);
+      const filtered = visible.filter((c) => c.recherche_id === rechercheId);
       return json({ campaigns: filtered });
     }
 
-    // Default: return all campaigns
-    return json({ campaigns: all });
+    // Default: return campaigns visible to this user
+    return json({ campaigns: visible });
   }
 
   // POST — create campaign
@@ -65,11 +86,15 @@ export default async (request: Request) => {
       heure_fin,
       intervalle_min,
       include_duplicates,
+      excluded_contacts,
     } = body;
 
     if (!recherche_id || !template_sujet || !template_corps) {
       return json({ error: "Champs requis manquants" }, 400);
     }
+
+    // Validate max_par_jour (cap at 50 to prevent abuse)
+    const validMaxParJour = Math.min(Math.max(1, parseInt(max_par_jour) || 15), 50);
 
     // Guard: prevent creating duplicate active campaigns for the same search
     const allCampaigns = await readAll("Campagnes");
@@ -104,9 +129,14 @@ export default async (request: Request) => {
     }
 
     const duplicates = enriched.filter((c) => contactedDomains.has(normalizeDomain(c.domaine)));
-    const contactsToAssign = include_duplicates
+
+    // Apply excluded contacts (user-deselected from UI)
+    const excludedSet = new Set<string>(Array.isArray(excluded_contacts) ? excluded_contacts : []);
+
+    const contactsToAssign = (include_duplicates
       ? enriched
-      : enriched.filter((c) => !contactedDomains.has(normalizeDomain(c.domaine)));
+      : enriched.filter((c) => !contactedDomains.has(normalizeDomain(c.domaine)))
+    ).filter((c) => !excludedSet.has(c.id));
 
     // Create campaign
     const campaign: Record<string, string> = {
@@ -116,8 +146,8 @@ export default async (request: Request) => {
       template_sujet,
       template_corps,
       mode: mode || "levee_de_fonds",
-      status: "active",
-      max_par_jour: String(max_par_jour || 15),
+      status: "paused",
+      max_par_jour: String(validMaxParJour),
       jours_semaine: JSON.stringify(jours_semaine || ["lun", "mar", "mer", "jeu", "ven"]),
       heure_debut: heure_debut || "08:30",
       heure_fin: heure_fin || "18:30",
@@ -129,6 +159,8 @@ export default async (request: Request) => {
       replied: "0",
       bounced: "0",
       date_creation: new Date().toISOString(),
+      user_id: auth.userId,
+      user_role: auth.role,
     };
 
     await appendRow("Campagnes", toRow(
@@ -172,6 +204,20 @@ export default async (request: Request) => {
     const found = await findRowById("Campagnes", id);
     if (!found) return json({ error: "Campagne introuvable" }, 404);
 
+    // Ownership check
+    if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
+      return json({ error: "Accès non autorisé" }, 403);
+    }
+    // Demo users cannot modify campaign status
+    if (auth.role === "demo" && updates.status && updates.status !== found.data.status) {
+      return json({ error: "Modification de statut non autorisée en mode démo" }, 403);
+    }
+
+    // Validate max_par_jour if being updated
+    if (updates.max_par_jour) {
+      updates.max_par_jour = String(Math.min(Math.max(1, parseInt(updates.max_par_jour) || 15), 50));
+    }
+
     const updated = { ...found.data, ...updates };
     await updateRow("Campagnes", found.rowIndex, toRow(
       await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS),
@@ -211,6 +257,11 @@ export default async (request: Request) => {
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
     const purgeAll = url.searchParams.get("purge_all") === "true";
+
+    // Only admins can purge all
+    if (purgeAll && auth.role !== "admin") {
+      return json({ error: "Accès non autorisé" }, 403);
+    }
 
     if (purgeAll) {
       const allCampaigns = await readAll("Campagnes");
@@ -252,6 +303,11 @@ export default async (request: Request) => {
     if (id) {
       const found = await findRowById("Campagnes", id);
       if (!found) return json({ error: "Campagne introuvable" }, 404);
+
+      // Ownership check
+      if (auth.role !== "admin" && found.data.user_id && found.data.user_id !== auth.userId) {
+        return json({ error: "Accès non autorisé" }, 403);
+      }
 
       // Release queued contacts
       const allContacts = await readAll("Contacts");

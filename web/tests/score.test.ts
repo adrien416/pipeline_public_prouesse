@@ -17,41 +17,49 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
   CONTACTS_HEADERS: [
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status",
+    "statut", "enrichissement_status", "enrichissement_retry",
     "score_1", "score_2", "score_total", "score_raison", "score_feedback",
     "recherche_id", "campagne_id",
     "email_status", "email_sent_at", "phrase_perso",
+    "source",
     "date_creation", "date_modification",
+    "user_id",
   ],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
   readHeaders: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status",
+    "statut", "enrichissement_status", "enrichissement_retry",
     "score_1", "score_2", "score_total", "score_raison", "score_feedback",
     "recherche_id", "campagne_id",
     "email_status", "email_sent_at", "phrase_perso",
+    "source",
     "date_creation", "date_modification",
+    "user_id",
   ]),
   getHeadersForWrite: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status",
+    "statut", "enrichissement_status", "enrichissement_retry",
     "score_1", "score_2", "score_total", "score_raison", "score_feedback",
     "recherche_id", "campagne_id",
     "email_status", "email_sent_at", "phrase_perso",
+    "source",
     "date_creation", "date_modification",
+    "user_id",
   ]),
 }));
 
 // ─── Mock _auth ───
 vi.mock("../netlify/functions/_auth.js", () => ({
-  requireAuth: () => ({ email: "adrien@prouesse.vc" }),
+  requireAuth: () => ({ userId: "admin", email: "adrien@prouesse.vc", role: "admin", nom: "Admin" }),
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
       headers: { "Content-Type": "application/json" },
     }),
+  filterByUser: <T extends Record<string, string>>(rows: T[]) => rows,
+  getDemoUserIds: async () => new Set<string>(),
 }));
 
 // ─── Mock fetch (Anthropic API + meta description) ───

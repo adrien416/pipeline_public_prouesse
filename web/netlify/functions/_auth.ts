@@ -1,23 +1,105 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { readAll, USERS_HEADERS, getHeadersForWrite } from "./_sheets.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
 
-const LOGIN_EMAIL = process.env.LOGIN_EMAIL || "adrien@prouesse.vc";
+// Fallback env-var auth (backward compat when Users sheet is empty)
+const FALLBACK_EMAIL = process.env.LOGIN_EMAIL || "adrien@prouesse.vc";
+const FALLBACK_HASH = process.env.LOGIN_PASSWORD_HASH;
 
-const LOGIN_PASSWORD_HASH = process.env.LOGIN_PASSWORD_HASH;
-if (!LOGIN_PASSWORD_HASH) throw new Error("LOGIN_PASSWORD_HASH environment variable is required");
-
-export function verifyLogin(email: string, password: string): string | null {
-  if (email.toLowerCase() !== LOGIN_EMAIL) return null;
-  if (!bcrypt.compareSync(password, LOGIN_PASSWORD_HASH)) return null;
-  return jwt.sign({ email: LOGIN_EMAIL }, JWT_SECRET, { expiresIn: "2h" });
+export interface UserContext {
+  userId: string;
+  email: string;
+  role: "admin" | "user" | "demo";
+  nom: string;
+  senderEmail: string;
+  senderName: string;
 }
 
-export function verifyToken(token: string): { email: string } | null {
+/**
+ * Authenticate a user by email/password.
+ * Looks up the Users sheet first; falls back to env vars for backward compat.
+ * Returns { token, user } or null.
+ */
+export async function verifyLogin(
+  email: string,
+  password: string
+): Promise<{ token: string; user: UserContext } | null> {
+  // Try Users sheet first
   try {
-    return jwt.verify(token, JWT_SECRET) as { email: string };
+    await getHeadersForWrite("Users", USERS_HEADERS);
+    const users = await readAll("Users");
+    const found = users.find(
+      (u) => u.email.toLowerCase() === email.toLowerCase()
+    );
+    if (found && bcrypt.compareSync(password, found.password_hash)) {
+      const user: UserContext = {
+        userId: found.id,
+        email: found.email,
+        role: (found.role as UserContext["role"]) || "user",
+        nom: found.nom || "",
+        senderEmail: found.sender_email || found.email,
+        senderName: found.sender_name || found.nom || "",
+      };
+      const token = jwt.sign(
+        {
+          email: user.email,
+          userId: user.userId,
+          role: user.role,
+          nom: user.nom,
+          senderEmail: user.senderEmail,
+          senderName: user.senderName,
+        },
+        JWT_SECRET,
+        { expiresIn: "2h" }
+      );
+      return { token, user };
+    }
+  } catch (err) {
+    console.log("Users sheet lookup failed, trying env fallback:", err);
+  }
+
+  // Fallback: single-user env vars
+  if (!FALLBACK_HASH) return null;
+  if (email.toLowerCase() !== FALLBACK_EMAIL.toLowerCase()) return null;
+  if (!bcrypt.compareSync(password, FALLBACK_HASH)) return null;
+
+  const user: UserContext = {
+    userId: "admin",
+    email: FALLBACK_EMAIL,
+    role: "admin",
+    nom: process.env.SENDER_NAME || "Admin",
+    senderEmail: process.env.SENDER_EMAIL || FALLBACK_EMAIL,
+    senderName: process.env.SENDER_NAME || "Admin",
+  };
+  const token = jwt.sign(
+    {
+      email: user.email,
+      userId: user.userId,
+      role: user.role,
+      nom: user.nom,
+      senderEmail: user.senderEmail,
+      senderName: user.senderName,
+    },
+    JWT_SECRET,
+    { expiresIn: "2h" }
+  );
+  return { token, user };
+}
+
+export function verifyToken(token: string): UserContext | null {
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as Record<string, string>;
+    return {
+      userId: payload.userId || "admin",
+      email: payload.email,
+      role: (payload.role as UserContext["role"]) || "admin",
+      nom: payload.nom || "",
+      senderEmail: payload.senderEmail || payload.email,
+      senderName: payload.senderName || "",
+    };
   } catch {
     return null;
   }
@@ -34,7 +116,7 @@ export function getTokenFromRequest(request: Request): string | null {
   return null;
 }
 
-export function requireAuth(request: Request): { email: string } | Response {
+export function requireAuth(request: Request): UserContext | Response {
   const token = getTokenFromRequest(request);
   if (!token) {
     return new Response(JSON.stringify({ error: "Non authentifié" }), {
@@ -50,6 +132,36 @@ export function requireAuth(request: Request): { email: string } | Response {
     });
   }
   return user;
+}
+
+/**
+ * Filter rows by user ownership.
+ * Admin sees everything except demo data. Others see only their own + unowned (user_id="") rows.
+ */
+export function filterByUser<T extends Record<string, string>>(
+  rows: T[],
+  user: UserContext,
+  demoUserIds?: Set<string>
+): T[] {
+  if (user.role === "admin") {
+    if (demoUserIds && demoUserIds.size > 0) {
+      return rows.filter((r) => !r.user_id || !demoUserIds.has(r.user_id));
+    }
+    return rows;
+  }
+  return rows.filter((r) => r.user_id === user.userId || r.user_id === "");
+}
+
+/** Load the set of user IDs with role=demo from the Users sheet. */
+export async function getDemoUserIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const users = await readAll("Users");
+    for (const u of users) {
+      if (u.role === "demo") ids.add(u.id);
+    }
+  } catch { /* Users sheet may not exist */ }
+  return ids;
 }
 
 export function json(data: unknown, status = 200, extraHeaders?: Record<string, string>) {

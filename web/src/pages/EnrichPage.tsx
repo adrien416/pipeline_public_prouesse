@@ -74,7 +74,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
         setPollCount(polls);
 
         if (polls > MAX_POLLS) {
-          setError(`Timeout: ${MAX_POLLS} verifications sans resultat. Relancez si besoin.`);
+          setError(`Timeout: ${MAX_POLLS} vérifications sans résultat. Relancez si besoin.`);
           break;
         }
 
@@ -84,7 +84,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
           setError(r.poll_error);
           pollErrors++;
           if (pollErrors >= 3) {
-            throw new Error(`Enrichissement bloque: ${r.poll_error}`);
+            throw new Error(`Enrichissement bloqué: ${r.poll_error}`);
           }
         } else {
           pollErrors = 0;
@@ -134,7 +134,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
       <div>
         <h2 className="text-xl font-bold text-gray-900">3. Enrichissement Fullenrich</h2>
         <p className="text-sm text-gray-500 mt-1">
-          {"Trouver les emails des contacts qualifies (score >= 7)"}
+          {"Trouver les emails des contacts qualifiés (score >= 7)"}
         </p>
       </div>
 
@@ -146,7 +146,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600">{enrichedNow}</div>
-                <div className="text-xs text-gray-500 mt-1">emails trouves</div>
+                <div className="text-xs text-gray-500 mt-1">emails trouvés</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-yellow-500">{pendingNow}</div>
@@ -154,7 +154,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-400">{failedNow + errorNow}</div>
-                <div className="text-xs text-gray-500 mt-1">sans resultat</div>
+                <div className="text-xs text-gray-500 mt-1">sans résultat</div>
               </div>
             </div>
 
@@ -162,7 +162,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-gray-500">
                 <span>Progression</span>
-                <span>{doneNow}/{qualified.length} contacts traites</span>
+                <span>{doneNow}/{qualified.length} contacts traités</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2.5">
                 <div
@@ -174,7 +174,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
 
             <div className="flex items-center justify-center gap-2 text-sm text-purple-600 bg-purple-50 rounded-lg py-3">
               <Spinner className="h-4 w-4" />
-              <span>Fullenrich traite vos contacts... (verification #{pollCount}/{MAX_POLLS}, toutes les 15s)</span>
+              <span>Fullenrich traite vos contacts... (vérification #{pollCount}/{MAX_POLLS}, toutes les 15s)</span>
             </div>
             <button
               onClick={cancelEnrich}
@@ -193,25 +193,25 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
                 <div className="text-3xl font-bold text-blue-600">
                   {estimate.data.contacts_to_enrich + (estimate.data.pending_count ?? 0)}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">contacts a enrichir</div>
+                <div className="text-xs text-gray-500 mt-1">contacts à enrichir</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-orange-600">
                   {estimate.data.estimated_credits}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">credits estimes</div>
+                <div className="text-xs text-gray-500 mt-1">crédits estimés</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600">
                   {estimate.data.current_balance.toLocaleString()}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">credits restants</div>
+                <div className="text-xs text-gray-500 mt-1">crédits restants</div>
               </div>
             </div>
 
             {(estimate.data.enriched_count ?? 0) > 0 && (
               <div className="text-xs text-green-600 text-center">
-                {estimate.data.enriched_count} contacts deja enrichis
+                {estimate.data.enriched_count} contacts déjà enrichis
               </div>
             )}
 
@@ -223,8 +223,8 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
               {(estimate.data.pending_count ?? 0) > 0
                 ? `Reprendre le suivi (${estimate.data.pending_count} en attente)`
                 : estimate.data.contacts_to_enrich > 0
-                  ? `Lancer l'enrichissement pour ${estimate.data.estimated_credits} credits`
-                  : "Tous les contacts sont traites"
+                  ? `Lancer l'enrichissement pour ${estimate.data.estimated_credits} crédits`
+                  : "Tous les contacts sont traités"
               }
             </button>
 
@@ -250,7 +250,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
                           <div>
                             <span className="text-sm font-medium">{c.nom}</span>
                             <span className="text-xs text-gray-500 ml-2">
-                              {c.sent || 0}/{c.total_leads || 0} envoyes
+                              {c.sent || 0}/{c.total_leads || 0} envoyés
                             </span>
                           </div>
                         </div>
@@ -271,8 +271,8 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
                   className="w-full bg-green-600 text-white font-medium rounded-lg px-4 py-3 text-sm hover:bg-green-700"
                 >
                   {campaignsList.length > 0
-                    ? "Creer une nouvelle campagne →"
-                    : `Preparer la campagne → (${estimate.data.enriched_count} contacts avec email)`}
+                    ? "Créer une nouvelle campagne →"
+                    : `Préparer la campagne → (${estimate.data.enriched_count} contacts avec email)`}
                 </button>
               </div>
             )}
@@ -285,7 +285,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600">{result.enriched}</div>
-                <div className="text-xs text-gray-500 mt-1">emails trouves</div>
+                <div className="text-xs text-gray-500 mt-1">emails trouvés</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-400">{result.not_found}</div>
@@ -317,7 +317,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
                       <div>
                         <span className="text-sm font-medium">{c.nom}</span>
                         <span className="text-xs text-gray-500 ml-2">
-                          {c.sent || 0}/{c.total_leads || 0} envoyes
+                          {c.sent || 0}/{c.total_leads || 0} envoyés
                         </span>
                       </div>
                     </div>
@@ -340,7 +340,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
             >
               {campaignsList.length > 0
                 ? "Creer une nouvelle campagne →"
-                : `Preparer la campagne → (${result.enriched} contacts avec email)`}
+                : `Préparer la campagne → (${result.enriched} contacts avec email)`}
             </button>
           </div>
         )}
@@ -362,7 +362,7 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
         <div className="bg-white rounded-xl shadow-sm border overflow-x-auto">
           <div className="p-3 border-b">
             <h3 className="text-sm font-semibold text-gray-700">
-              Contacts qualifies ({qualified.length})
+              Contacts qualifiés ({qualified.length})
             </h3>
           </div>
           <table className="w-full text-sm">
@@ -423,20 +423,20 @@ function StatusBadge({ status }: { status: string }) {
     ok: "bg-green-100 text-green-700",
     pending: "bg-yellow-100 text-yellow-700 animate-pulse",
     erreur: "bg-red-100 text-red-700",
-    pas_de_resultat: "bg-gray-100 text-gray-500",
+    "pas_de_resultat": "bg-gray-100 text-gray-500",
     "": "bg-blue-50 text-blue-600",
   };
   const labels: Record<string, string> = {
     ok: "Enrichi",
     pending: "Fullenrich...",
     erreur: "Erreur",
-    pas_de_resultat: "Pas de resultat",
-    "": "A enrichir",
+    pas_de_resultat: "Pas de résultat",
+    "": "À enrichir",
   };
 
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${styles[normalized] || "bg-gray-100 text-gray-500"}`}>
-      {labels[normalized] || status || "A enrichir"}
+      {labels[normalized] || status || "À enrichir"}
     </span>
   );
 }

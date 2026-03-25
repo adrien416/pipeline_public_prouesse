@@ -8,6 +8,7 @@ interface Props {
   rechercheId: string;
   mode: "levee_de_fonds" | "cession";
   onComplete: () => void;
+  onBackToSearch?: () => void;
 }
 
 /** Inline editable score cell */
@@ -105,7 +106,7 @@ function FeedbackCell({
   );
 }
 
-export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
+export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
@@ -113,6 +114,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState<Set<string>>(new Set());
+  const cancelRef = useRef(false);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -123,26 +125,30 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
     setScoring(true);
     setScoringComplete(false);
     setError(null);
+    cancelRef.current = false;
     try {
       let isDone = false;
-      while (!isDone) {
+      while (!isDone && !cancelRef.current) {
         const result = await launchScoring(rechercheId, mode);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         if (result.contacts?.length) {
           queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
         }
         isDone = result.done;
-        if (!isDone) {
+        if (!isDone && !cancelRef.current) {
           await new Promise((r) => setTimeout(r, 13000));
         }
       }
-      setScoringComplete(true);
+      if (!cancelRef.current) {
+        setScoringComplete(true);
+      }
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
     } finally {
       setScoring(false);
     }
-  }, [rechercheId, queryClient]);
+  }, [rechercheId, mode, queryClient]);
 
   /** Save a feedback comment to the backend */
   async function saveFeedback(contactId: string, feedback: string) {
@@ -240,10 +246,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
               <span className="text-gray-500">{contactsList.length} contacts a scorer</span>
               {contactsList.length > 0 && (
                 <span className="text-gray-400 ml-2">
-                  (cout IA estime : ~{mode === "cession"
-                    ? `$${(contactsList.length * 0.012).toFixed(2)}`
-                    : `$${(contactsList.length * 0.0003).toFixed(2)}`
-                  })
+                  (cout IA estime : ~${(contactsList.length * 0.001).toFixed(2)})
                 </span>
               )}
             </div>
@@ -253,17 +256,34 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
           )}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={runScoring}
-            disabled={scoring || contactsList.length === 0}
-            className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {scoring
-              ? "Scoring en cours..."
-              : hasAnyScored
-              ? "Re-scorer"
-              : "Lancer le scoring IA"}
-          </button>
+          {onBackToSearch && !scoring && (
+            <button
+              onClick={onBackToSearch}
+              className="border border-gray-300 text-gray-700 font-medium rounded-lg px-4 py-2 text-sm hover:bg-gray-50"
+            >
+              ← Chercher plus de contacts
+            </button>
+          )}
+          {scoring ? (
+            <button
+              onClick={() => { cancelRef.current = true; }}
+              className="bg-orange-500 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-orange-600"
+            >
+              Mettre en pause
+            </button>
+          ) : (
+            <button
+              onClick={runScoring}
+              disabled={contactsList.length === 0}
+              className="bg-blue-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              {hasAnyScored && progress.scored < progress.total
+                ? `Reprendre le scoring (${progress.scored}/${progress.total})`
+                : hasAnyScored
+                ? "Re-scorer"
+                : "Lancer le scoring IA"}
+            </button>
+          )}
           {(scoringComplete || hasAnyScored) && !scoring && (
             <button
               onClick={onComplete}
@@ -309,7 +329,7 @@ export function ScoringPage({ rechercheId, mode, onComplete }: Props) {
                   {mode === "levee_de_fonds" ? "Scalabilite" : "Impact env."}
                 </th>
                 <th className="px-3 py-2 text-center">
-                  {mode === "levee_de_fonds" ? "Impact" : "Signaux vente"}
+                  {mode === "levee_de_fonds" ? "Impact" : "Potentiel cession"}
                 </th>
                 <th className="px-3 py-2 text-center">Total</th>
                 <th className="px-3 py-2 text-left">Raison</th>

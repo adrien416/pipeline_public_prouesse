@@ -15,8 +15,6 @@ import {
 } from "./_sheets.js";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
-const SENDER_EMAIL = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-const SENDER_NAME = process.env.SENDER_NAME || "Adrien Pannetier";
 
 /** Strip all leading/trailing whitespace including BOM, NBSP, \r */
 function stripWhitespace(text: string): string {
@@ -32,7 +30,7 @@ function textToHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;")
     .replace(/\n/g, "<br>");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;padding:0;">${escaped}</td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html style="margin:0;padding:0;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:16px 20px;-webkit-text-size-adjust:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;"><div style="padding:0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">${escaped}</div></body></html>`;
 }
 
 async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
@@ -87,56 +85,71 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { campagne_id } = await request.json();
+    const { campagne_id, force } = await request.json();
     if (!campagne_id) return json({ error: "campagne_id requis" }, 400);
 
     const brevoKey = process.env.BREVO_API_KEY;
-    if (!brevoKey) return json({ error: "BREVO_API_KEY non configuree" }, 500);
+    if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
+
+    // Per-user sender identity
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
+
+    // Ensure sheet headers are clean before reading
+    const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
 
     const campFound = await findRowById("Campagnes", campagne_id);
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);
     const campaign = campFound.data;
+
+    // Ownership check
+    if (auth.role !== "admin" && campaign.user_id && campaign.user_id !== auth.userId) {
+      return json({ error: "Accès non autorisé" }, 403);
+    }
 
     if (campaign.status !== "active") {
       return json({ error: "Campagne non active", sent: 0, remaining: 0 });
     }
 
     // Check day-of-week and time window (Paris timezone)
-    const parisFmt = new Intl.DateTimeFormat("fr-FR", {
-      timeZone: "Europe/Paris",
-      hour: "2-digit", minute: "2-digit", weekday: "short",
-      hour12: false,
-    });
-    const parts = parisFmt.formatToParts(new Date());
-    const parisWeekday = parts.find((p) => p.type === "weekday")?.value || "";
-    const parisHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
-    const parisMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
+    // Skip these checks when force=true (manual "Envoyer maintenant")
+    if (!force) {
+      const parisFmt = new Intl.DateTimeFormat("fr-FR", {
+        timeZone: "Europe/Paris",
+        hour: "2-digit", minute: "2-digit", weekday: "short",
+        hour12: false,
+      });
+      const parts = parisFmt.formatToParts(new Date());
+      const parisWeekday = parts.find((p) => p.type === "weekday")?.value || "";
+      const parisHour = parseInt(parts.find((p) => p.type === "hour")?.value || "0");
+      const parisMinute = parseInt(parts.find((p) => p.type === "minute")?.value || "0");
 
-    const weekdayMap: Record<string, string> = {
-      lun: "lun", mar: "mar", mer: "mer", jeu: "jeu", ven: "ven", sam: "sam", dim: "dim",
-      "lun.": "lun", "mar.": "mar", "mer.": "mer", "jeu.": "jeu", "ven.": "ven", "sam.": "sam", "dim.": "dim",
-    };
-    const todayDay = weekdayMap[parisWeekday.toLowerCase()] || parisWeekday.toLowerCase().slice(0, 3);
+      const weekdayMap: Record<string, string> = {
+        lun: "lun", mar: "mar", mer: "mer", jeu: "jeu", ven: "ven", sam: "sam", dim: "dim",
+        "lun.": "lun", "mar.": "mar", "mer.": "mer", "jeu.": "jeu", "ven.": "ven", "sam.": "sam", "dim.": "dim",
+      };
+      const todayDay = weekdayMap[parisWeekday.toLowerCase()] || parisWeekday.toLowerCase().slice(0, 3);
 
-    const joursActifs: string[] = (() => {
-      try { return JSON.parse(campaign.jours_semaine || "[]"); }
-      catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
-    })();
+      const joursActifs: string[] = (() => {
+        try { return JSON.parse(campaign.jours_semaine || "[]"); }
+        catch { return ["lun", "mar", "mer", "jeu", "ven"]; }
+      })();
 
-    if (!joursActifs.includes(todayDay)) {
-      return json({ error: `Pas d'envoi le ${todayDay} (heure de Paris)`, sent: 0, remaining: 0 });
-    }
+      if (!joursActifs.includes(todayDay)) {
+        return json({ error: `Pas d'envoi le ${todayDay} (heure de Paris)`, sent: 0, remaining: 0 });
+      }
 
-    const heureDebut = campaign.heure_debut || "08:30";
-    const heureFin = campaign.heure_fin || "18:30";
-    const nowMinutes = parisHour * 60 + parisMinute;
-    const [dH, dM] = heureDebut.split(":").map(Number);
-    const [fH, fM] = heureFin.split(":").map(Number);
-    const debutMinutes = dH * 60 + dM;
-    const finMinutes = fH * 60 + fM;
+      const heureDebut = campaign.heure_debut || "08:30";
+      const heureFin = campaign.heure_fin || "18:30";
+      const nowMinutes = parisHour * 60 + parisMinute;
+      const [dH, dM] = heureDebut.split(":").map(Number);
+      const [fH, fM] = heureFin.split(":").map(Number);
+      const debutMinutes = dH * 60 + dM;
+      const finMinutes = fH * 60 + fM;
 
-    if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
-      return json({ error: `Hors plage horaire ${heureDebut}-${heureFin} (heure de Paris, il est ${String(parisHour).padStart(2,"0")}:${String(parisMinute).padStart(2,"0")})`, sent: 0, remaining: 0 });
+      if (nowMinutes < debutMinutes || nowMinutes > finMinutes) {
+        return json({ error: `Hors plage horaire ${heureDebut}-${heureFin} (heure de Paris, il est ${String(parisHour).padStart(2,"0")}:${String(parisMinute).padStart(2,"0")})`, sent: 0, remaining: 0 });
+      }
     }
 
     const allContacts = await readAll("Contacts");
@@ -201,22 +214,45 @@ export default async (request: Request) => {
       .replace(/\{Phrase\}/g, contact.phrase_perso || "");
     const corpsClean = stripWhitespace(corps);
 
+    // Demo mode: simulate send without calling Brevo
+    if (auth.role === "demo") {
+      const now = new Date().toISOString();
+      if (contact._rowIndex) {
+        await batchUpdateRows("Contacts", [{
+          rowIndex: Number(contact._rowIndex),
+          values: toRow(await getHeadersForWrite("Contacts", CONTACTS_HEADERS), {
+            ...contact,
+            email_status: "sent",
+            email_sent_at: now,
+            statut: "contacte",
+            date_modification: now,
+          }),
+        }]);
+      }
+      const newSent = parseInt(campaign.sent || "0") + 1;
+      await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
+        ...campaign,
+        sent: String(newSent),
+      }));
+      return json({ sent: 1, remaining: queued.length - 1 });
+    }
+
     const brevoResp = await fetch(BREVO_API, {
       method: "POST",
       headers: {
-        "api-key": brevoKey,
+        "api-key": brevoKey!,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-        replyTo: { name: SENDER_NAME, email: SENDER_EMAIL },
+        sender: { name: senderName, email: senderEmail },
+        replyTo: { name: senderName, email: senderEmail },
         to: [{ email: contact.email, name: `${contact.prenom} ${contact.nom}` }],
         subject: sujet,
         textContent: corpsClean,
         htmlContent: textToHtml(corpsClean),
         headers: {
           "X-Campaign-Id": campagne_id,
-          "List-Unsubscribe": `<mailto:${SENDER_EMAIL}?subject=unsubscribe>`,
+          "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
         },
       }),
     });
@@ -238,7 +274,7 @@ export default async (request: Request) => {
         }]);
       }
 
-      await appendRow("EmailLog", toRow(EMAILLOG_HEADERS, {
+      await appendRow("EmailLog", toRow(await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS), {
         id: uuid(),
         campagne_id,
         contact_id: contact.id,
@@ -251,7 +287,7 @@ export default async (request: Request) => {
       }));
 
       const newSent = parseInt(campaign.sent || "0") + 1;
-      await updateRow("Campagnes", campFound.rowIndex, toRow(CAMPAGNES_HEADERS, {
+      await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
         ...campaign,
         sent: String(newSent),
       }));

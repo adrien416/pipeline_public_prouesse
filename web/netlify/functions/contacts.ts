@@ -1,6 +1,6 @@
 import type { Context, Config } from "@netlify/functions";
 import { v4 as uuidv4 } from "uuid";
-import { requireAuth, json } from "./_auth.js";
+import { requireAuth, json, filterByUser, getDemoUserIds, type UserContext } from "./_auth.js";
 import {
   readAll,
   appendRow,
@@ -13,12 +13,13 @@ import {
 } from "./_sheets.js";
 
 /** GET /api/contacts?recherche_id=xxx&statut=nouveau&secteur=fintech */
-async function handleGet(url: URL) {
+async function handleGet(url: URL, user: UserContext) {
   const rechercheId = url.searchParams.get("recherche_id");
   const statutFilter = url.searchParams.get("statut")?.toLowerCase();
   const secteurFilter = url.searchParams.get("secteur")?.toLowerCase();
 
-  let contacts = await readAll("Contacts");
+  const demoIds = user.role === "admin" ? await getDemoUserIds() : undefined;
+  let contacts = filterByUser(await readAll("Contacts"), user, demoIds);
 
   if (rechercheId) {
     contacts = contacts.filter((c) => c.recherche_id === rechercheId && c.statut !== "exclu");
@@ -34,7 +35,7 @@ async function handleGet(url: URL) {
 }
 
 /** POST /api/contacts */
-async function handlePost(request: Request) {
+async function handlePost(request: Request, user: UserContext) {
   const body = await request.json();
   const now = new Date().toISOString();
 
@@ -64,6 +65,7 @@ async function handlePost(request: Request) {
     phrase_perso: "",
     date_creation: now,
     date_modification: now,
+    user_id: user.userId,
   };
 
   const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
@@ -72,7 +74,7 @@ async function handlePost(request: Request) {
 }
 
 /** PUT /api/contacts */
-async function handlePut(request: Request) {
+async function handlePut(request: Request, user: UserContext) {
   const body = await request.json();
 
   // Bulk exclude contacts
@@ -84,6 +86,8 @@ async function handlePut(request: Request) {
     for (const id of body.exclude_ids) {
       const contact = allContacts.find((c) => c.id === id);
       if (!contact || !contact._rowIndex) continue;
+      // Ownership check
+      if (user.role !== "admin" && contact.user_id && contact.user_id !== user.userId) continue;
       const updated = { ...contact, statut: "exclu", date_modification: new Date().toISOString() };
       updates.push({ rowIndex: Number(contact._rowIndex), values: toRow(headers, updated) });
     }
@@ -100,6 +104,11 @@ async function handlePut(request: Request) {
   const found = await findRowById("Contacts", id);
   if (!found) return json({ error: "Contact introuvable" }, 404);
 
+  // Ownership check
+  if (user.role !== "admin" && found.data.user_id && found.data.user_id !== user.userId) {
+    return json({ error: "Accès non autorisé" }, 403);
+  }
+
   const updated = { ...found.data, ...updates, date_modification: new Date().toISOString() };
   const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
   await updateRow("Contacts", found.rowIndex, toRow(headers, updated));
@@ -113,9 +122,9 @@ export default async (request: Request, _context: Context) => {
   try {
     const url = new URL(request.url);
     switch (request.method) {
-      case "GET": return await handleGet(url);
-      case "POST": return await handlePost(request);
-      case "PUT": return await handlePut(request);
+      case "GET": return await handleGet(url, auth);
+      case "POST": return await handlePost(request, auth);
+      case "PUT": return await handlePut(request, auth);
       default: return json({ error: "Methode non supportee" }, 405);
     }
   } catch (err) {

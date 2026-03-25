@@ -21,10 +21,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Auth ───
 export function login(email: string, password: string) {
-  return request<{ ok: boolean }>("/login", {
+  return request<{ ok: boolean; user?: { email: string; nom: string; role: string } }>("/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+}
+
+export function fetchMe() {
+  return request<{
+    userId: string;
+    email: string;
+    nom: string;
+    role: string;
+    senderEmail: string;
+    senderName: string;
+  }>("/me");
 }
 
 // ─── Credits ───
@@ -52,6 +63,7 @@ export function launchSearch(params: SearchParams) {
     suggestions: string[];
     retried: boolean;
     originalFilters?: Record<string, unknown>;
+    previously_failed_domains?: Record<string, { score: number; raison: string }>;
   }>("/search", {
     method: "POST",
     body: JSON.stringify(params),
@@ -170,8 +182,11 @@ export function fetchCampaign(id?: string) {
   return request<{ campaign: Record<string, string> | null }>(`/campaign${qs}`);
 }
 
-export function fetchCampaigns(recherche_id?: string) {
-  const qs = recherche_id ? `?recherche_id=${recherche_id}` : "";
+export function fetchCampaigns(recherche_id?: string, all?: boolean) {
+  const params = new URLSearchParams();
+  if (recherche_id) params.set("recherche_id", recherche_id);
+  if (all) params.set("all", "true");
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return request<{ campaigns: Record<string, string>[] }>(`/campaign${qs}`);
 }
 
@@ -184,17 +199,17 @@ export function purgeAllCampaigns() {
 }
 
 // ─── Send ───
-export function sendTestEmail(campagne_id: string, test_email: string) {
+export function sendTestEmail(campagne_id: string, test_email: string, contact_index?: number) {
   return request<{ sent: boolean; test_email: string; subject: string; contact_used: string; error?: string }>("/send-test", {
     method: "POST",
-    body: JSON.stringify({ campagne_id, test_email }),
+    body: JSON.stringify({ campagne_id, test_email, contact_index }),
   });
 }
 
-export function triggerSend(campagne_id: string) {
+export function triggerSend(campagne_id: string, force = false) {
   return request<{ sent: number; remaining: number; error?: string; skipped_domain?: string }>("/send", {
     method: "POST",
-    body: JSON.stringify({ campagne_id }),
+    body: JSON.stringify({ campagne_id, force }),
   });
 }
 
@@ -205,6 +220,7 @@ export function fetchAnalytics(campagne_id?: string) {
     campaign: Record<string, string> | null;
     leads: { total: number; queued: number; in_progress: number; completed: number };
     metrics: { sent: number; delivered: number; opened: number; clicked: number; replied: number; bounced: number };
+    contactsByMetric?: Record<string, Array<{ prenom: string; nom: string; email: string; entreprise: string; date: string }>>;
     daily: Array<{ date: string; sent: number; replied: number; bounced: number }>;
   }>(`/analytics${qs}`);
 }

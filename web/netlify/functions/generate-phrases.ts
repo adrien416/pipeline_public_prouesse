@@ -1,6 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
+import { mockPhrase } from "./_demo.js";
 
 async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -62,6 +63,32 @@ export default async (request: Request) => {
     const qualified = allContacts.filter(
       (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
     );
+
+    // Demo mode: assign mock phrases
+    if (auth.role === "demo") {
+      const needPhrase = qualified.filter((c) => !c.phrase_perso);
+      if (needPhrase.length === 0) {
+        return json({ generated: 0, total: qualified.length, done: true, contacts: qualified });
+      }
+      const updates: Array<{ rowIndex: number; values: string[] }> = [];
+      for (const c of needPhrase) {
+        if (!c._rowIndex) continue;
+        updates.push({
+          rowIndex: Number(c._rowIndex),
+          values: toRow(sheetHeaders, {
+            ...c,
+            phrase_perso: mockPhrase(),
+            date_modification: new Date().toISOString(),
+          }),
+        });
+      }
+      if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+      const freshContacts = await readAll("Contacts");
+      const freshQualified = freshContacts.filter(
+        (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+      );
+      return json({ generated: updates.length, total: freshQualified.length, remaining: 0, done: true, contacts: freshQualified });
+    }
 
     // Find contacts without phrase_perso
     const needPhrase = qualified.filter((c) => !c.phrase_perso);

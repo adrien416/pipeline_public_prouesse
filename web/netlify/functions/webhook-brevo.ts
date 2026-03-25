@@ -17,10 +17,10 @@ export default async (request: Request) => {
     return new Response("OK", { status: 200 });
   }
 
-  // Verify webhook secret (set the same value in Brevo webhook URL as ?secret=XXX)
+  // Verify webhook secret (required — set the same value in Brevo webhook URL as ?secret=XXX)
   const url = new URL(request.url);
   const webhookSecret = process.env.BREVO_WEBHOOK_SECRET;
-  if (webhookSecret && url.searchParams.get("secret") !== webhookSecret) {
+  if (!webhookSecret || url.searchParams.get("secret") !== webhookSecret) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -52,26 +52,34 @@ export default async (request: Request) => {
       let newStatus = log.status;
       const updatedLog = { ...log };
 
+      // Track whether this is the first time we see this status (for counter dedup)
+      let isFirstOccurrence = false;
+
       switch (eventType) {
         case "opened":
         case "unique_opened":
           newStatus = "opened";
+          isFirstOccurrence = !log.opened_at; // only count if not already opened
           updatedLog.opened_at = updatedLog.opened_at || now;
           break;
         case "click":
           newStatus = "clicked";
+          isFirstOccurrence = !log.clicked_at;
           updatedLog.clicked_at = updatedLog.clicked_at || now;
           break;
         case "hard_bounce":
         case "soft_bounce":
           newStatus = "bounced";
+          isFirstOccurrence = log.status !== "bounced";
           break;
         case "reply":
           newStatus = "replied";
+          isFirstOccurrence = !log.replied_at;
           updatedLog.replied_at = updatedLog.replied_at || now;
           break;
         case "unsubscribed":
           newStatus = "bounced";
+          isFirstOccurrence = log.status !== "bounced";
           break;
         default:
           continue;
@@ -80,7 +88,7 @@ export default async (request: Request) => {
       updatedLog.status = newStatus;
       logUpdates.push({
         rowIndex: Number(updatedLog._rowIndex),
-        values: toRow(EMAILLOG_HEADERS, updatedLog),
+        values: toRow(await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS), updatedLog),
       });
 
       // Update contact email_status
@@ -105,8 +113,8 @@ export default async (request: Request) => {
         }
       }
 
-      // Track campaign counter increments
-      if (log.campagne_id) {
+      // Track campaign counter increments (only for first occurrence to avoid double-counting)
+      if (log.campagne_id && isFirstOccurrence) {
         if (!campaignCounters[log.campagne_id]) {
           campaignCounters[log.campagne_id] = {};
         }
@@ -118,10 +126,12 @@ export default async (request: Request) => {
     }
 
     // Apply updates
+    const emailLogHeaders = await getHeadersForWrite("EmailLog", EMAILLOG_HEADERS);
     if (logUpdates.length > 0) await batchUpdateRows("EmailLog", logUpdates);
     if (contactUpdates.length > 0) await batchUpdateRows("Contacts", contactUpdates);
 
     // Update campaign counters
+    const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);
     for (const [campId, counters] of Object.entries(campaignCounters)) {
       const found = await findRowById("Campagnes", campId);
       if (found) {
@@ -129,7 +139,7 @@ export default async (request: Request) => {
         for (const [key, count] of Object.entries(counters)) {
           updated[key] = String((parseInt(updated[key] || "0") + count));
         }
-        await updateRow("Campagnes", found.rowIndex, toRow(CAMPAGNES_HEADERS, updated));
+        await updateRow("Campagnes", found.rowIndex, toRow(campagneHeaders, updated));
       }
     }
 

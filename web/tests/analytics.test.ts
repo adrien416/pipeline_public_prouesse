@@ -15,12 +15,14 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
 
 // ─── Mock _auth ───
 vi.mock("../netlify/functions/_auth.js", () => ({
-  requireAuth: () => ({ email: "adrien@prouesse.vc" }),
+  requireAuth: () => ({ userId: "admin", email: "adrien@prouesse.vc", role: "admin", nom: "Admin" }),
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
       headers: { "Content-Type": "application/json" },
     }),
+  filterByUser: <T extends Record<string, string>>(rows: T[]) => rows,
+  getDemoUserIds: async () => new Set<string>(),
 }));
 
 import analyticsHandler from "../netlify/functions/analytics.js";
@@ -68,12 +70,12 @@ describe("analytics — no campaign", () => {
 // ─── With campaign ───
 
 describe("analytics — with campaign", () => {
-  it("returns metrics from campaign counters", async () => {
+  it("falls back to campaign counters when EmailLog is unavailable", async () => {
     mockFindRowById.mockResolvedValue({ rowIndex: 2, data: baseCampaign });
-    // readAll calls: Contacts, EmailLog
+    // readAll calls: Contacts (ok), EmailLog (throws — tab doesn't exist)
     mockReadAll
       .mockResolvedValueOnce([]) // Contacts
-      .mockResolvedValueOnce([]); // EmailLog
+      .mockRejectedValueOnce(new Error("Tab EmailLog not found")); // EmailLog
 
     const req = new Request("http://localhost/api/analytics?campagne_id=camp1", { method: "GET" });
     const res = await analyticsHandler(req);

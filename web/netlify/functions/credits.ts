@@ -1,5 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
+import { mockCredits } from "./_demo.js";
 
 export default async (request: Request) => {
   if (request.method !== "GET") return json({ error: "GET uniquement" }, 405);
@@ -8,6 +9,12 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
+    // Demo mode: return fake credit balance
+    if (auth.role === "demo") {
+      const mock = mockCredits();
+      return json({ balance: mock.credits });
+    }
+
     const apiKey = process.env.FULLENRICH_API_KEY;
     if (!apiKey) {
       return json({ error: "FULLENRICH_API_KEY non définie" }, 500);

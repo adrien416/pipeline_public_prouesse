@@ -76,7 +76,7 @@ PEOPLE :
 3. JAMAIS "Owner" seul (matche Product Owner). Utilise des titres de DIRIGEANTS explicites.
 4. PAS de current_company_specialties sauf description très précise.
 5. TOUJOURS exclure : current_company_types: nonprofit, government agency (avec exclude: true).
-6. URLs/noms d'entreprise : identifie le VRAI secteur. "neosilver" = silver economy, PAS "Precious Metals".
+6. URLs/noms d'entreprise : si la description contient une URL, UTILISE LE WEB SEARCH pour aller voir le site et comprendre ce que l'entreprise fait RÉELLEMENT. Ne devine JAMAIS le secteur à partir du nom.
 7. Si "Secteur :" fourni, c'est ta source PRINCIPALE pour les industries.
 
 ═══ RÈGLE CONCURRENTS (CRITIQUE) ═══
@@ -94,39 +94,7 @@ Si "concurrents de X", "entreprises comme X", ou "similaires à X" :
 }${breadthInstruction}`;
 }
 
-// ─── Fetch site context (title + meta description) ───
-
-async function fetchSiteContext(description: string): Promise<string> {
-  const urlMatch = description.match(/https?:\/\/[^\s]+/);
-  if (!urlMatch) return "";
-
-  try {
-    const url = urlMatch[0].replace(/[.,;!?)]+$/, "");
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ProuesseBot/1.0)" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) return "";
-
-    const html = await response.text();
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
-      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
-    const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
-      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
-
-    const title = titleMatch?.[1]?.trim() ?? "";
-    const desc = descMatch?.[1]?.trim() ?? ogDescMatch?.[1]?.trim() ?? "";
-
-    if (!title && !desc) return "";
-    return `\n\nContexte du site web (${url}) :\nTitre : ${title}\nDescription : ${desc}`;
-  } catch {
-    return "";
-  }
-}
-
-// ─── Single Claude call: returns Fullenrich + INSEE filters + reasoning ───
+// ─── Single Claude call with web search: returns Fullenrich + INSEE filters + reasoning ───
 
 interface CombinedFilters {
   fullenrich: Record<string, unknown>;
@@ -135,13 +103,19 @@ interface CombinedFilters {
 }
 
 async function callClaudeCombined(
-  description: string, mode: string, siteContext: string,
+  description: string, mode: string,
   broad: boolean, location?: string, secteur?: string,
 ): Promise<CombinedFilters> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
+
+  // Include web search tool so Claude can look up what the company actually does
+  const hasUrl = /https?:\/\/[^\s]+/.test(description);
+  const tools: any[] = hasUrl
+    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }]
+    : [];
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -154,11 +128,12 @@ async function callClaudeCombined(
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: systemPrompt,
+        tools: tools.length > 0 ? tools : undefined,
         messages: [{
           role: "user",
-          content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}${siteContext}`,
+          content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
         }],
       }),
     });
@@ -179,8 +154,13 @@ async function callClaudeCombined(
   }
   if (!result) throw new Error("Anthropic API: rate limited, réessaie dans quelques secondes");
 
-  const text = result.content?.[0]?.text ?? "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // Extract the text content from response (may contain web_search results + text blocks)
+  const textBlocks = (result.content ?? [])
+    .filter((block: any) => block.type === "text")
+    .map((block: any) => block.text)
+    .join("");
+
+  const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Claude n'a pas retourné de JSON valide");
 
   const parsed = JSON.parse(jsonMatch[0]);
@@ -441,12 +421,9 @@ export default async (request: Request) => {
       });
     }
 
-    // ─── 1. Fetch site context ONCE ───
-    const siteContext = await fetchSiteContext(body.description);
-
-    // ─── 2. SINGLE Claude call → Fullenrich + INSEE filters + reasoning ───
+    // ─── 1. SINGLE Claude call with web search → Fullenrich + INSEE filters + reasoning ───
     const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning } =
-      await callClaudeCombined(body.description, body.mode, siteContext, false, body.location, body.secteur);
+      await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
 
     // Apply optional overrides (headcount, location)
     if (body.headcount_min || body.headcount_max) {
@@ -505,7 +482,7 @@ export default async (request: Request) => {
     let originalFilters: Record<string, unknown> | undefined;
     if (allFullenrichRaw.length === 0) {
       originalFilters = { ...filters };
-      const broader = await callClaudeCombined(body.description, body.mode, siteContext, true, body.location, body.secteur);
+      const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
       if (body.headcount_min || body.headcount_max) {
         broader.fullenrich.current_company_headcounts = [
           { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },

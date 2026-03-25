@@ -115,6 +115,7 @@ beforeEach(() => {
     if (urlStr.includes("anthropic")) {
       return new Response(JSON.stringify({
         content: [{
+          type: "text",
           text: JSON.stringify({
             _reasoning: "Test reasoning",
             fullenrich: {
@@ -228,7 +229,7 @@ describe("search handler — auto-retry", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries": [{"value": "Environmental Services"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries": [{"value": "Environmental Services"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -264,7 +265,7 @@ describe("search handler — auto-retry", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Niche"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Niche"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -292,7 +293,7 @@ describe("search handler — auto-retry", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -384,7 +385,7 @@ describe("search handler — filter overrides", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -438,7 +439,7 @@ describe("search handler — Claude context", () => {
       if (urlStr.includes("anthropic")) {
         claudeCallBody = init?.body as string ?? "";
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -490,7 +491,7 @@ describe("search handler — errors", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       return new Response("API error", { status: 500 });
@@ -507,7 +508,7 @@ describe("search handler — errors", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {

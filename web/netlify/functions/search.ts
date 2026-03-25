@@ -200,7 +200,7 @@ Filtres disponibles :
 
 RÈGLES :
 1. Utilise "q" pour la recherche principale — mets des mots-clés pertinents en français.
-2. Si un secteur est mentionné, utilise "q" et/ou "activite_principale" (avec le point dans le code NAF !).
+2. Pour le secteur, PRÉFÈRE "section_activite_principale" (lettre A-U) qui est plus fiable que "activite_principale". N'utilise "activite_principale" QUE si tu es SÛR du code NAF exact au format XX.XXY (ex: "62.01Z"). Si tu n'es pas sûr, utilise section_activite_principale + q.
 3. Si une localisation est mentionnée, utilise "departement" ou "region" (code numérique !).
 4. Ne mets que les filtres pertinents. Préfère peu de filtres larges.
 5. Le mode est "${mode}" :
@@ -273,8 +273,25 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     params.set("etat_administratif", "A"); // Entreprises actives uniquement
 
     if (filters.q) params.set("q", filters.q);
-    if (filters.activite_principale) params.set("activite_principale", filters.activite_principale);
-    if (filters.section_activite_principale) params.set("section_activite_principale", filters.section_activite_principale);
+    // Validate NAF codes: format must be XX.XXY (2 digits, dot, 2 digits, 1 letter)
+    if (filters.activite_principale) {
+      const validNaf = filters.activite_principale
+        .split(",")
+        .map(c => c.trim())
+        .filter(c => /^\d{2}\.\d{2}[A-Z]$/.test(c));
+      if (validNaf.length > 0) {
+        params.set("activite_principale", validNaf.join(","));
+      } else {
+        console.warn(`Invalid NAF codes filtered out: "${filters.activite_principale}"`);
+        // Fallback: use section_activite_principale if available
+        if (filters.section_activite_principale) {
+          params.set("section_activite_principale", filters.section_activite_principale);
+        }
+      }
+    }
+    if (filters.section_activite_principale && !params.has("activite_principale")) {
+      params.set("section_activite_principale", filters.section_activite_principale);
+    }
     if (filters.departement) params.set("departement", filters.departement);
     if (filters.region) params.set("region", filters.region);
     if (filters.code_postal) params.set("code_postal", filters.code_postal);

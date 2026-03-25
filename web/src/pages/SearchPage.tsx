@@ -401,7 +401,13 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                     <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
                     <td className="px-3 py-2 text-gray-600">{c.titre}</td>
                     <td className="px-3 py-2 text-gray-600">{c.secteur}</td>
-                    <td className="px-3 py-2 text-gray-500">{c.domaine}</td>
+                    <td className="px-3 py-2 text-gray-500">
+                      {c.domaine ? (
+                        <a href={`https://${c.domaine}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {c.domaine}
+                        </a>
+                      ) : "—"}
+                    </td>
                     <td className="px-3 py-2">
                       <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${
                         c.source === "entreprises_gouv"

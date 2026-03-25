@@ -13,18 +13,18 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 // ─── verifyLogin ───
 
 describe("verifyLogin", () => {
-  it("returns null for wrong email", () => {
-    expect(verifyLogin("wrong@email.com", "anything")).toBeNull();
+  it("returns null for wrong email", async () => {
+    expect(await verifyLogin("wrong@email.com", "anything")).toBeNull();
   });
 
-  it("returns null for wrong password", () => {
-    expect(verifyLogin("adrien@prouesse.vc", "wrongpassword")).toBeNull();
+  it("returns null for wrong password", async () => {
+    expect(await verifyLogin("adrien@prouesse.vc", "wrongpassword")).toBeNull();
   });
 
-  it("is case-insensitive on email", () => {
+  it("is case-insensitive on email", async () => {
     // Can't test valid login without knowing the password, but we can test case
-    const result1 = verifyLogin("ADRIEN@PROUESSE.VC", "wrong");
-    const result2 = verifyLogin("adrien@prouesse.vc", "wrong");
+    const result1 = await verifyLogin("ADRIEN@PROUESSE.VC", "wrong");
+    const result2 = await verifyLogin("adrien@prouesse.vc", "wrong");
     // Both should fail with wrong password (not fail on email check)
     expect(result1).toBeNull();
     expect(result2).toBeNull();

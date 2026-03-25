@@ -65,9 +65,13 @@ RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
 1. **Industries EN ANGLAIS** : Fullenrich utilise la taxonomie LinkedIn. Traduis TOUJOURS les termes français en anglais standard LinkedIn (ex: "recyclage de déchets électroniques" → "Environmental Services", PAS "recyclage" ou "déchets électroniques").
 2. **Industries LARGES** : Maximum 2-3 industries, et utilise des termes LARGES (ex: "Environmental Services" plutôt que "E-Waste Recycling"). Plus c'est large, plus il y a de résultats.
 3. **exact_match: false PARTOUT** pour les inclusions. Seules les exclusions peuvent avoir exact_match: true.
-4. **Titres LIMITÉS** : Maximum 3 titres de poste. Préfère "CEO" et "Founder" qui couvrent la plupart des cas.
+4. **Titres LIMITÉS — selon le mode** :
+   - Mode "levee_de_fonds" : CEO, Founder, CTO (max 3 titres orientés startups/tech)
+   - Mode "cession" : CEO, Founder, Owner, Managing Director, President, General Manager (max 5 titres, inclure propriétaires/gérants)
 5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
 6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
+7. **URLs et noms d'entreprise** : Si la description contient une URL (ex: https://neosilver.fr) ou un nom d'entreprise connu, identifie le VRAI secteur d'activité de cette entreprise pour choisir les industries LinkedIn pertinentes. Ne te fie PAS au nom de domaine — utilise tes connaissances du marché.
+8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents.
 
 Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exemple :
 {
@@ -83,7 +87,7 @@ IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec
 N'inclus que les filtres pertinents par rapport à la description.${breadthInstruction}`;
 }
 
-async function callClaude(description: string, mode: string, broad = false): Promise<Record<string, unknown>> {
+async function callClaude(description: string, mode: string, broad = false, location?: string, secteur?: string): Promise<Record<string, unknown>> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
@@ -105,7 +109,7 @@ async function callClaude(description: string, mode: string, broad = false): Pro
         messages: [
           {
             role: "user",
-            content: `Description de recherche : "${description}"`,
+            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
           },
         ],
       }),
@@ -206,32 +210,44 @@ RÈGLES :
 Réponds UNIQUEMENT avec un JSON valide. Exemple :
 {"q": "fintech paiement", "region": "11", "activite_principale": "64.19Z,64.92Z"}`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Description : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
-        },
-      ],
-    }),
-  });
+  let result: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `Description : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
+          },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Anthropic API error (Entreprises) ${response.status}: ${errText}`);
+    if (response.status === 429) {
+      const wait = (attempt + 1) * 5000;
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Anthropic API error (Entreprises) ${response.status}: ${errText}`);
+    }
+
+    result = await response.json();
+    break;
   }
+  if (!result) return { q: description }; // All retries exhausted
 
-  const result = await response.json();
   const text = result.content?.[0]?.text ?? "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return { q: description };
@@ -262,7 +278,13 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
 
     const url = `https://recherche-entreprises.api.gouv.fr/search?${params.toString()}`;
 
-    const response = await fetch(url);
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (err) {
+      console.error("API Entreprises gouv network error:", err);
+      break; // Fail gracefully — Entreprises is supplementary
+    }
 
     if (!response.ok) {
       console.error(`API Entreprises gouv error ${response.status}: ${await response.text()}`);
@@ -322,6 +344,7 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     if (resultats.length < perPage) break;
   }
 
+  console.log(`API Entreprises gouv: ${allContacts.length} contacts trouvés (filters: ${JSON.stringify(filters)})`);
   return allContacts.slice(0, limit);
 }
 
@@ -478,7 +501,7 @@ export default async (request: Request) => {
 
     // 1. Translate description to filters via Claude (Fullenrich + Entreprises gouv.fr in parallel)
     const [filters, entreprisesFilters] = await Promise.all([
-      callClaude(body.description, body.mode),
+      callClaude(body.description, body.mode, false, body.location, body.secteur),
       callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur),
     ]);
 
@@ -494,11 +517,7 @@ export default async (request: Request) => {
           { value: body.location, exact_match: false, exclude: false },
         ];
       }
-      if (body.secteur) {
-        const existing = (f.current_company_industries as unknown[]) ?? [];
-        existing.push({ value: body.secteur, exact_match: false, exclude: false });
-        f.current_company_industries = existing;
-      }
+      // Note: secteur is now passed to callClaude directly, not appended post-generation
     }
 
     applyOverrides(filters);
@@ -519,7 +538,7 @@ export default async (request: Request) => {
     let originalFilters: Record<string, unknown> | undefined;
     if (fullenrichResults.length === 0) {
       originalFilters = { ...filters };
-      const broaderFilters = await callClaude(body.description, body.mode, true);
+      const broaderFilters = await callClaude(body.description, body.mode, true, body.location, body.secteur);
       applyOverrides(broaderFilters);
       const retryResults = await searchFullenrich(broaderFilters, fullenrichLimit);
       if (retryResults.length > 0) {

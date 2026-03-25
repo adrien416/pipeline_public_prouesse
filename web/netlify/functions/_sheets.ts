@@ -78,6 +78,40 @@ export async function readAll(tabName: string): Promise<Record<string, string>[]
  * Ajoute une ligne à la fin d'un onglet.
  * `values` doit correspondre à l'ordre des colonnes.
  */
+/** Expand a sheet's grid if the target row exceeds current grid size. */
+async function ensureGridSize(tabName: string, requiredRows: number): Promise<void> {
+  const sheets = getSheets();
+  const spreadsheetId = getSpreadsheetId();
+
+  // Get sheet metadata to find current grid size and sheetId
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  const sheet = meta.data.sheets?.find(
+    (s) => s.properties?.title === tabName
+  );
+  if (!sheet?.properties) return;
+
+  const currentRows = sheet.properties.gridProperties?.rowCount ?? 1000;
+  if (requiredRows <= currentRows) return;
+
+  // Expand grid by adding enough rows (+ 500 buffer to avoid frequent resizes)
+  const newRows = requiredRows + 500;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        updateSheetProperties: {
+          properties: {
+            sheetId: sheet.properties.sheetId!,
+            gridProperties: { rowCount: newRows },
+          },
+          fields: "gridProperties.rowCount",
+        },
+      }],
+    },
+  });
+  console.log(`Sheet "${tabName}": expanded grid from ${currentRows} to ${newRows} rows`);
+}
+
 export async function appendRow(tabName: string, values: string[]): Promise<void> {
   const sheets = getSheets();
 
@@ -85,6 +119,9 @@ export async function appendRow(tabName: string, values: string[]): Promise<void
   const colA = await readRawRange(`${tabName}!A:A`);
   const targetRow = colA.length + 1;
   const endCol = colLetter(values.length);
+
+  // Auto-expand grid if needed
+  await ensureGridSize(tabName, targetRow);
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),
@@ -157,6 +194,9 @@ export async function appendRows(tabName: string, rows: string[][]): Promise<voi
   const startRow = colA.length + 1; // 1-indexed, after last data row
   const endRow = startRow + rows.length - 1;
   const endCol = colLetter(rows[0].length);
+
+  // Auto-expand grid if needed
+  await ensureGridSize(tabName, endRow);
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),

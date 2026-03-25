@@ -70,12 +70,20 @@ RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
    - Mode "cession" : CEO, Founder, Owner, Managing Director, President, General Manager (max 5 titres, inclure propriétaires/gérants)
 5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
 6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
-7. **URLs et noms d'entreprise** : Si la description contient une URL (ex: https://neosilver.fr) ou un nom d'entreprise connu, identifie le VRAI secteur d'activité de cette entreprise pour choisir les industries LinkedIn pertinentes. Ne te fie PAS au nom de domaine — utilise tes connaissances du marché.
-8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents.
+7. **URLs et noms d'entreprise** : Si la description contient une URL ou un nom d'entreprise, tu DOIS identifier le VRAI secteur d'activité de cette entreprise. ATTENTION AUX PIÈGES :
+   - Le nom d'une entreprise N'EST PAS son secteur ! "neosilver" = silver economy (services aux seniors), PAS "Precious Metals" ou "Mining"
+   - "apple" = technologie, PAS agriculture
+   - Utilise tes connaissances du marché, pas l'étymologie du nom
+   - En cas de doute, cherche des concurrents connus du secteur
+8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents. Exemples :
+   - "impact, fintech" → "Financial Services", "Banking"
+   - "silver economy" → "Hospital & Health Care", "Individual & Family Services"
+   - "SaaS, logiciel" → "Computer Software", "Information Technology and Services"
 
-Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exemple :
+Réponds avec un JSON contenant les filtres ET un champ "_reasoning" qui explique ton raisonnement en 1-2 phrases. Exemple :
 {
-  "current_company_industries": [{"value": "Environmental Services", "exact_match": false, "exclude": false}],
+  "_reasoning": "Neosilver est une entreprise de silver economy (services financiers pour seniors). Je cherche des concurrents dans la finance et les services aux personnes âgées en France.",
+  "current_company_industries": [{"value": "Financial Services", "exact_match": false, "exclude": false}, {"value": "Hospital & Health Care", "exact_match": false, "exclude": false}],
   "current_company_headquarters": [{"value": "France", "exact_match": false, "exclude": false}],
   "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}, {"value": "Founder", "exact_match": false, "exclude": false}],
   "current_company_headcounts": [{"min": 10, "max": 500, "exclude": false}]
@@ -502,7 +510,8 @@ export default async (request: Request) => {
       };
       await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
 
-      const contacts: Record<string, string>[] = mockResults.map((r) => ({
+      // Mix sources: ~70% Fullenrich, ~30% INSEE for realistic demo
+      const contacts: Record<string, string>[] = mockResults.map((r, i) => ({
         id: uuidv4(),
         nom: r.nom,
         prenom: r.prenom,
@@ -520,6 +529,7 @@ export default async (request: Request) => {
         recherche_id: rechercheId,
         campagne_id: "",
         email_status: "", email_sent_at: "", phrase_perso: "",
+        source: i < Math.ceil(mockResults.length * 0.7) ? "fullenrich" : "entreprises_gouv",
         date_creation: now,
         date_modification: now,
         user_id: auth.userId,
@@ -530,26 +540,40 @@ export default async (request: Request) => {
         await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
       }
 
+      const inseeCount = contacts.filter(c => c.source === "entreprises_gouv").length;
+      const fullenrichCount = contacts.length - inseeCount;
       return json({
         recherche: { id: rechercheId, ...recherche },
         contacts,
-        filters: { demo: true },
+        filters: {
+          current_company_industries: [{ value: "Financial Services", exact_match: false, exclude: false }],
+          current_company_headquarters: [{ value: "France", exact_match: false, exclude: false }],
+          current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }, { value: "Founder", exact_match: false, exclude: false }],
+        },
+        ai_reasoning: `[DÉMO] L'IA analyse votre description et identifie le secteur d'activité, la localisation, et le type de dirigeants recherchés. Elle génère ensuite des filtres pour Fullenrich (base LinkedIn) et INSEE/SIRENE (base officielle française). Ici : ${fullenrichCount} contacts Fullenrich + ${inseeCount} contacts INSEE.`,
+        entreprises_filters: { section_activite_principale: "K" },
+        entreprises_debug: { status: "ok", totalFromApi: inseeCount },
         total: contacts.length,
+        sources: { fullenrich: fullenrichCount, entreprises_gouv: inseeCount },
         suggestions: [],
         retried: false,
       });
     }
 
-    // 1. Translate description to filters via Claude (Fullenrich + Entreprises gouv.fr in parallel)
-    // INSEE is supplementary — never let it crash the main search
-    const [filters, entreprisesFilters] = await Promise.all([
-      callClaude(body.description, body.mode, false, body.location, body.secteur),
-      callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
-        .catch((err) => {
-          console.error("callClaudeForEntreprises failed (non-blocking):", err);
-          return null;
-        }),
-    ]);
+    // 1. Translate description to filters via Claude
+    // Call Fullenrich filters first, then INSEE filters sequentially (avoid 429 rate-limit)
+    const filters = await callClaude(body.description, body.mode, false, body.location, body.secteur);
+
+    // Extract reasoning from filters (if Claude provided it)
+    const aiReasoning = (filters as any)._reasoning ?? "";
+    delete (filters as any)._reasoning;
+
+    // INSEE filters — non-blocking, after Fullenrich call finishes
+    const entreprisesFilters = await callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
+      .catch((err) => {
+        console.error("callClaudeForEntreprises failed (non-blocking):", err);
+        return null;
+      });
 
     // Apply optional overrides in Fullenrich v2 format
     function applyOverrides(f: Record<string, unknown>) {
@@ -709,6 +733,7 @@ export default async (request: Request) => {
       recherche: { id: rechercheId, ...recherche },
       contacts,
       filters,
+      ai_reasoning: aiReasoning,
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,

@@ -221,6 +221,24 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
+      {/* Raisonnement IA + Raffinage */}
+      {((search.data as any)?.ai_reasoning || (search.data as any)?.refinement_reasoning) && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">
+          {(search.data as any)?.ai_reasoning && (
+            <div>
+              <h3 className="text-sm font-semibold text-indigo-700 mb-1">Raisonnement de l'IA</h3>
+              <p className="text-sm text-indigo-900">{(search.data as any).ai_reasoning}</p>
+            </div>
+          )}
+          {(search.data as any)?.refinement_reasoning && (
+            <div>
+              <h3 className="text-sm font-semibold text-amber-700 mb-1">Raffinage IA</h3>
+              <p className="text-sm text-amber-900">{(search.data as any).refinement_reasoning}</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filtres IA */}
       {search.data?.filters && (
         <div className={`rounded-xl p-4 ${search.data.retried ? "bg-green-50 border border-green-300" : "bg-gray-50 border border-gray-200"}`}>
@@ -228,7 +246,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
             {search.data.retried ? (
               <span className="text-green-700">Filtres élargis automatiquement (les filtres initiaux donnaient 0 résultats)</span>
             ) : (
-              "Filtres générés par l'IA"
+              "Filtres Fullenrich générés par l'IA"
             )}
           </h3>
           <div className="flex flex-wrap gap-2">

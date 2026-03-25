@@ -67,15 +67,24 @@ RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
 3. **exact_match: false PARTOUT** pour les inclusions. Seules les exclusions peuvent avoir exact_match: true.
 4. **Titres LIMITÉS — selon le mode** :
    - Mode "levee_de_fonds" : CEO, Founder, CTO (max 3 titres orientés startups/tech)
-   - Mode "cession" : CEO, Founder, Owner, Managing Director, President, General Manager (max 5 titres, inclure propriétaires/gérants)
+   - Mode "cession" : CEO, Founder, Managing Director, President, General Manager, Gérant, Directeur Général, Président (max 5 titres dirigeants/propriétaires)
+   ATTENTION : N'utilise JAMAIS "Owner" seul car ça matche "Product Owner", "Account Owner" etc. Utilise des titres de DIRIGEANTS explicites.
 5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
 6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
-7. **URLs et noms d'entreprise** : Si la description contient une URL (ex: https://neosilver.fr) ou un nom d'entreprise connu, identifie le VRAI secteur d'activité de cette entreprise pour choisir les industries LinkedIn pertinentes. Ne te fie PAS au nom de domaine — utilise tes connaissances du marché.
-8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents.
+7. **URLs et noms d'entreprise** : Si la description contient une URL ou un nom d'entreprise, tu DOIS identifier le VRAI secteur d'activité de cette entreprise. ATTENTION AUX PIÈGES :
+   - Le nom d'une entreprise N'EST PAS son secteur ! "neosilver" = silver economy (services aux seniors), PAS "Precious Metals" ou "Mining"
+   - "apple" = technologie, PAS agriculture
+   - Utilise tes connaissances du marché, pas l'étymologie du nom
+   - En cas de doute, cherche des concurrents connus du secteur
+8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents. Exemples :
+   - "impact, fintech" → "Financial Services", "Banking"
+   - "silver economy" → "Hospital & Health Care", "Individual & Family Services"
+   - "SaaS, logiciel" → "Computer Software", "Information Technology and Services"
 
-Réponds UNIQUEMENT avec un JSON valide contenant les filtres pertinents. Exemple :
+Réponds avec un JSON contenant les filtres ET un champ "_reasoning" qui explique ton raisonnement en 1-2 phrases. Exemple :
 {
-  "current_company_industries": [{"value": "Environmental Services", "exact_match": false, "exclude": false}],
+  "_reasoning": "Neosilver est une entreprise de silver economy (services financiers pour seniors). Je cherche des concurrents dans la finance et les services aux personnes âgées en France.",
+  "current_company_industries": [{"value": "Financial Services", "exact_match": false, "exclude": false}, {"value": "Hospital & Health Care", "exact_match": false, "exclude": false}],
   "current_company_headquarters": [{"value": "France", "exact_match": false, "exclude": false}],
   "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}, {"value": "Founder", "exact_match": false, "exclude": false}],
   "current_company_headcounts": [{"min": 10, "max": 500, "exclude": false}]
@@ -87,11 +96,45 @@ IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec
 N'inclus que les filtres pertinents par rapport à la description.${breadthInstruction}`;
 }
 
+/** Extract URL from description text, fetch it, and return site context (title + meta description). */
+async function fetchSiteContext(description: string): Promise<string> {
+  const urlMatch = description.match(/https?:\/\/[^\s]+/);
+  if (!urlMatch) return "";
+
+  try {
+    const url = urlMatch[0].replace(/[.,;!?)]+$/, ""); // trim trailing punctuation
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; ProuesseBot/1.0)" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(5000), // 5s timeout
+    });
+    if (!response.ok) return "";
+
+    const html = await response.text();
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
+    const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
+
+    const title = titleMatch?.[1]?.trim() ?? "";
+    const desc = descMatch?.[1]?.trim() ?? ogDescMatch?.[1]?.trim() ?? "";
+
+    if (!title && !desc) return "";
+    return `\n\nContexte du site web (${url}) :\nTitre : ${title}\nDescription : ${desc}`;
+  } catch {
+    return ""; // Network error, timeout — ignore silently
+  }
+}
+
 async function callClaude(description: string, mode: string, broad = false, location?: string, secteur?: string): Promise<Record<string, unknown>> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
 
   const systemPrompt = buildSystemPrompt(mode, broad);
+
+  // If description contains a URL, fetch the site to get real context
+  const siteContext = await fetchSiteContext(description);
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -109,7 +152,7 @@ async function callClaude(description: string, mode: string, broad = false, loca
         messages: [
           {
             role: "user",
-            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
+            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}${siteContext}`,
           },
         ],
       }),
@@ -335,12 +378,13 @@ async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: numbe
     // Map each entreprise to contact-like objects with dirigeant info
     for (const entreprise of resultats) {
       const dirigeants = entreprise.dirigeants ?? [];
-      // Get the main dirigeant (président, gérant, DG)
-      const dirigeant = dirigeants.find((d: any) =>
-        d.qualite && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.qualite)
-      ) ?? dirigeants.find((d: any) =>
-        d.fonction && /pr[eé]sident|g[eé]rant|directeur g[eé]n[eé]ral|CEO|fondateur/i.test(d.fonction)
-      ) ?? dirigeants[0];
+      // Get the main dirigeant (président, gérant, DG) — exclude CAC, auditeurs, suppléants
+      const isRealDirector = (d: any) => {
+        const q = (d.qualite ?? d.fonction ?? "").toLowerCase();
+        if (/commissaire|suppl[eé]ant|auditeur|greffier/i.test(q)) return false;
+        return /pr[eé]sident|g[eé]rant|directeur|CEO|fondateur|associ[eé]/i.test(q);
+      };
+      const dirigeant = dirigeants.find((d: any) => isRealDirector(d)) ?? dirigeants[0];
 
       if (!dirigeant) continue; // Skip companies without known dirigeants
 
@@ -418,6 +462,94 @@ function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: un
   }
 
   return tagged;
+}
+
+/**
+ * AI refinement: Claude evaluates each contact's relevance to the search description.
+ * Filters out companies that don't match (e.g. "Mining" when searching silver economy).
+ * Returns filtered results + reasoning.
+ */
+async function refineWithAI(
+  description: string,
+  mode: string,
+  siteContext: string,
+  contacts: Record<string, unknown>[],
+): Promise<{ refined: Record<string, unknown>[]; refinement_reasoning: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || contacts.length === 0) return { refined: contacts as any, refinement_reasoning: "" };
+
+  // Build a compact summary of contacts for Claude to evaluate
+  const contactSummary = contacts.slice(0, 100).map((c: any, i) => (
+    `${i + 1}. ${c.prenom} ${c.nom} — ${c.titre} @ ${c.entreprise} (${c.secteur || "?"}) [${c.domaine || "?"}]`
+  )).join("\n");
+
+  const prompt = `Tu es un assistant de prospection. L'utilisateur cherche :
+"${description}" (mode: ${mode})
+${siteContext ? `\nContexte du site web mentionné :${siteContext}` : ""}
+
+Voici les ${contacts.length} contacts trouvés. Pour CHACUN, décide s'il est PERTINENT ou NON pour cette recherche.
+
+CRITÈRES D'EXCLUSION — Marque "NON" si :
+- L'entreprise n'a rien à voir avec le secteur recherché
+- Le titre n'est pas celui d'un dirigeant/décideur (Product Owner, développeur, consultant junior, stagiaire, etc.)
+- C'est un commissaire aux comptes, auditeur, expert-comptable (sauf s'il est aussi gérant)
+- L'entreprise est un grand groupe / CAC40 (pas une PME/startup à prospecter)
+
+CONTACTS :
+${contactSummary}
+
+Réponds avec un JSON :
+{
+  "keep": [1, 3, 5, ...],  // numéros des contacts à GARDER
+  "reasoning": "Explication courte de pourquoi certains ont été exclus"
+}`;
+
+  try {
+    let result: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 2048,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (response.status === 429) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      if (!response.ok) break;
+      result = await response.json();
+      break;
+    }
+
+    if (!result) return { refined: contacts as any, refinement_reasoning: "Raffinage IA indisponible (rate limit)" };
+
+    const text = result.content?.[0]?.text ?? "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: pas de JSON valide" };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const keepIndices = new Set<number>((parsed.keep ?? []).map((n: number) => n - 1)); // 1-indexed → 0-indexed
+
+    if (keepIndices.size === 0) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: aucun filtre appliqué" };
+
+    const refined = contacts.filter((_, i) => keepIndices.has(i));
+    const removed = contacts.length - refined.length;
+    const reasoning = `${removed} contacts exclus par l'IA : ${parsed.reasoning ?? ""}`;
+    console.log(`AI refinement: ${contacts.length} → ${refined.length} (removed ${removed})`);
+    return { refined, refinement_reasoning: reasoning };
+  } catch (err) {
+    console.error("refineWithAI error:", err);
+    return { refined: contacts as any, refinement_reasoning: "Raffinage IA: erreur" };
+  }
 }
 
 async function suggestFilterChanges(
@@ -502,7 +634,8 @@ export default async (request: Request) => {
       };
       await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
 
-      const contacts: Record<string, string>[] = mockResults.map((r) => ({
+      // Mix sources: ~70% Fullenrich, ~30% INSEE for realistic demo
+      const contacts: Record<string, string>[] = mockResults.map((r, i) => ({
         id: uuidv4(),
         nom: r.nom,
         prenom: r.prenom,
@@ -520,6 +653,7 @@ export default async (request: Request) => {
         recherche_id: rechercheId,
         campagne_id: "",
         email_status: "", email_sent_at: "", phrase_perso: "",
+        source: i < Math.ceil(mockResults.length * 0.7) ? "fullenrich" : "entreprises_gouv",
         date_creation: now,
         date_modification: now,
         user_id: auth.userId,
@@ -530,26 +664,40 @@ export default async (request: Request) => {
         await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
       }
 
+      const inseeCount = contacts.filter(c => c.source === "entreprises_gouv").length;
+      const fullenrichCount = contacts.length - inseeCount;
       return json({
         recherche: { id: rechercheId, ...recherche },
         contacts,
-        filters: { demo: true },
+        filters: {
+          current_company_industries: [{ value: "Financial Services", exact_match: false, exclude: false }],
+          current_company_headquarters: [{ value: "France", exact_match: false, exclude: false }],
+          current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }, { value: "Founder", exact_match: false, exclude: false }],
+        },
+        ai_reasoning: `[DÉMO] L'IA analyse votre description et identifie le secteur d'activité, la localisation, et le type de dirigeants recherchés. Elle génère ensuite des filtres pour Fullenrich (base LinkedIn) et INSEE/SIRENE (base officielle française). Ici : ${fullenrichCount} contacts Fullenrich + ${inseeCount} contacts INSEE.`,
+        entreprises_filters: { section_activite_principale: "K" },
+        entreprises_debug: { status: "ok", totalFromApi: inseeCount },
         total: contacts.length,
+        sources: { fullenrich: fullenrichCount, entreprises_gouv: inseeCount },
         suggestions: [],
         retried: false,
       });
     }
 
-    // 1. Translate description to filters via Claude (Fullenrich + Entreprises gouv.fr in parallel)
-    // INSEE is supplementary — never let it crash the main search
-    const [filters, entreprisesFilters] = await Promise.all([
-      callClaude(body.description, body.mode, false, body.location, body.secteur),
-      callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
-        .catch((err) => {
-          console.error("callClaudeForEntreprises failed (non-blocking):", err);
-          return null;
-        }),
-    ]);
+    // 1. Translate description to filters via Claude
+    // Call Fullenrich filters first, then INSEE filters sequentially (avoid 429 rate-limit)
+    const filters = await callClaude(body.description, body.mode, false, body.location, body.secteur);
+
+    // Extract reasoning from filters (if Claude provided it)
+    const aiReasoning = (filters as any)._reasoning ?? "";
+    delete (filters as any)._reasoning;
+
+    // INSEE filters — non-blocking, after Fullenrich call finishes
+    const entreprisesFilters = await callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
+      .catch((err) => {
+        console.error("callClaudeForEntreprises failed (non-blocking):", err);
+        return null;
+      });
 
     // Apply optional overrides in Fullenrich v2 format
     function applyOverrides(f: Record<string, unknown>) {
@@ -586,6 +734,16 @@ export default async (request: Request) => {
     const entreprisesDebug = entreprisesGovResult.debug;
 
     let results = deduplicateResults(fullenrichResults, entreprisesContacts);
+
+    // 2a. Filter out non-director titles (Product Owner, CAC, etc.)
+    const excludedTitles = /product\s*owner|product\s*manager|project\s*manager|account\s*(owner|manager|executive)|commissaire\s*aux?\s*comptes?|suppl[eé]ant|auditeur|expert[\s-]*comptable|greffier|secr[eé]taire\s*g[eé]n[eé]ral|community\s*manager|scrum\s*master|data\s*(analyst|scientist|engineer)|d[eé]veloppeur|developer|designer|consultant\s*(junior|senior)?$/i;
+    const beforeFilter = results.length;
+    results = results.filter((r: any) => {
+      const title = r.employment?.current?.title ?? "";
+      return !excludedTitles.test(title);
+    });
+    const filteredOut = beforeFilter - results.length;
+    if (filteredOut > 0) console.log(`Filtered out ${filteredOut} non-director contacts`);
 
     // 2b. If 0 Fullenrich results, auto-retry with broader filters
     let retried = false;
@@ -624,8 +782,8 @@ export default async (request: Request) => {
 
     await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
 
-    // 4. Save contacts to Google Sheets
-    const contacts: Record<string, string>[] = results.map((r: any) => ({
+    // 4. Map results to contact objects
+    let contacts: Record<string, string>[] = results.map((r: any) => ({
       id: uuidv4(),
       nom: r.last_name ?? "",
       prenom: r.first_name ?? "",
@@ -654,6 +812,19 @@ export default async (request: Request) => {
       date_modification: now,
       user_id: auth.userId,
     }));
+
+    // 4b. AI refinement — Claude filters out irrelevant contacts
+    let refinementReasoning = "";
+    if (contacts.length > 0) {
+      const siteContext = await fetchSiteContext(body.description).catch(() => "");
+      const { refined, refinement_reasoning } = await refineWithAI(
+        body.description, body.mode, siteContext, contacts,
+      );
+      contacts = refined as Record<string, string>[];
+      refinementReasoning = refinement_reasoning;
+    }
+
+    // 5. Save contacts to Google Sheets
 
     let writeDebug: Record<string, unknown> = {};
     if (contacts.length > 0) {
@@ -709,6 +880,8 @@ export default async (request: Request) => {
       recherche: { id: rechercheId, ...recherche },
       contacts,
       filters,
+      ai_reasoning: aiReasoning,
+      refinement_reasoning: refinementReasoning,
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,
@@ -722,8 +895,9 @@ export default async (request: Request) => {
       previously_failed_domains: previouslyFailedDomains,
     });
   } catch (err) {
-    console.error("search error:", err);
-    return json({ error: "Erreur interne" }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("search error:", message);
+    return json({ error: `Erreur: ${message}` }, 500);
   }
 };
 

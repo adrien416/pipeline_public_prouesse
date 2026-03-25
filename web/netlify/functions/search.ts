@@ -460,33 +460,50 @@ export default async (request: Request) => {
       ];
     }
 
-    // ─── 3. Search Fullenrich + INSEE in parallel ───
-    const fullenrichLimit = body.limit ?? 100;
-    const entreprisesLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50);
+    // ─── 3. Search loop: fetch until we have enough QUALIFIED contacts ───
+    const targetCount = body.limit ?? 100;
+    const maxIterations = 5; // Safety: max 5 Fullenrich pages
+    const batchSize = Math.min(targetCount, 100); // Fullenrich max per call
+    let allFullenrichRaw: unknown[] = [];
+    let fullenrichOffset = 0;
 
-    const [fullenrichResults, entreprisesGovResult] = await Promise.all([
-      searchFullenrich(filters, fullenrichLimit),
-      searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
-        .catch((err): EntreprisesGovResult => ({
-          contacts: [],
-          debug: { status: "crash", error: err instanceof Error ? err.message : String(err) },
-        })),
-    ]);
+    // First: get INSEE results (one-shot, supplementary)
+    const entreprisesLimit = Math.min(Math.ceil(targetCount * 0.3), 50);
+    const entreprisesGovResult = await searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
+      .catch((err): EntreprisesGovResult => ({
+        contacts: [],
+        debug: { status: "crash", error: err instanceof Error ? err.message : String(err) },
+      }));
     const entreprisesContacts = entreprisesGovResult.contacts;
     const entreprisesDebug = entreprisesGovResult.debug;
 
-    // ─── 4. Deduplicate + filter non-director titles ───
-    let results = deduplicateResults(fullenrichResults, entreprisesContacts);
-    const beforeFilter = results.length;
-    results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
-    if (results.length < beforeFilter) {
-      console.log(`Filtered out ${beforeFilter - results.length} non-director contacts`);
+    // Loop: fetch Fullenrich pages until we have enough qualified contacts
+    let results: unknown[] = [];
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const batch = await searchFullenrich(
+        { ...filters, offset: fullenrichOffset },
+        batchSize,
+      );
+      allFullenrichRaw.push(...batch);
+      fullenrichOffset += batch.length;
+
+      // Deduplicate + filter titles on ALL accumulated results
+      results = deduplicateResults(allFullenrichRaw, entreprisesContacts);
+      results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+
+      console.log(`Search iteration ${iteration + 1}: ${allFullenrichRaw.length} raw → ${results.length} qualified (target: ${targetCount})`);
+
+      // Stop if we have enough, or Fullenrich returned less than a full batch (no more results)
+      if (results.length >= targetCount || batch.length < batchSize) break;
     }
 
-    // ─── 5. Auto-retry with broader filters if 0 Fullenrich results ───
+    // Trim to target
+    results = results.slice(0, targetCount);
+
+    // ─── 4. Auto-retry with broader filters if 0 Fullenrich results ───
     let retried = false;
     let originalFilters: Record<string, unknown> | undefined;
-    if (fullenrichResults.length === 0) {
+    if (allFullenrichRaw.length === 0) {
       originalFilters = { ...filters };
       const broader = await callClaudeCombined(body.description, body.mode, siteContext, true, body.location, body.secteur);
       if (body.headcount_min || body.headcount_max) {
@@ -499,11 +516,12 @@ export default async (request: Request) => {
           { value: body.location, exact_match: false, exclude: false },
         ];
       }
-      const retryResults = await searchFullenrich(broader.fullenrich, fullenrichLimit);
+      const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
       if (retryResults.length > 0) {
         Object.assign(filters, broader.fullenrich);
         results = deduplicateResults(retryResults, entreprisesContacts);
         results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        results = results.slice(0, targetCount);
         retried = true;
       }
     }

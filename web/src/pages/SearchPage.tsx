@@ -313,14 +313,31 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
-      {/* Error */}
+      {/* Error with retry button */}
       {search.isError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          {search.error instanceof Error
-            ? (search.error.message === "Load failed" || search.error.message === "Failed to fetch"
-              ? "Timeout serveur (10s). Réessaie — la recherche a peut-être été rate-limitée par l'API Anthropic."
-              : search.error.message)
-            : "Erreur de recherche"}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-700 mb-2">
+            {search.error instanceof Error
+              ? (search.error.message === "Load failed" || search.error.message === "Failed to fetch"
+                ? "Timeout serveur (10s). L'API Anthropic est peut-être rate-limitée."
+                : search.error.message)
+              : "Erreur de recherche"}
+          </p>
+          <button
+            type="button"
+            onClick={() => search.mutate({
+              description: description.trim(),
+              mode,
+              headcount_min: parseInt(headcountMin) || undefined,
+              headcount_max: parseInt(headcountMax) || undefined,
+              location: location || undefined,
+              secteur: secteur || undefined,
+              limit: parseInt(limit) || 100,
+            })}
+            className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-red-700"
+          >
+            Réessayer
+          </button>
         </div>
       )}
 

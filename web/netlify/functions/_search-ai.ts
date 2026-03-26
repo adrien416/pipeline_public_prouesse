@@ -133,9 +133,9 @@ export async function callClaudeCombined(
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
 
-  // NO web search in this call — too slow for 10s Netlify timeout
-  // Web search is done in a separate step (search-competitors.ts)
-  const tools: any[] = [];
+  // Enable web search so Claude can look up the company/sector
+  // This runs in its own endpoint (search-filters.ts) with its own 10s timeout
+  const tools: any[] = [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }];
 
   let result: any;
   for (let attempt = 0; attempt < 2; attempt++) {

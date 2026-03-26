@@ -174,35 +174,32 @@ export async function callClaudeCombined(
   }
   if (!result) throw new Error("Anthropic API: rate limited, réessaie dans quelques secondes");
 
-  // Extract the text content from response (may contain web_search results + text blocks)
-  const textBlocks = (result.content ?? [])
+  // Extract text blocks from response (may contain web_search results interspersed)
+  const allText = (result.content ?? [])
     .filter((block: any) => block.type === "text")
     .map((block: any) => block.text)
     .join("\n");
 
-  // Find the JSON block containing our filters — try each { } match and parse
+  // Find valid JSON by brace-counting (handles nested objects like fullenrich filters)
   let parsed: any = null;
-  const braceMatches = textBlocks.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g) ?? [];
-  for (const match of braceMatches.reverse()) {
+  for (let i = allText.length - 1; i >= 0; i--) {
+    if (allText[i] !== "{") continue;
+    let depth = 0;
+    let end = -1;
+    for (let j = i; j < allText.length; j++) {
+      if (allText[j] === "{") depth++;
+      else if (allText[j] === "}") depth--;
+      if (depth === 0) { end = j; break; }
+    }
+    if (end === -1) continue;
+    const candidate = allText.slice(i, end + 1);
     try {
-      const candidate = JSON.parse(match);
-      if (candidate.fullenrich || candidate._reasoning || candidate.insee) {
-        parsed = candidate;
+      const obj = JSON.parse(candidate);
+      if (obj.fullenrich || obj._reasoning || obj.insee) {
+        parsed = obj;
         break;
       }
-    } catch { /* not valid JSON, skip */ }
-  }
-
-  // Fallback: try greedy match on the last text block
-  if (!parsed) {
-    const lastText = (result.content ?? [])
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
-      .pop() ?? "";
-    const jsonMatch = lastText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[0]); } catch { /* ignore */ }
-    }
+    } catch { /* not valid JSON at this position, try next { */ }
   }
 
   if (!parsed) throw new Error("Claude n'a pas retourné de JSON valide");

@@ -30,6 +30,10 @@ interface SearchBody {
     named_competitors: string[];
     cost: CombinedFilters["cost"];
   };
+  // "Find more" mode: append to existing search
+  append?: boolean;
+  recherche_id?: string;
+  offset?: number;
 }
 
 // ─── Fullenrich API ───
@@ -358,7 +362,7 @@ export default async (request: Request) => {
       const inseeCount = contacts.filter(c => c.source === "entreprises_gouv").length;
       const fullenrichCount = contacts.length - inseeCount;
       return json({
-        recherche: { id: rechercheId, ...recherche },
+        recherche: { id: rechercheId, description: body.description, mode: body.mode, nb_resultats: String(contacts.length) },
         contacts,
         filters: {
           current_company_industries: [{ value: "Financial Services", exact_match: false, exclude: false }],
@@ -473,7 +477,7 @@ export default async (request: Request) => {
 
       // Search + verify loop
       const seenCompanies = new Set<string>();
-      let fullenrichOffset = 0;
+      let fullenrichOffset = body.offset ?? 0;
 
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         if (totalCost.estimated_usd >= MAX_COST_USD) {
@@ -590,19 +594,35 @@ export default async (request: Request) => {
 
     // ─── 6. Save search to Google Sheets ───
     const now = new Date().toISOString();
-    const rechercheId = uuidv4();
+    const rechercheId = body.append && body.recherche_id ? body.recherche_id : uuidv4();
 
-    const recherche: Record<string, string> = {
-      id: rechercheId,
-      description: body.description,
-      mode: body.mode,
-      filtres_json: JSON.stringify(filters),
-      nb_resultats: String(results.length),
-      date: now,
-      user_id: auth.userId,
-    };
-
-    await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
+    if (body.append && body.recherche_id) {
+      // Append mode: update existing recherche's nb_resultats
+      const { findRowById, updateRow } = await import("./_sheets.js");
+      const existing = await findRowById("Recherches", body.recherche_id);
+      if (existing) {
+        const prevCount = parseInt(existing.data.nb_resultats ?? "0");
+        const newCount = prevCount + results.length;
+        const sheetHeaders = await getHeadersForWrite("Recherches", RECHERCHES_HEADERS);
+        await updateRow("Recherches", existing.rowIndex, toRow(sheetHeaders, {
+          ...existing.data,
+          nb_resultats: String(newCount),
+          date_modification: now,
+        }));
+      }
+    } else {
+      // New search: create recherche row
+      const recherche: Record<string, string> = {
+        id: rechercheId,
+        description: body.description,
+        mode: body.mode,
+        filtres_json: JSON.stringify(filters),
+        nb_resultats: String(results.length),
+        date: now,
+        user_id: auth.userId,
+      };
+      await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
+    }
 
     // ─── 7. Map results to contact objects ───
     const contacts: Record<string, string>[] = results.map((r: any) => ({
@@ -722,7 +742,7 @@ N'inclus que les entreprises pour lesquelles tu as trouvé des informations.`,
     }
 
     return json({
-      recherche: { id: rechercheId, ...recherche },
+      recherche: { id: rechercheId, description: body.description, mode: body.mode, nb_resultats: String(contacts.length) },
       contacts,
       filters,
       ai_reasoning: aiReasoning,

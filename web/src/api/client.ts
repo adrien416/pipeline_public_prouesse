@@ -53,6 +53,10 @@ export interface SearchParams {
   secteur?: string;
   limit?: number;
   pre_filters?: SearchFiltersResult;
+  // "Find more" mode
+  append?: boolean;
+  recherche_id?: string;
+  offset?: number;
 }
 
 export interface SearchFiltersResult {

@@ -26,6 +26,8 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [searchStep, setSearchStep] = useState<string | null>(null);
   const [stepFilters, setStepFilters] = useState<SearchFiltersResult | null>(null);
+  const [loadedRecherche, setLoadedRecherche] = useState<Record<string, string> | null>(null);
+  const [loadedContacts, setLoadedContacts] = useState<Array<Record<string, string>> | null>(null);
 
   const search = useMutation({
     mutationFn: async (params: SearchParams) => {
@@ -142,6 +144,21 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   </span>
                 </div>
                 <div className="flex gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { fetchContacts } = await import("../api/client");
+                      const data = await fetchContacts(r.id);
+                      setLoadedRecherche(r);
+                      setLoadedContacts(data.contacts);
+                      setExcluded(new Set());
+                      setDescription(r.description);
+                      setMode((r.mode as "levee_de_fonds" | "cession") || "levee_de_fonds");
+                    }}
+                    className="text-xs bg-gray-50 text-gray-600 px-2 py-1 rounded hover:bg-gray-100"
+                  >
+                    Voir
+                  </button>
                   <button
                     type="button"
                     onClick={() => onLoadRecherche?.(r.id, (r.mode as "levee_de_fonds" | "cession") || "levee_de_fonds", "scoring")}
@@ -579,6 +596,120 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* "Find more" button */}
+          <div className="p-4 border-t">
+            <button
+              type="button"
+              disabled={search.isPending}
+              onClick={() => {
+                const currentData = search.data!;
+                const rechId = currentData.recherche?.id;
+                const currentFilters = currentData.filters;
+                const contactCount = currentData.contacts.length;
+                if (!rechId || !currentFilters) return;
+
+                search.mutate({
+                  description: description.trim(),
+                  mode,
+                  headcount_min: parseInt(headcountMin) || undefined,
+                  headcount_max: parseInt(headcountMax) || undefined,
+                  location: location || undefined,
+                  limit: parseInt(limit) || 100,
+                  append: true,
+                  recherche_id: rechId,
+                  offset: contactCount,
+                  pre_filters: {
+                    fullenrich_filters: currentFilters,
+                    insee_filters: (currentData as any).entreprises_filters ?? {},
+                    reasoning: (currentData as any).ai_reasoning ?? "",
+                    named_competitors: (currentData as any).named_competitors ?? [],
+                    cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 },
+                  },
+                });
+              }}
+              className="w-full bg-indigo-50 text-indigo-700 font-medium rounded-lg px-4 py-2 text-sm hover:bg-indigo-100 disabled:opacity-50"
+            >
+              Chercher plus de cibles (offset: {search.data?.contacts.length ?? 0})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Loaded previous search */}
+      {loadedContacts && loadedRecherche && !search.data && (
+        <div className="bg-white rounded-xl shadow-sm border">
+          <div className="p-4 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">{loadedContacts.length} contacts (recherche précédente)</h3>
+              <p className="text-xs text-gray-500 mt-0.5">{loadedRecherche.description}</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const rechId = loadedRecherche.id;
+                  const filters = loadedRecherche.filtres_json ? JSON.parse(loadedRecherche.filtres_json) : {};
+
+                  search.mutate({
+                    description: loadedRecherche.description,
+                    mode: (loadedRecherche.mode as "levee_de_fonds" | "cession") || "levee_de_fonds",
+                    limit: parseInt(limit) || 100,
+                    append: true,
+                    recherche_id: rechId,
+                    offset: loadedContacts.length,
+                    pre_filters: {
+                      fullenrich_filters: filters,
+                      insee_filters: {},
+                      reasoning: "",
+                      named_competitors: [],
+                      cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 },
+                    },
+                  });
+                }}
+                className="bg-indigo-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-indigo-700"
+              >
+                Chercher plus de cibles
+              </button>
+              <button
+                onClick={() => onComplete(loadedRecherche.id, (loadedRecherche.mode as "levee_de_fonds" | "cession") || "levee_de_fonds")}
+                className="bg-green-600 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-green-700"
+              >
+                Passer au scoring →
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left">Nom</th>
+                  <th className="px-3 py-2 text-left">Entreprise</th>
+                  <th className="px-3 py-2 text-left">Titre</th>
+                  <th className="px-3 py-2 text-left">Domaine</th>
+                  <th className="px-3 py-2 text-left">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadedContacts.map((c, i) => (
+                  <tr key={c.id || i} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium text-gray-900">{c.prenom} {c.nom}</td>
+                    <td className="px-3 py-2 text-gray-700">{c.entreprise}</td>
+                    <td className="px-3 py-2 text-gray-600">{c.titre}</td>
+                    <td className="px-3 py-2 text-gray-500">
+                      {c.domaine ? (
+                        <a href={`https://${c.domaine}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{c.domaine}</a>
+                      ) : "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${c.source === "entreprises_gouv" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}`}>
+                        {c.source === "entreprises_gouv" ? "INSEE" : "Fullenrich"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

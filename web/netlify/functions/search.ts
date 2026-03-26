@@ -252,7 +252,7 @@ EXCLUS si :
 - C'est un cabinet d'audit, de conseil, une banque d'affaires, un fonds d'investissement
 - Le titre n'est pas un vrai dirigeant (consultant, analyste, manager intermédiaire)
 
-Si tu ne connais pas une entreprise, UTILISE LE WEB SEARCH sur son domaine pour vérifier ce qu'elle fait.
+En cas de doute sur une entreprise, base-toi sur son nom, domaine et secteur LinkedIn pour décider.
 
 ENTREPRISES :
 ${contactList}
@@ -271,9 +271,8 @@ Réponds UNIQUEMENT avec un JSON :
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 1024,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
           messages: [{ role: "user", content: prompt }],
         }),
       });
@@ -609,10 +608,9 @@ export default async (request: Request) => {
         return true;
       });
 
-      // Verify with AI in chunks of 20
-      for (let i = 0; i < newContacts.length; i += 20) {
-        const chunk = newContacts.slice(i, i + 20);
-        const contactsForVerify = chunk.map((r: any) => ({
+      // Verify all new contacts in ONE Haiku call (fast, no web search)
+      if (newContacts.length > 0) {
+        const contactsForVerify = newContacts.map((r: any) => ({
           entreprise: r.employment?.current?.company?.name ?? "",
           titre: r.employment?.current?.title ?? "",
           domaine: r.employment?.current?.company?.domain ?? "",
@@ -624,7 +622,7 @@ export default async (request: Request) => {
         );
 
         for (const idx of keepIndices) {
-          verifiedResults.push(chunk[idx]);
+          verifiedResults.push(newContacts[idx]);
         }
         if (reasoning) verifyReasons.push(reasoning);
         totalCost.input_tokens += cost.input_tokens;

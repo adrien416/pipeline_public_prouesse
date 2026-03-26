@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchSearch, excludeContacts, fetchRecherches } from "../api/client";
-import type { SearchParams } from "../api/client";
+import { launchSearch, searchFilters, excludeContacts, fetchRecherches } from "../api/client";
+import type { SearchParams, SearchFiltersResult } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
@@ -24,11 +24,42 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [secteur, setSecteur] = useState("");
   const [limit, setLimit] = useState("100");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [searchStep, setSearchStep] = useState<string | null>(null);
+  const [stepFilters, setStepFilters] = useState<SearchFiltersResult | null>(null);
 
   const search = useMutation({
-    mutationFn: (params: SearchParams) => launchSearch(params),
+    mutationFn: async (params: SearchParams) => {
+      // Step 1: AI analysis (separate endpoint, can take 3-8s with web search)
+      setSearchStep("Analyse du secteur par l'IA...");
+      setStepFilters(null);
+
+      const filtersResult = await searchFilters({
+        description: params.description,
+        mode: params.mode,
+        location: params.location,
+        secteur: params.secteur,
+      });
+
+      setStepFilters(filtersResult);
+
+      // Show what we found
+      const competitors = filtersResult.named_competitors ?? [];
+      if (competitors.length > 0) {
+        setSearchStep(`Recherche de ${competitors.length} concurrents : ${competitors.slice(0, 3).join(", ")}...`);
+      } else {
+        setSearchStep("Recherche de contacts sur Fullenrich + INSEE...");
+      }
+
+      // Step 2: Execute search with pre-computed filters
+      const result = await launchSearch({
+        ...params,
+        pre_filters: filtersResult,
+      });
+
+      setSearchStep(null);
+      return result;
+    },
     onSuccess: (data) => {
-      // Auto-exclude contacts whose domain previously failed scoring
       if (data.previously_failed_domains && Object.keys(data.previously_failed_domains).length > 0) {
         const autoExcluded = new Set<string>();
         for (const c of data.contacts) {
@@ -39,6 +70,9 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         }
         setExcluded(autoExcluded);
       }
+    },
+    onError: () => {
+      setSearchStep(null);
     },
   });
 
@@ -206,13 +240,34 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
           {search.isPending ? (
             <>
               <Spinner className="h-4 w-4" />
-              Recherche en cours... (IA + Fullenrich + INSEE)
+              {searchStep || "Recherche en cours..."}
             </>
           ) : (
             "Rechercher"
           )}
         </button>
       </form>
+
+      {/* Live search step indicator */}
+      {search.isPending && searchStep && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-3">
+            <Spinner className="h-5 w-5 text-blue-600" />
+            <div>
+              <p className="text-sm font-medium text-blue-900">{searchStep}</p>
+              {stepFilters && (
+                <div className="mt-2 text-xs text-blue-700 space-y-1">
+                  <p>{stepFilters.reasoning}</p>
+                  {stepFilters.named_competitors?.length > 0 && (
+                    <p className="font-medium">Concurrents identifiés : {stepFilters.named_competitors.join(", ")}</p>
+                  )}
+                  <p className="text-blue-400">Coût IA : ${stepFilters.cost.estimated_usd.toFixed(3)}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {search.isError && (

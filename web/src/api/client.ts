@@ -52,8 +52,26 @@ export interface SearchParams {
   location?: string;
   secteur?: string;
   limit?: number;
+  pre_filters?: SearchFiltersResult;
 }
 
+export interface SearchFiltersResult {
+  fullenrich_filters: Record<string, unknown>;
+  insee_filters: Record<string, string>;
+  reasoning: string;
+  named_competitors: string[];
+  cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
+}
+
+// Step 1: AI analyzes sector + generates filters (can take 3-8s with web search)
+export function searchFilters(params: { description: string; mode: string; location?: string; secteur?: string }) {
+  return request<SearchFiltersResult>("/search-filters", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// Step 2: Execute search with pre-computed filters (takes 3-8s)
 export function launchSearch(params: SearchParams) {
   return request<{
     contacts: Array<Record<string, string>>;

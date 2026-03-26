@@ -12,6 +12,7 @@ import {
   RECHERCHES_HEADERS,
   toRow,
 } from "./_sheets.js";
+import { callClaudeCombined, type EntreprisesGovFilters, type CombinedFilters } from "./_search-ai.js";
 
 interface SearchBody {
   description: string;
@@ -21,9 +22,18 @@ interface SearchBody {
   location?: string;
   secteur?: string;
   limit?: number;
+  // Pre-computed filters from /api/search-filters (step 1)
+  pre_filters?: {
+    fullenrich_filters: Record<string, unknown>;
+    insee_filters: EntreprisesGovFilters;
+    reasoning: string;
+    named_competitors: string[];
+    cost: CombinedFilters["cost"];
+  };
 }
 
-// ─── Combined prompt: generates BOTH Fullenrich + INSEE filters in 1 call ───
+// ─── Combined prompt + AI: see _search-ai.ts for shared version ───
+// Local copy kept for backward compatibility (direct search without split)
 
 function buildCombinedPrompt(mode: string, broad: boolean): string {
   const breadthInstruction = broad
@@ -555,9 +565,29 @@ export default async (request: Request) => {
       });
     }
 
-    // ─── 1. SINGLE Claude call with web search → Fullenrich + INSEE filters + reasoning ───
-    const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning, namedCompetitors, cost: aiCost } =
-      await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
+    // ─── 1. Get filters (from pre_filters if split, or call Claude directly) ───
+    let filters: Record<string, unknown>;
+    let entreprisesFilters: EntreprisesGovFilters;
+    let aiReasoning: string;
+    let namedCompetitors: string[];
+    let aiCost: CombinedFilters["cost"];
+
+    if (body.pre_filters) {
+      // Split mode: filters already computed by /api/search-filters
+      filters = body.pre_filters.fullenrich_filters;
+      entreprisesFilters = body.pre_filters.insee_filters;
+      aiReasoning = body.pre_filters.reasoning;
+      namedCompetitors = body.pre_filters.named_competitors ?? [];
+      aiCost = body.pre_filters.cost;
+    } else {
+      // Direct mode: call Claude here (backward compat)
+      const result = await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
+      filters = result.fullenrich;
+      entreprisesFilters = result.insee;
+      aiReasoning = result.reasoning;
+      namedCompetitors = result.namedCompetitors;
+      aiCost = result.cost;
+    }
 
     // Apply optional overrides (headcount, location)
     if (body.headcount_min || body.headcount_max) {

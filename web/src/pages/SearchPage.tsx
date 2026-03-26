@@ -45,7 +45,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       setStepFilters(filtersResult);
 
       // ─── Step 1b: If competitor search, web search for names (~5-8s) ───
-      const isCompetitorSearch = /concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(params.description);
+      const isCompetitorSearch = /concurrent|concurrents|similaire|comme\s+\w|alternative|\.com|\.fr|\.eu|\.io|\.net|\.org|https?:\/\//i.test(params.description);
       let enrichedFilters = filtersResult;
 
       if (isCompetitorSearch) {

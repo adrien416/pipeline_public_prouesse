@@ -93,24 +93,46 @@ npx netlify dev     # Dev server local
 
 ## 3. Ce qui fonctionne (tout est en production)
 
-### Pipeline de recherche (refonte session 6)
+### Pipeline de recherche (refonte session 6 — split en 3 etapes)
 ```
-1. callClaudeCombined (Sonnet 4.6 + web search)
-   → Comprend le business de l'entreprise cible (via web search si URL)
-   → Genere filtres Fullenrich (LinkedIn) + filtres INSEE (SIRENE) en 1 seul appel
-   → Retourne _reasoning + cout IA
-2. BOUCLE Search + Verify (jusqu'a targetCount contacts verifies) :
-   a. searchFullenrich(offset) → batch de 100 contacts bruts
-   b. searchEntreprisesGov() → contacts INSEE (dirigeants SIRENE)
-   c. Filtre regex titres (exclut Product Owner, CAC, auditeurs, etc.)
-   d. verifyBatch (Haiku, sans web search) → Claude verifie chaque entreprise
-      "CBRE = agence immo → exclu" / "CetteFamille = coliving seniors → garde"
-   e. Si pas assez → re-paginer Fullenrich (offset += 100), max 5 iterations
-3. Deduplication Fullenrich + INSEE
-4. Sauvegarde contacts verifies dans Google Sheets
+ÉTAPE 1 : POST /api/search-filters (~2-4s)
+   callClaudeCombined (Sonnet 4.6, PAS de web search)
+   → Genere filtres Fullenrich (LinkedIn) + filtres INSEE (SIRENE)
+   → Retourne _reasoning + cout IA + named_competitors (si recherche concurrents)
+
+ÉTAPE 1b (optionnelle) : POST /api/search-competitors (~5-8s)
+   Sonnet 4.6 + web search (max 2 recherches)
+   → Cherche le site de l'entreprise + "[nom] concurrents France"
+   → Retourne la liste des vrais concurrents trouves sur le web
+   → Declenche uniquement si "concurrent/similaire/.com/.fr" dans la description
+
+ÉTAPE 2 : POST /api/search (~3-8s)
+   Si named_competitors : chemin NOMME (recherche par nom, pas de verify)
+   Sinon : chemin INDUSTRIE (Fullenrich + verify + INSEE)
+   → Filtre regex titres (exclut Product Owner, CAC, auditeurs, etc.)
+   → Chemin industrie : verifyBatch (Haiku) verifie chaque entreprise
+   → Enrichissement IA des noms/domaines manquants (contacts INSEE)
+   → Deduplication + sauvegarde Google Sheets
+   → "Chercher plus" : append mode avec offset (continue la pagination)
 ```
 
-**Couts** : ~$0.03-0.05 par recherche sans URL, ~$0.05-0.15 avec URL + verification
+**Couts** : ~$0.01-0.03 par recherche generique, ~$0.05-0.15 avec recherche concurrents (web search)
+**Modeles** : Sonnet 4.6 (filtres + concurrents), Haiku 4.5 (verification + scoring + enrichissement noms)
+
+### Fichiers cles du pipeline de recherche
+| Fichier | Role |
+|---------|------|
+| `_search-ai.ts` | Prompt combine + callClaudeCombined (partage entre endpoints) |
+| `search-filters.ts` | POST /api/search-filters — Etape 1 : analyse IA |
+| `search-competitors.ts` | POST /api/search-competitors — Etape 1b : web search concurrents |
+| `search.ts` | POST /api/search — Etape 2 : Fullenrich + INSEE + verify + save |
+
+### Fonctionnalites recherche
+- **Resume search** : bouton "Voir" sur chaque recherche precedente charge les contacts
+- **Chercher plus** : bouton sous les resultats, append avec offset au meme recherche_id
+- **Statut live** : l'UI affiche l'etape en cours ("Analyse du secteur...", "Recherche web concurrents...", etc.)
+- **Cout IA** : affiche en temps reel a cote du raisonnement
+- **Cap cout** : $0.50 max par recherche (chemin industrie)
 **Modeles** : Sonnet 4.6 (filtres), Haiku 4.5 (verification + scoring)
 
 ### Pipeline complet (5 etapes)

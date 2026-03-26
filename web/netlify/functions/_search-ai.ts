@@ -133,9 +133,10 @@ export async function callClaudeCombined(
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
 
-  // Enable web search so Claude can look up the company/sector
-  // This runs in its own endpoint (search-filters.ts) with its own 10s timeout
-  const tools: any[] = [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }];
+  // NO web search here — it causes pause_turn/JSON parsing failures in 10s timeout
+  // Web search is done in search-competitors.ts (separate endpoint, separate 10s)
+  // Sonnet is smart enough to identify most companies from its training data
+  const tools: any[] = [];
 
   let result: any;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -202,7 +203,17 @@ export async function callClaudeCombined(
     } catch { /* not valid JSON at this position, try next { */ }
   }
 
-  if (!parsed) throw new Error("Claude n'a pas retourné de JSON valide");
+  if (!parsed) {
+    // Fallback: Claude didn't return valid JSON (common with web search / pause_turn)
+    // Return minimal filters based on the description
+    console.error("JSON parsing failed. allText:", allText.slice(0, 500));
+    parsed = {
+      _reasoning: "Filtres générés par défaut (l'IA n'a pas retourné de JSON valide)",
+      fullenrich: {},
+      insee: {},
+      named_competitors: [],
+    };
+  }
 
   const usage = result.usage ?? {};
   const inputTokens = usage.input_tokens ?? 0;

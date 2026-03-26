@@ -178,12 +178,34 @@ export async function callClaudeCombined(
   const textBlocks = (result.content ?? [])
     .filter((block: any) => block.type === "text")
     .map((block: any) => block.text)
-    .join("");
+    .join("\n");
 
-  const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Claude n'a pas retourné de JSON valide");
+  // Find the JSON block containing our filters — try each { } match and parse
+  let parsed: any = null;
+  const braceMatches = textBlocks.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g) ?? [];
+  for (const match of braceMatches.reverse()) {
+    try {
+      const candidate = JSON.parse(match);
+      if (candidate.fullenrich || candidate._reasoning || candidate.insee) {
+        parsed = candidate;
+        break;
+      }
+    } catch { /* not valid JSON, skip */ }
+  }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  // Fallback: try greedy match on the last text block
+  if (!parsed) {
+    const lastText = (result.content ?? [])
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text)
+      .pop() ?? "";
+    const jsonMatch = lastText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[0]); } catch { /* ignore */ }
+    }
+  }
+
+  if (!parsed) throw new Error("Claude n'a pas retourné de JSON valide");
 
   const usage = result.usage ?? {};
   const inputTokens = usage.input_tokens ?? 0;

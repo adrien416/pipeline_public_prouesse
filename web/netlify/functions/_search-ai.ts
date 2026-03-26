@@ -133,11 +133,9 @@ export async function callClaudeCombined(
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
 
-  // Enable web search when description mentions a company, URL, or competitor search
-  const needsWebSearch = /https?:\/\/|concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(description);
-  const tools: any[] = needsWebSearch
-    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]
-    : [];
+  // NO web search in this call — too slow for 10s Netlify timeout
+  // Web search is done in a separate step (search-competitors.ts)
+  const tools: any[] = [];
 
   let result: any;
   for (let attempt = 0; attempt < 3; attempt++) {

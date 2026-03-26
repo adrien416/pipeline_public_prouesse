@@ -63,9 +63,21 @@ export interface SearchFiltersResult {
   cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
 }
 
-// Step 1: AI analyzes sector + generates filters (can take 3-8s with web search)
+// Step 1: AI analyzes sector + generates filters (~2-3s, no web search)
 export function searchFilters(params: { description: string; mode: string; location?: string; secteur?: string }) {
   return request<SearchFiltersResult>("/search-filters", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// Step 1b (optional): Web search to find named competitors (~5-8s)
+export function searchCompetitors(params: { description: string; reasoning: string }) {
+  return request<{
+    competitors: string[];
+    reasoning: string;
+    cost: { estimated_usd: number; web_searches: number };
+  }>("/search-competitors", {
     method: "POST",
     body: JSON.stringify(params),
   });

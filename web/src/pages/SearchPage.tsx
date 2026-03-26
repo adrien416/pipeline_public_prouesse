@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchSearch, searchFilters, excludeContacts, fetchRecherches } from "../api/client";
+import { launchSearch, searchFilters, searchCompetitors, excludeContacts, fetchRecherches } from "../api/client";
 import type { SearchParams, SearchFiltersResult } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
@@ -29,7 +29,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
 
   const search = useMutation({
     mutationFn: async (params: SearchParams) => {
-      // Step 1: AI analysis (separate endpoint, can take 3-8s with web search)
+      // ─── Step 1: AI generates filters (Sonnet, no web search, ~2-3s) ───
       setSearchStep("Analyse du secteur par l'IA...");
       setStepFilters(null);
 
@@ -42,19 +42,44 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
 
       setStepFilters(filtersResult);
 
-      // Show what we found
-      const competitors = filtersResult.named_competitors ?? [];
-      if (competitors.length > 0) {
-        setSearchStep(`Recherche de ${competitors.length} concurrents : ${competitors.slice(0, 3).join(", ")}...`);
-      } else {
-        setSearchStep("Recherche de contacts sur Fullenrich + INSEE...");
+      // ─── Step 1b: If competitor search, web search for names (~5-8s) ───
+      const isCompetitorSearch = /concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(params.description);
+      let enrichedFilters = filtersResult;
+
+      if (isCompetitorSearch) {
+        setSearchStep("Recherche web des concurrents...");
+        try {
+          const competitorResult = await searchCompetitors({
+            description: params.description,
+            reasoning: filtersResult.reasoning,
+          });
+          if (competitorResult.competitors.length > 0) {
+            enrichedFilters = {
+              ...filtersResult,
+              named_competitors: competitorResult.competitors,
+              reasoning: competitorResult.reasoning || filtersResult.reasoning,
+              cost: {
+                ...filtersResult.cost,
+                estimated_usd: filtersResult.cost.estimated_usd + competitorResult.cost.estimated_usd,
+                web_searches: (filtersResult.cost.web_searches ?? 0) + competitorResult.cost.web_searches,
+              },
+            };
+            setStepFilters(enrichedFilters);
+            setSearchStep(`${competitorResult.competitors.length} concurrents trouvés : ${competitorResult.competitors.slice(0, 3).join(", ")}...`);
+          }
+        } catch (err) {
+          console.error("Competitor search failed (non-blocking):", err);
+        }
       }
 
-      // Step 2: Execute search + enrich missing names/domains
-      setSearchStep("Recherche et enrichissement des contacts...");
+      // ─── Step 2: Execute search with filters (~3-8s) ───
+      setSearchStep(enrichedFilters.named_competitors?.length > 0
+        ? "Recherche des dirigeants des concurrents..."
+        : "Recherche de contacts sur Fullenrich + INSEE...");
+
       const result = await launchSearch({
         ...params,
-        pre_filters: filtersResult,
+        pre_filters: enrichedFilters,
       });
 
       setSearchStep(null);

@@ -144,8 +144,8 @@ async function callClaudeCombined(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 2048,
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
         system: systemPrompt,
         tools: tools.length > 0 ? tools : undefined,
         messages: [{
@@ -188,7 +188,8 @@ async function callClaudeCombined(
   const outputTokens = usage.output_tokens ?? 0;
   const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
   // Sonnet 4.6: $3/M input, $15/M output, $0.01/web search
-  const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000) + (webSearches * 0.01);
+  // Haiku 4.5: $1/M input, $5/M output, $0.01/web search
+  const estimatedUsd = (inputTokens * 1 / 1_000_000) + (outputTokens * 5 / 1_000_000) + (webSearches * 0.01);
 
   return {
     fullenrich: parsed.fullenrich ?? parsed,
@@ -312,7 +313,8 @@ Réponds UNIQUEMENT avec un JSON :
     const inputTokens = usage.input_tokens ?? 0;
     const outputTokens = usage.output_tokens ?? 0;
     const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
-    const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000) + (webSearches * 0.01);
+    // Haiku 4.5: $1/M input, $5/M output, $0.01/web search
+  const estimatedUsd = (inputTokens * 1 / 1_000_000) + (outputTokens * 5 / 1_000_000) + (webSearches * 0.01);
 
     console.log(`verifyBatch: ${contacts.length} → ${keepIndices.length} kept (${webSearches} web searches, $${estimatedUsd.toFixed(4)})`);
 
@@ -793,22 +795,24 @@ export default async (request: Request) => {
       await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
     }
 
-    // Cross-reference with previously scored contacts that failed (score_total < 7)
+    // Cross-reference with previously scored contacts (skip for named path to save time)
     let previouslyFailedDomains: Record<string, { score: number; raison: string }> = {};
-    try {
-      const allContacts = await readAll("Contacts");
-      const userContacts = allContacts.filter(c => c.user_id === auth.userId);
-      for (const c of userContacts) {
-        const score = parseFloat(c.score_total);
-        if (!isNaN(score) && score < 7 && c.domaine) {
-          const domain = c.domaine.toLowerCase();
-          if (!previouslyFailedDomains[domain] || score > previouslyFailedDomains[domain].score) {
-            previouslyFailedDomains[domain] = { score, raison: c.score_raison || "" };
+    if (namedCompetitors.length === 0) {
+      try {
+        const allContacts = await readAll("Contacts");
+        const userContacts = allContacts.filter(c => c.user_id === auth.userId);
+        for (const c of userContacts) {
+          const score = parseFloat(c.score_total);
+          if (!isNaN(score) && score < 7 && c.domaine) {
+            const domain = c.domaine.toLowerCase();
+            if (!previouslyFailedDomains[domain] || score > previouslyFailedDomains[domain].score) {
+              previouslyFailedDomains[domain] = { score, raison: c.score_raison || "" };
+            }
           }
         }
+      } catch (e) {
+        console.error("Error cross-referencing previous scores:", e);
       }
-    } catch (e) {
-      console.error("Error cross-referencing previous scores:", e);
     }
 
     return json({

@@ -108,11 +108,21 @@ beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   process.env.FULLENRICH_API_KEY = "test-key";
 
-  // Default mock: Anthropic returns combined filters, Fullenrich returns 1 result, API Entreprises returns results
-  globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+  // Default mock: Anthropic returns combined filters OR verify results, Fullenrich returns 1 result
+  let anthropicCallIdx = 0;
+  globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 
     if (urlStr.includes("anthropic")) {
+      anthropicCallIdx++;
+      // First call = combined filters, subsequent calls = verifyBatch
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const isVerify = bodyStr.includes("GARDE si") || bodyStr.includes("EXCLUS si");
+      if (isVerify) {
+        return new Response(JSON.stringify({
+          content: [{ type: "text", text: '{"keep": [1], "reasoning": "test verify"}' }],
+        }));
+      }
       return new Response(JSON.stringify({
         content: [{
           type: "text",
@@ -200,8 +210,8 @@ describe("search handler — success", () => {
       makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
     );
 
-    // 1 Anthropic call (combined filters) and 1 Fullenrich call
-    expect(countCalls("anthropic")).toBe(1);
+    // 2 Anthropic calls (combined filters + verify batch) and 1 Fullenrich call
+    expect(countCalls("anthropic")).toBe(2);
     expect(countCalls("fullenrich")).toBe(1);
   });
 
@@ -225,9 +235,13 @@ describe("search handler — success", () => {
 describe("search handler — auto-retry", () => {
   it("retries with broader filters when first search returns 0, and succeeds", async () => {
     let fullenrichCallCount = 0;
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
+        }
         return new Response(JSON.stringify({
           content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries": [{"value": "Environmental Services"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
@@ -255,7 +269,7 @@ describe("search handler — auto-retry", () => {
     expect(body.retried).toBe(true);
     expect(body.originalFilters).toBeDefined();
     expect(body.suggestions).toEqual([]);
-    // 2 Anthropic calls (combined + broad retry combined) + 2 Fullenrich calls
+    // 2 Anthropic calls (combined + broad retry) + 2 Fullenrich calls (no verify since retry path skips it)
     expect(countCalls("anthropic")).toBe(2);
     expect(fullenrichCallCount).toBe(2);
   });
@@ -437,7 +451,11 @@ describe("search handler — Claude context", () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
-        claudeCallBody = init?.body as string ?? "";
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
+        }
+        claudeCallBody = bodyStr;
         return new Response(JSON.stringify({
           content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));

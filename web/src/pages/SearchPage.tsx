@@ -359,8 +359,15 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 const inseeCount = search.data!.contacts.filter(c => c.source === "entreprises_gouv").length;
                 const inseeDebug = (search.data as any)?.entreprises_debug;
                 const inseeError = inseeDebug && inseeDebug.status !== "ok";
+                const verification = (search.data as any)?.verification;
                 return (
                   <div className="text-xs mt-0.5 space-y-0.5">
+                    {verification && verification.raw_count > verification.verified_count && (
+                      <p className="text-green-700">
+                        {verification.verified_count} vérifiés sur {verification.raw_count} bruts par l'IA
+                        {verification.reasoning && <span className="text-gray-500 ml-1">— {verification.reasoning.slice(0, 150)}</span>}
+                      </p>
+                    )}
                     <p>
                       <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>
                       <span className={`inline-block px-1.5 py-0.5 rounded-full ${inseeError ? "bg-red-100 text-red-700" : inseeCount > 0 ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-500"}`}>

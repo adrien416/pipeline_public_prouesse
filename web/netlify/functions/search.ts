@@ -216,6 +216,111 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
   return data.results ?? data.people ?? data.data ?? [];
 }
 
+// ─── Verify batch: Claude checks each company with web search ───
+
+interface VerifyResult {
+  keepIndices: number[];
+  reasoning: string;
+  cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
+}
+
+async function verifyBatch(
+  description: string,
+  aiReasoning: string,
+  contacts: Array<{ entreprise: string; titre: string; domaine: string; secteur: string }>,
+): Promise<VerifyResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || contacts.length === 0) return { keepIndices: [], reasoning: "", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
+
+  const contactList = contacts.map((c, i) =>
+    `${i + 1}. ${c.entreprise} — ${c.titre} [${c.domaine || "?"}] (${c.secteur || "?"})`
+  ).join("\n");
+
+  const prompt = `L'utilisateur cherche : "${description}"
+Analyse initiale : ${aiReasoning}
+
+Voici ${contacts.length} entreprises trouvées. Pour CHAQUE entreprise, vérifie si c'est un concurrent PERTINENT.
+
+GARDE si :
+- L'entreprise fait le MÊME type d'activité que celle décrite dans l'analyse
+- C'est une PME/startup indépendante
+- Le dirigeant est bien un décideur (CEO, Founder, DG, Président, Gérant)
+
+EXCLUS si :
+- L'entreprise n'a RIEN À VOIR avec le secteur (ex: agence immobilière classique pour un concurrent de coliving seniors)
+- C'est une filiale d'un grand groupe / CAC40 / multinationale
+- C'est un cabinet d'audit, de conseil, une banque d'affaires, un fonds d'investissement
+- Le titre n'est pas un vrai dirigeant (consultant, analyste, manager intermédiaire)
+
+Si tu ne connais pas une entreprise, UTILISE LE WEB SEARCH sur son domaine pour vérifier ce qu'elle fait.
+
+ENTREPRISES :
+${contactList}
+
+Réponds UNIQUEMENT avec un JSON :
+{"keep": [1, 3, 5], "reasoning": "Explication courte des exclusions principales"}`;
+
+  try {
+    let result: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1024,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (response.status === 429) {
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      if (!response.ok) break;
+      result = await response.json();
+      break;
+    }
+
+    if (!result) return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification indisponible (rate limit)", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
+
+    // Extract text from response (may contain web_search results + text blocks)
+    const textBlocks = (result.content ?? [])
+      .filter((block: any) => block.type === "text")
+      .map((block: any) => block.text)
+      .join("");
+
+    const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification: pas de JSON", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const keepNumbers: number[] = parsed.keep ?? [];
+    const keepIndices = keepNumbers.map((n: number) => n - 1).filter((i: number) => i >= 0 && i < contacts.length);
+
+    const usage = result.usage ?? {};
+    const inputTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
+    const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000) + (webSearches * 0.01);
+
+    console.log(`verifyBatch: ${contacts.length} → ${keepIndices.length} kept (${webSearches} web searches, $${estimatedUsd.toFixed(4)})`);
+
+    return {
+      keepIndices,
+      reasoning: parsed.reasoning ?? "",
+      cost: { input_tokens: inputTokens, output_tokens: outputTokens, web_searches: webSearches, estimated_usd: Math.round(estimatedUsd * 10000) / 10000 },
+    };
+  } catch (err) {
+    console.error("verifyBatch error:", err);
+    return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification: erreur", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
+  }
+}
+
 // ─── API Recherche d'Entreprises (INSEE/SIRENE — gratuit, sans clé) ───
 
 interface EntreprisesGovFilters {
@@ -458,12 +563,14 @@ export default async (request: Request) => {
       ];
     }
 
-    // ─── 3. Search loop: fetch until we have enough QUALIFIED contacts ───
+    // ─── 3. Search + Verify loop ───
     const targetCount = body.limit ?? 100;
-    const maxIterations = 5; // Safety: max 5 Fullenrich pages
-    const batchSize = Math.min(targetCount, 100); // Fullenrich max per call
-    let allFullenrichRaw: unknown[] = [];
+    const maxIterations = 5;
+    const batchSize = Math.min(targetCount, 100);
     let fullenrichOffset = 0;
+    let totalRawCount = 0;
+    const totalCost = { ...aiCost };
+    let verifyReasons: string[] = [];
 
     // First: get INSEE results (one-shot, supplementary)
     const entreprisesLimit = Math.min(Math.ceil(targetCount * 0.3), 50);
@@ -475,33 +582,70 @@ export default async (request: Request) => {
     const entreprisesContacts = entreprisesGovResult.contacts;
     const entreprisesDebug = entreprisesGovResult.debug;
 
-    // Loop: fetch Fullenrich pages until we have enough qualified contacts
-    let results: unknown[] = [];
+    // Loop: fetch → filter titles → verify with AI → accumulate
+    let verifiedResults: unknown[] = [];
+    const seenCompanies = new Set<string>(); // dedup across iterations
+
     for (let iteration = 0; iteration < maxIterations; iteration++) {
       const batch = await searchFullenrich(
         { ...filters, offset: fullenrichOffset },
         batchSize,
       );
-      allFullenrichRaw.push(...batch);
+      totalRawCount += batch.length;
       fullenrichOffset += batch.length;
 
-      // Deduplicate + filter titles on ALL accumulated results
-      results = deduplicateResults(allFullenrichRaw, entreprisesContacts);
-      results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+      // Tag + filter titles
+      const tagged = batch.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
+      const titleFiltered = tagged.filter((r: any) => {
+        const title = r.employment?.current?.title ?? "";
+        return !EXCLUDED_TITLES.test(title);
+      });
 
-      console.log(`Search iteration ${iteration + 1}: ${allFullenrichRaw.length} raw → ${results.length} qualified (target: ${targetCount})`);
+      // Dedup within this batch (skip already-seen companies)
+      const newContacts = titleFiltered.filter((r: any) => {
+        const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
+        if (company && seenCompanies.has(company)) return false;
+        if (company) seenCompanies.add(company);
+        return true;
+      });
 
-      // Stop if we have enough, or Fullenrich returned less than a full batch (no more results)
-      if (results.length >= targetCount || batch.length < batchSize) break;
+      // Verify with AI in chunks of 20
+      for (let i = 0; i < newContacts.length; i += 20) {
+        const chunk = newContacts.slice(i, i + 20);
+        const contactsForVerify = chunk.map((r: any) => ({
+          entreprise: r.employment?.current?.company?.name ?? "",
+          titre: r.employment?.current?.title ?? "",
+          domaine: r.employment?.current?.company?.domain ?? "",
+          secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+        }));
+
+        const { keepIndices, reasoning, cost } = await verifyBatch(
+          body.description, aiReasoning, contactsForVerify,
+        );
+
+        for (const idx of keepIndices) {
+          verifiedResults.push(chunk[idx]);
+        }
+        if (reasoning) verifyReasons.push(reasoning);
+        totalCost.input_tokens += cost.input_tokens;
+        totalCost.output_tokens += cost.output_tokens;
+        totalCost.web_searches += cost.web_searches;
+        totalCost.estimated_usd += cost.estimated_usd;
+      }
+
+      console.log(`Search iteration ${iteration + 1}: ${totalRawCount} raw → ${verifiedResults.length} verified (target: ${targetCount})`);
+
+      if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
     }
 
-    // Trim to target
+    // Add INSEE contacts (already filtered by dirigeant type)
+    let results = deduplicateResults(verifiedResults, entreprisesContacts);
     results = results.slice(0, targetCount);
 
     // ─── 4. Auto-retry with broader filters if 0 Fullenrich results ───
     let retried = false;
     let originalFilters: Record<string, unknown> | undefined;
-    if (allFullenrichRaw.length === 0) {
+    if (totalRawCount === 0) {
       originalFilters = { ...filters };
       const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
       if (body.headcount_min || body.headcount_max) {
@@ -594,7 +738,12 @@ export default async (request: Request) => {
       contacts,
       filters,
       ai_reasoning: aiReasoning,
-      ai_cost: aiCost,
+      ai_cost: totalCost,
+      verification: {
+        raw_count: totalRawCount,
+        verified_count: verifiedResults.length,
+        reasoning: verifyReasons.join(" | "),
+      },
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,

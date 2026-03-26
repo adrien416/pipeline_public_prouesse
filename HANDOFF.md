@@ -1,12 +1,22 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Mis a jour le : 2026-03-24*
+*Mis a jour le : 2026-03-26*
+
+## 0. Pour demarrer immediatement
+```bash
+git checkout claude/build-prospecting-pipeline-bEApO   # Branche active
+cd web
+npm install
+npm test            # 108 tests doivent passer
+npx netlify dev     # Dev server local
+```
+**Branche de production Netlify** : `claude/build-prospecting-pipeline-bEApO` (configuree dans Netlify → Build & deploy → Production branch)
 
 ## 1. Snapshot du projet
-- **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. L'outil permet de rechercher des dirigeants d'entreprises (via Fullenrich), de les scorer par IA selon des criteres de scalabilite/impact ou cession, d'enrichir leurs emails, puis d'envoyer des campagnes email personnalisees — le tout depuis une interface web.
+- **Nom & objectif** : Pipeline de prospection outbound automatise pour Prouesse. Recherche de dirigeants d'entreprises (Fullenrich + INSEE/SIRENE), scoring IA, enrichissement email, envoi campagnes — tout depuis une interface web.
 - **Proprietaire** : Adrien Pannetier — Prouesse (brand lie a Leveo / Lina Capital)
-- **Stack** : React 19 + TypeScript + Vite 7 (frontend), Netlify Functions (backend serverless), Google Sheets (BDD), Anthropic Claude API (IA), Fullenrich API (recherche + enrichissement email), Brevo SMTP (envoi emails)
+- **Stack** : React 19 + TypeScript + Vite 7 (frontend), Netlify Functions (backend serverless), Google Sheets (BDD), Anthropic Claude API (IA), Fullenrich API (recherche + enrichissement email), API Recherche d'Entreprises gouv.fr (INSEE/SIRENE, gratuit sans cle), Brevo SMTP (envoi emails)
 - **Repo** : `adrien416/ClayAvecClaude` — branche active : `claude/build-prospecting-pipeline-bEApO`
-- **Deploy** : Netlify (auto-deploy depuis le repo). URL : `https://pipeline-prospection.netlify.app`. Build : `npm run build` dans `/web`, publie `/web/dist`
+- **Deploy** : Netlify (auto-deploy depuis branche feature). URL : `https://pipeline-prospection.netlify.app`. Build : `npm run build` dans `/web`, publie `/web/dist`
 
 ## 2. Architecture
 
@@ -30,7 +40,7 @@
 │   ├── netlify/functions/        # Backend serverless (Netlify Functions)
 │   │   ├── _auth.ts              # Auth : login JWT, verification token, helper json()
 │   │   ├── _sheets.ts            # CRUD Google Sheets (readAll, appendRow/appendRows, batchUpdateRows, findRowById, readRawRange, colLetter, getHeadersForWrite avec auto-sync colonnes)
-│   │   ├── search.ts             # POST /api/search — Claude Haiku traduit description → filtres Fullenrich → sauvegarde contacts
+│   │   ├── search.ts             # POST /api/search — Sonnet 4.6 + web search → filtres Fullenrich/INSEE → verifyBatch → sauvegarde
 │   │   ├── score.ts              # POST /api/score — scoring IA par contact (reutilise le score si meme entreprise)
 │   │   ├── enrich.ts             # POST /api/enrich — enrichissement email via Fullenrich bulk API
 │   │   ├── contacts.ts           # CRUD /api/contacts — lecture, creation, mise a jour, exclusion en masse
@@ -52,9 +62,10 @@
 ### Services externes connectes
 | Service | Usage | Fichier |
 |---------|-------|---------|
-| **Anthropic Claude API** | Traduction description → filtres (Haiku), scoring contacts (Haiku), generation phrase perso (Haiku) | `search.ts`, `score.ts`, `send.ts`, `generate-phrases.ts` |
+| **Anthropic Claude API** | Filtres recherche (Sonnet 4.6 + web search), verification contacts (Haiku), scoring (Haiku), phrases perso (Haiku) | `search.ts`, `score.ts`, `send.ts`, `generate-phrases.ts` |
 | **Fullenrich API** | Recherche de personnes v2 (`/api/v2/people/search`), enrichissement email bulk v1 (`/api/v1/contact/enrich/bulk`), credits (`/api/v1/account/credits`) | `search.ts`, `enrich.ts`, `credits.ts` |
-| **Google Sheets API** | Base de donnees : onglets Contacts, Recherches, Campagnes, EmailLog, Fonds, Scoring | `_sheets.ts` |
+| **API Recherche d'Entreprises** | Base SIRENE/INSEE. Gratuit, sans cle, 7 req/s. Recherche par secteur NAF (A-U), departement, categorie PME/ETI/GE | `search.ts` |
+| **Google Sheets API** | Base de donnees : onglets Contacts, Recherches, Campagnes, EmailLog, Users | `_sheets.ts` |
 | **Brevo SMTP API** | Envoi d'emails transactionnels reels | `send.ts` |
 | **Brevo Webhooks** | Tracking opens, clicks, bounces, unsubscribes → mise a jour EmailLog + Campagnes | `webhook-brevo.ts` |
 
@@ -69,28 +80,45 @@
 | `LOGIN_PASSWORD_HASH` | Hash bcrypt du mot de passe admin |
 | `BREVO_API_KEY` | Cle API Brevo (envoi emails) |
 | `BREVO_WEBHOOK_SECRET` | Secret pour authentifier les webhooks Brevo |
+| `LOGIN_EMAIL` | Email admin (fallback: adrien@prouesse.vc) |
+| `SENDER_EMAIL` | Email expediteur Brevo |
+| `SENDER_NAME` | Nom expediteur |
 
 ### Schema Google Sheets
-- **Contacts** (25 colonnes) : id, nom, prenom, email, entreprise, titre, domaine, secteur, linkedin, telephone, statut, enrichissement_status, enrichissement_retry, score_1, score_2, score_total, score_raison, score_feedback, recherche_id, campagne_id, email_status, email_sent_at, phrase_perso, date_creation, date_modification
-- **Recherches** : id, description, mode, filtres_json, nb_resultats, date
-- **Campagnes** (19 colonnes) : id, nom, recherche_id, template_sujet, template_corps, mode, status, max_par_jour, jours_semaine, heure_debut, heure_fin, intervalle_min, total_leads, sent, opened, clicked, replied, bounced, date_creation
+- **Contacts** (27 colonnes) : id, nom, prenom, email, entreprise, titre, domaine, secteur, linkedin, telephone, statut, enrichissement_status, enrichissement_retry, score_1, score_2, score_total, score_raison, score_feedback, recherche_id, campagne_id, email_status, email_sent_at, phrase_perso, source, date_creation, date_modification, user_id
+- **Recherches** (7 colonnes) : id, description, mode, filtres_json, nb_resultats, date, user_id
+- **Campagnes** (21 colonnes) : id, nom, recherche_id, template_sujet, template_corps, mode, status, max_par_jour, jours_semaine, heure_debut, heure_fin, intervalle_min, total_leads, sent, opened, clicked, replied, bounced, date_creation, user_id, user_role
 - **EmailLog** : id, campagne_id, contact_id, brevo_message_id, status, sent_at, opened_at, clicked_at, replied_at
+- **Users** : id, email, password_hash, nom, role (admin/user/demo), sender_email, sender_name
 
 ## 3. Ce qui fonctionne (tout est en production)
 
-### Pipeline complet
-1. **Recherche** : Description en francais → Claude traduit en filtres LinkedIn anglais → Fullenrich v2 → sauvegarde contacts en Google Sheets. Auto-retry avec filtres elargis quand 0 resultats.
-2. **Scoring IA** : Chaque contact est score par Claude Haiku (scalabilite + impact OU impact_env + signaux_vente). **Reutilisation automatique du score pour les contacts de la meme entreprise** (meme domaine) — evite les appels IA redondants.
-3. **Enrichissement email** : Fullenrich bulk API. Tous les contacts qualifies (score >= 7) sont enrichis en une seule requete. Gestion des retries, timeouts, et contacts bloques.
-4. **Campagne email** :
-   - **Nommage** : Chaque campagne a un nom editable
-   - **Multi-campagne** : Plusieurs campagnes par recherche, liste des campagnes existantes visible
-   - **Protection doublons** : Les contacts dont le domaine a deja ete contacte dans une autre campagne sont automatiquement exclus (warning affiche)
-   - **Phrases IA** : Generees automatiquement a l'ouverture de la page campagne
-   - **Envoi reel** : Brevo SMTP envoie les emails pour de vrai (pas de simulation)
-   - **Envoi en boucle** : "Envoyer maintenant" envoie TOUS les emails queued avec barre de progression
-   - **Verification plage horaire** : send.ts verifie le jour de la semaine et la plage horaire avant chaque envoi
-5. **Analytics** : Dashboard multi-campagne avec selecteur dropdown, tableau recapitulatif de toutes les campagnes, metriques (sent, delivery, open, click, reply, bounce), graphe quotidien
+### Pipeline de recherche (refonte session 6)
+```
+1. callClaudeCombined (Sonnet 4.6 + web search)
+   → Comprend le business de l'entreprise cible (via web search si URL)
+   → Genere filtres Fullenrich (LinkedIn) + filtres INSEE (SIRENE) en 1 seul appel
+   → Retourne _reasoning + cout IA
+2. BOUCLE Search + Verify (jusqu'a targetCount contacts verifies) :
+   a. searchFullenrich(offset) → batch de 100 contacts bruts
+   b. searchEntreprisesGov() → contacts INSEE (dirigeants SIRENE)
+   c. Filtre regex titres (exclut Product Owner, CAC, auditeurs, etc.)
+   d. verifyBatch (Haiku, sans web search) → Claude verifie chaque entreprise
+      "CBRE = agence immo → exclu" / "CetteFamille = coliving seniors → garde"
+   e. Si pas assez → re-paginer Fullenrich (offset += 100), max 5 iterations
+3. Deduplication Fullenrich + INSEE
+4. Sauvegarde contacts verifies dans Google Sheets
+```
+
+**Couts** : ~$0.03-0.05 par recherche sans URL, ~$0.05-0.15 avec URL + verification
+**Modeles** : Sonnet 4.6 (filtres), Haiku 4.5 (verification + scoring)
+
+### Pipeline complet (5 etapes)
+1. **Recherche** : voir ci-dessus. Limite = contacts VERIFIES (pas bruts). Web search + verification IA.
+2. **Scoring IA** : Chaque contact score par Haiku (scalabilite + impact OU cession). Reutilisation du score par domaine.
+3. **Enrichissement email** : Fullenrich bulk API + cascade INSEE (si pas de LinkedIn, cherche via Fullenrich search puis re-enrichit).
+4. **Campagne email** : Multi-campagne, protection doublons domaine, phrases IA, envoi Brevo reel, plage horaire.
+5. **Analytics** : Dashboard multi-campagne, metriques, graphe quotidien.
 
 ### Fonctionnalites transversales
 - **Google Sheets persistence** : `getHeadersForWrite` synchronise automatiquement les nouvelles colonnes du code vers la sheet. `colLetter()` supporte >26 colonnes (AA, AB...).
@@ -100,16 +128,33 @@
 
 ## 4. Historique des changements
 
+### Session 6 (2026-03-26) — Refonte recherche
+
+13. **Remplacement Pappers → API Recherche d'Entreprises gouv.fr** : Pappers necessitait une API key + compte. Remplace par l'API gratuite du gouvernement (recherche-entreprises.api.gouv.fr). Sans cle, sans compte, 7 req/s illimite. Donnees SIRENE + RNE.
+
+14. **Refonte pipeline recherche — 1 seul appel Claude** : Avant : 3-5 appels Claude sequentiels (Haiku) = 5-15s + 429. Apres : 1 appel Sonnet 4.6 + web search qui genere les filtres Fullenrich ET INSEE en 1 seul JSON. -36% de code (905 → 575 lignes).
+
+15. **Claude web search** : Quand la description contient une URL, Claude utilise le tool `web_search_20250305` (Brave Search, $0.01/search) pour comprendre le business reel de l'entreprise. Remplace `fetchSiteContext` qui etait bloque par le proxy Netlify.
+
+16. **Verification IA post-recherche** : `verifyBatch()` — Claude Haiku verifie chaque contact apres la recherche. Exclut les non-concurrents, filiales de groupes, agences classiques. Integre dans la boucle de pagination (re-fetch si trop d'exclusions).
+
+17. **Filtre titres non-dirigeants** : Regex exclut automatiquement Product Owner, Commissaire aux comptes, Developer, Designer, Consultant, etc.
+
+18. **Limite = contacts verifies** : Le champ "Nb resultats" controle le nombre de contacts POST-verification, pas les bruts.
+
+19. **Auto-expand Google Sheets** : `ensureGridSize()` agrandit automatiquement la sheet quand elle est pleine (+500 lignes buffer). Plus de crash "Range exceeds grid limits".
+
+20. **Multi-user + demo** : Roles admin/user/demo dans la sheet Users. Mode demo avec contacts simules (mix Fullenrich + INSEE). Hash bcrypt pour le mot de passe demo.
+
+21. **Affichage cout IA** : Chaque recherche affiche le cout estimé ($X.XXX) a cote du raisonnement IA.
+
+22. **Messages d'erreur explicites** : Plus de "Erreur interne" generique — le vrai message d'erreur est affiche dans l'UI.
+
 ### Session 5 (2026-03-24)
 
-11. **Limite resultats 100 → 500** (`36449c9`) — Le champ "Nb resultats" avait un `max="100"` en dur. Augmente a 500.
+11. **Limite resultats 100 → 500** (`36449c9`)
 
-12. **Flag et auto-exclusion des entreprises deja scorees** (`1444aac`) — Quand une recherche retourne des entreprises deja scorees < 7/10 dans des recherches precedentes :
-    - Backend : cross-reference les domaines des nouveaux resultats avec les contacts existants de l'utilisateur ayant un `score_total < 7`
-    - Frontend : auto-exclure ces contacts a l'arrivee des resultats (ajoutes au set `excluded`)
-    - Badge ambre "Deja score X/10" sur chaque contact concerne (avec raison au survol)
-    - L'utilisateur peut forcer l'inclusion en cliquant "+" (bouton ambre au lieu de gris)
-    - Compteur en header : "— N deja vus (score < 7)"
+12. **Flag et auto-exclusion des entreprises deja scorees** (`1444aac`)
 
 ### Session 4 (2026-03-22)
 
@@ -149,7 +194,7 @@
 
 ## 5. Decisions non evidentes
 
-- **Haiku pour tout** : Tous les modeles utilisent `claude-haiku-4-5-20251001`. Rapide et pas cher.
+- **Sonnet pour les filtres, Haiku pour le reste** : `callClaudeCombined` utilise Sonnet 4.6 (raisonnement complexe + web search). Verification, scoring, phrases utilisent Haiku 4.5 (rapide, pas cher).
 - **1 contact par appel API send** : Chaque appel a `/api/send` envoie 1 email (contrainte timeout Netlify 26s). Le frontend boucle cote client.
 - **Google Sheets comme BDD** : Choix delibere pour que le client puisse voir/editer les donnees directement.
 - **`values.update` au lieu de `values.append`** : Evite les lignes fantomes de Google Sheets.

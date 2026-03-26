@@ -10,8 +10,6 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const MAX_PER_CALL = 1;
-
 interface ScoreBody {
   recherche_id: string;
   mode?: string; // optional — frontend can send it to skip Recherches lookup
@@ -58,7 +56,10 @@ function buildLeveePrompt(contact: Record<string, string>, metaDesc: string): st
   return `Tu es un analyste spécialisé en levées de fonds pour des entreprises à impact.
 
 Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
+Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
 Description du site : ${metaDesc || "Non disponible"}
+
+Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
 
 Évalue sur 2 critères :
 1. SCALABILITÉ (1-5) : business scalable ? Potentiel de croissance rapide ?
@@ -81,7 +82,10 @@ function buildCessionPrompt(contact: Record<string, string>, metaDesc: string): 
   return `Tu es un analyste M&A spécialisé en cessions d'entreprises à impact.
 
 Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
+Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
 Description du site : ${metaDesc || "Non disponible"}
+
+Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
 
 Évalue sur 2 critères :
 1. IMPACT ENVIRONNEMENTAL (1-5) : l'activité de l'entreprise contribue-t-elle positivement à l'environnement ou à la société ?

@@ -108,16 +108,31 @@ beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   process.env.FULLENRICH_API_KEY = "test-key";
 
-  // Default mock: Anthropic returns filters, Fullenrich returns 1 result, API Entreprises returns results
-  globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+  // Default mock: Anthropic returns combined filters OR verify results, Fullenrich returns 1 result
+  let anthropicCallIdx = 0;
+  globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 
     if (urlStr.includes("anthropic")) {
+      anthropicCallIdx++;
+      // First call = combined filters, subsequent calls = verifyBatch
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const isVerify = bodyStr.includes("GARDE si") || bodyStr.includes("EXCLUS si");
+      if (isVerify) {
+        return new Response(JSON.stringify({
+          content: [{ type: "text", text: '{"keep": [1], "reasoning": "test verify"}' }],
+        }));
+      }
       return new Response(JSON.stringify({
         content: [{
+          type: "text",
           text: JSON.stringify({
-            current_company_industries: [{ value: "Cleantech", exact_match: false, exclude: false }],
-            current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }],
+            _reasoning: "Test reasoning",
+            fullenrich: {
+              current_company_industries: [{ value: "Cleantech", exact_match: false, exclude: false }],
+              current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }],
+            },
+            insee: { section_activite_principale: "J" },
           }),
         }],
       }));
@@ -195,8 +210,8 @@ describe("search handler — success", () => {
       makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
     );
 
-    // 3 Anthropic calls (Fullenrich filters + Entreprises filters + AI refinement) and 1 Fullenrich call
-    expect(countCalls("anthropic")).toBe(3);
+    // 2 Anthropic calls (combined filters + verify batch) and 1 Fullenrich call
+    expect(countCalls("anthropic")).toBe(2);
     expect(countCalls("fullenrich")).toBe(1);
   });
 
@@ -220,11 +235,15 @@ describe("search handler — success", () => {
 describe("search handler — auto-retry", () => {
   it("retries with broader filters when first search returns 0, and succeeds", async () => {
     let fullenrichCallCount = 0;
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
+        }
         return new Response(JSON.stringify({
-          content: [{ text: '{"current_company_industries": [{"value": "Environmental Services"}]}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries": [{"value": "Environmental Services"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -250,28 +269,17 @@ describe("search handler — auto-retry", () => {
     expect(body.retried).toBe(true);
     expect(body.originalFilters).toBeDefined();
     expect(body.suggestions).toEqual([]);
-    // 4 Anthropic calls (Fullenrich filters + INSEE filters + broad retry + AI refinement) + 2 Fullenrich calls
-    expect(countCalls("anthropic")).toBe(4);
+    // 2 Anthropic calls (combined + broad retry) + 2 Fullenrich calls (no verify since retry path skips it)
+    expect(countCalls("anthropic")).toBe(2);
     expect(fullenrichCallCount).toBe(2);
   });
 
-  it("shows suggestions only after retry also returns 0", async () => {
-    let anthropicCallCount = 0;
+  it("returns empty suggestions when both attempts return 0", async () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
-        anthropicCallCount++;
-        if (anthropicCallCount <= 3) {
-          // First 3 calls: Fullenrich filters + Entreprises filters + broad retry
-          return new Response(JSON.stringify({
-            content: [{ text: '{"current_company_industries": [{"value": "Niche"}]}' }],
-          }));
-        }
-        // Fourth call: suggestions
         return new Response(JSON.stringify({
-          content: [{
-            text: '{"suggestions": ["Elargir le secteur", "Retirer la localisation"]}',
-          }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Niche"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -289,10 +297,9 @@ describe("search handler — auto-retry", () => {
     const body = await res.json();
 
     expect(body.contacts).toHaveLength(0);
-    expect(body.retried).toBe(false); // retry didn't succeed
-    expect(body.suggestions).toHaveLength(2);
-    // 4 Anthropic calls: Fullenrich filters + Entreprises filters + broad retry + suggestions
-    expect(anthropicCallCount).toBe(4);
+    expect(body.suggestions).toEqual([]);
+    // 2 Anthropic calls: combined + broad retry
+    expect(countCalls("anthropic")).toBe(2);
   });
 
   it("does not save contacts to Sheets when both attempts return 0", async () => {
@@ -300,7 +307,7 @@ describe("search handler — auto-retry", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"current_company_industries": [{"value": "Test"}]}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -392,7 +399,7 @@ describe("search handler — filter overrides", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"current_company_industries": [{"value": "Test"}]}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
@@ -436,30 +443,25 @@ describe("search handler — filter overrides", () => {
   });
 });
 
-// ─── Suggestions context ───
+// ─── Claude receives context ───
 
-describe("search handler — suggestion context", () => {
-  it("includes search params in suggestion prompt", async () => {
-    let suggestionCallBody = "";
-    let anthropicCallCount = 0;
+describe("search handler — Claude context", () => {
+  it("passes location and secteur to Claude prompt", async () => {
+    let claudeCallBody = "";
     globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
-        anthropicCallCount++;
-        if (anthropicCallCount <= 3) {
-          // 3 calls: Fullenrich filters + Entreprises filters + broad retry
-          return new Response(JSON.stringify({
-            content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
-          }));
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
         }
-        // 4th call is suggestions
-        suggestionCallBody = init?.body as string ?? "";
+        claudeCallBody = bodyStr;
         return new Response(JSON.stringify({
-          content: [{ text: '{"suggestions": ["Suggestion A"]}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       if (urlStr.includes("fullenrich")) {
-        return new Response(JSON.stringify({ results: [] }));
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
       }
       if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
         return new Response(JSON.stringify({ results: [], total_results: 0 }));
@@ -472,17 +474,15 @@ describe("search handler — suggestion context", () => {
         description: "insertion professionnelle",
         mode: "levee_de_fonds",
         location: "Paris",
-        headcount_min: 10,
-        headcount_max: 200,
+        secteur: "social",
       })
     );
 
-    const parsed = JSON.parse(suggestionCallBody);
+    const parsed = JSON.parse(claudeCallBody);
     const promptText = parsed.messages[0].content;
     expect(promptText).toContain("insertion professionnelle");
     expect(promptText).toContain("Paris");
-    expect(promptText).toContain("10");
-    expect(promptText).toContain("200");
+    expect(promptText).toContain("social");
   });
 });
 
@@ -509,7 +509,7 @@ describe("search handler — errors", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ text: '{"current_company_industries": [{"value": "Test"}]}' }],
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
         }));
       }
       return new Response("API error", { status: 500 });
@@ -521,19 +521,13 @@ describe("search handler — errors", () => {
     expect(res.status).toBe(500);
   });
 
-  it("gracefully handles suggestion API failure", async () => {
-    let anthropicCallCount = 0;
+  it("returns 200 with empty suggestions when 0 results after retry", async () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
-        anthropicCallCount++;
-        if (anthropicCallCount <= 3) {
-          // 3 calls: Fullenrich filters + Entreprises filters + broad retry
-          return new Response(JSON.stringify({
-            content: [{ text: '{"current_company_industries": [{"value": "test"}]}' }],
-          }));
-        }
-        return new Response("Server error", { status: 500 });
+        return new Response(JSON.stringify({
+          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
+        }));
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
@@ -549,7 +543,6 @@ describe("search handler — errors", () => {
     );
     const body = await res.json();
 
-    // Should still succeed, just with empty suggestions
     expect(res.status).toBe(200);
     expect(body.contacts).toHaveLength(0);
     expect(body.suggestions).toEqual([]);

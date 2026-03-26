@@ -12,6 +12,7 @@ import {
   RECHERCHES_HEADERS,
   toRow,
 } from "./_sheets.js";
+import { callClaudeCombined, type EntreprisesGovFilters, type CombinedFilters } from "./_search-ai.js";
 
 interface SearchBody {
   description: string;
@@ -21,176 +22,25 @@ interface SearchBody {
   location?: string;
   secteur?: string;
   limit?: number;
+  // Pre-computed filters from /api/search-filters (step 1)
+  pre_filters?: {
+    fullenrich_filters: Record<string, unknown>;
+    insee_filters: EntreprisesGovFilters;
+    reasoning: string;
+    named_competitors: string[];
+    cost: CombinedFilters["cost"];
+  };
+  // "Find more" mode: append to existing search
+  append?: boolean;
+  recherche_id?: string;
+  offset?: number;
 }
 
-function buildSystemPrompt(mode: string, broad: boolean): string {
-  const breadthInstruction = broad
-    ? `\n\nATTENTION — RECHERCHE ÉLARGIE : La recherche précédente a retourné 0 résultats. Tu DOIS élargir les filtres :
-- Utilise des industries TRÈS LARGES (1 seul terme générique, ex: "Environmental Services" au lieu de "Recycling" + "E-Waste")
-- NE METS PAS de filtre current_company_specialties (trop restrictif)
-- Mets MAXIMUM 2 titres de poste (ex: CEO et Founder uniquement)
-- Mets exact_match: false partout
-- Préfère un filtre d'industrie large + specialties vide plutôt que plusieurs industries niches`
-    : "";
-
-  return `Tu es un assistant qui traduit des descriptions de recherche en français en filtres de recherche JSON pour l'API Fullenrich v2.
-
-IMPORTANT : Chaque filtre est un ARRAY d'objets avec les propriétés "value" (string), "exact_match" (boolean), "exclude" (boolean).
-Les filtres numériques (headcounts, founded_years) utilisent "min" et "max" au lieu de "value".
-
-Filtres disponibles :
-COMPANY :
-- current_company_names: [{value, exact_match, exclude}]
-- current_company_domains: [{value, exact_match, exclude}]
-- current_company_industries: [{value, exact_match, exclude}]
-- current_company_specialties: [{value, exact_match, exclude}]
-- current_company_types: [{value, exact_match, exclude}]
-- current_company_headquarters: [{value, exact_match, exclude}]
-- current_company_headcounts: [{min, max, exclude}]
-- current_company_founded_years: [{min, max, exclude}]
-
-PEOPLE :
-- person_names: [{value, exact_match, exclude}]
-- person_locations: [{value, exact_match, exclude}]
-- person_skills: [{value, exact_match, exclude}]
-- current_position_titles: [{value, exact_match, exclude}]
-- current_position_seniority_level: [{value, exact_match, exclude}]
-- past_position_titles: [{value, exact_match, exclude}]
-
-Le mode est "${mode}".
-- Pour "levee_de_fonds" : cible les décideurs dans des entreprises correspondant à la description.
-- Pour "cession" : cible les dirigeants/propriétaires dans des entreprises correspondant à la description.
-
-RÈGLES CRITIQUES POUR MAXIMISER LES RÉSULTATS :
-1. **Industries EN ANGLAIS** : Fullenrich utilise la taxonomie LinkedIn. Traduis TOUJOURS les termes français en anglais standard LinkedIn (ex: "recyclage de déchets électroniques" → "Environmental Services", PAS "recyclage" ou "déchets électroniques").
-2. **Industries LARGES** : Maximum 2-3 industries, et utilise des termes LARGES (ex: "Environmental Services" plutôt que "E-Waste Recycling"). Plus c'est large, plus il y a de résultats.
-3. **exact_match: false PARTOUT** pour les inclusions. Seules les exclusions peuvent avoir exact_match: true.
-4. **Titres LIMITÉS — selon le mode** :
-   - Mode "levee_de_fonds" : CEO, Founder, CTO (max 3 titres orientés startups/tech)
-   - Mode "cession" : CEO, Founder, Managing Director, President, General Manager, Gérant, Directeur Général, Président (max 5 titres dirigeants/propriétaires)
-   ATTENTION : N'utilise JAMAIS "Owner" seul car ça matche "Product Owner", "Account Owner" etc. Utilise des titres de DIRIGEANTS explicites.
-5. **PAS de current_company_specialties** sauf si la description est très précise. Ce filtre est très restrictif.
-6. **Préfère peu de filtres larges** plutôt que beaucoup de filtres spécifiques. Chaque filtre supplémentaire RÉDUIT les résultats.
-7. **URLs et noms d'entreprise** : Si la description contient une URL ou un nom d'entreprise, tu DOIS identifier le VRAI secteur d'activité de cette entreprise. ATTENTION AUX PIÈGES :
-   - Le nom d'une entreprise N'EST PAS son secteur ! "neosilver" = silver economy (services aux seniors), PAS "Precious Metals" ou "Mining"
-   - "apple" = technologie, PAS agriculture
-   - Utilise tes connaissances du marché, pas l'étymologie du nom
-   - En cas de doute, cherche des concurrents connus du secteur
-8. **Secteur utilisateur** : Si un "Secteur :" est fourni dans le message, c'est ta source PRINCIPALE pour les industries LinkedIn. Traduis-le en termes LinkedIn pertinents. Exemples :
-   - "impact, fintech" → "Financial Services", "Banking"
-   - "silver economy" → "Hospital & Health Care", "Individual & Family Services"
-   - "SaaS, logiciel" → "Computer Software", "Information Technology and Services"
-
-Réponds avec un JSON contenant les filtres ET un champ "_reasoning" qui explique ton raisonnement en 1-2 phrases. Exemple :
-{
-  "_reasoning": "Neosilver est une entreprise de silver economy (services financiers pour seniors). Je cherche des concurrents dans la finance et les services aux personnes âgées en France.",
-  "current_company_industries": [{"value": "Financial Services", "exact_match": false, "exclude": false}, {"value": "Hospital & Health Care", "exact_match": false, "exclude": false}],
-  "current_company_headquarters": [{"value": "France", "exact_match": false, "exclude": false}],
-  "current_position_titles": [{"value": "CEO", "exact_match": false, "exclude": false}, {"value": "Founder", "exact_match": false, "exclude": false}],
-  "current_company_headcounts": [{"min": 10, "max": 500, "exclude": false}]
-}
-
-IMPORTANT : TOUJOURS exclure les types d'organisations suivants (ajoute-les avec "exclude": true) :
-- current_company_types: nonprofit, government agency (mais PAS educational — les entreprises d'éducation/formation sont OK)
-
-N'inclus que les filtres pertinents par rapport à la description.${breadthInstruction}`;
-}
-
-/** Extract URL from description text, fetch it, and return site context (title + meta description). */
-async function fetchSiteContext(description: string): Promise<string> {
-  const urlMatch = description.match(/https?:\/\/[^\s]+/);
-  if (!urlMatch) return "";
-
-  try {
-    const url = urlMatch[0].replace(/[.,;!?)]+$/, ""); // trim trailing punctuation
-    const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; ProuesseBot/1.0)" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(5000), // 5s timeout
-    });
-    if (!response.ok) return "";
-
-    const html = await response.text();
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
-      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i);
-    const ogDescMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)
-      ?? html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:description["']/i);
-
-    const title = titleMatch?.[1]?.trim() ?? "";
-    const desc = descMatch?.[1]?.trim() ?? ogDescMatch?.[1]?.trim() ?? "";
-
-    if (!title && !desc) return "";
-    return `\n\nContexte du site web (${url}) :\nTitre : ${title}\nDescription : ${desc}`;
-  } catch {
-    return ""; // Network error, timeout — ignore silently
-  }
-}
-
-async function callClaude(description: string, mode: string, broad = false, location?: string, secteur?: string): Promise<Record<string, unknown>> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
-
-  const systemPrompt = buildSystemPrompt(mode, broad);
-
-  // If description contains a URL, fetch the site to get real context
-  const siteContext = await fetchSiteContext(description);
-
-  let result: any;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: `Description de recherche : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}${siteContext}`,
-          },
-        ],
-      }),
-    });
-
-    if (response.status === 429) {
-      const wait = (attempt + 1) * 5000; // 5s, 10s, 15s
-      await new Promise((r) => setTimeout(r, wait));
-      continue;
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Anthropic API error ${response.status}: ${errText}`);
-    }
-
-    result = await response.json();
-    break;
-  }
-  if (!result) throw new Error("Anthropic API: rate limited, réessaie dans quelques secondes");
-  const text = result.content?.[0]?.text ?? "";
-
-  // Extract JSON from response (handle potential markdown wrapping)
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Claude n'a pas retourné de JSON valide");
-
-  return JSON.parse(jsonMatch[0]);
-}
+// ─── Fullenrich API ───
 
 async function searchFullenrich(filters: Record<string, unknown>, limit: number = 100): Promise<unknown[]> {
   const apiKey = process.env.FULLENRICH_API_KEY;
   if (!apiKey) throw new Error("FULLENRICH_API_KEY non définie");
-
-  const body = {
-    offset: 0,
-    limit,
-    ...filters,
-  };
 
   const response = await fetch("https://app.fullenrich.com/api/v2/people/search", {
     method: "POST",
@@ -198,7 +48,7 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ offset: 0, limit, ...filters }),
   });
 
   if (!response.ok) {
@@ -210,299 +60,49 @@ async function searchFullenrich(filters: Record<string, unknown>, limit: number 
   return data.results ?? data.people ?? data.data ?? [];
 }
 
-// ─── API Recherche d'Entreprises (données légales entreprises françaises — gratuit, sans clé) ───
+// ─── Verify batch: Claude checks each company with web search ───
 
-interface EntreprisesGovFilters {
-  q?: string;
-  activite_principale?: string;       // Code NAF avec point (ex: "62.01Z")
-  section_activite_principale?: string; // Section NAF (A-U)
-  departement?: string;               // Code département (ex: "75")
-  region?: string;                    // Code région numérique (ex: "11" pour IDF)
-  code_postal?: string;
-  nature_juridique?: string;
-  tranche_effectif_salarie?: string;
-  categorie_entreprise?: string;      // PME, ETI, GE
-  etat_administratif?: string;        // A (active), C (cessée)
+interface VerifyResult {
+  keepIndices: number[];
+  reasoning: string;
+  cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
 }
 
-async function callClaudeForEntreprises(description: string, mode: string, location?: string, secteur?: string): Promise<EntreprisesGovFilters> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
-
-  const systemPrompt = `Tu es un assistant qui traduit des descriptions de recherche en filtres pour l'API Recherche d'Entreprises du gouvernement français (recherche-entreprises.api.gouv.fr).
-
-IMPORTANT : Cette API cherche dans la base SIRENE (registre officiel des entreprises françaises).
-Le paramètre "q" cherche UNIQUEMENT dans le NOM de l'entreprise et l'ADRESSE — PAS dans le secteur d'activité.
-
-Filtres disponibles :
-- q: Recherche dans le nom de l'entreprise UNIQUEMENT. N'utilise "q" QUE pour chercher une entreprise par son nom. NE METS PAS de mots-clés sectoriels dans "q" (ça ne marchera pas).
-- section_activite_principale: Section NAF (lettre A-U). C'est le filtre PRINCIPAL pour le secteur. Exemples :
-  A=Agriculture, B=Industries extractives, C=Industrie manufacturière, D=Énergie, E=Eau/déchets,
-  F=Construction, G=Commerce, H=Transport, I=Hébergement/restauration,
-  J=Information/communication, K=Finance/assurance, L=Immobilier,
-  M=Activités scientifiques/techniques, N=Services administratifs,
-  O=Administration publique, P=Enseignement, Q=Santé/action sociale,
-  R=Arts/spectacles, S=Autres services, T=Ménages, U=Organisations extraterritoriales.
-- activite_principale: Code NAF exact au format XX.XXY (ex: "62.01Z"). UNIQUEMENT si tu es 100% sûr du code.
-- departement: Code département (ex: "75" pour Paris). Plusieurs séparés par virgules.
-- region: Code NUMÉRIQUE de région (ex: "11"=Île-de-France, "84"=Auvergne-Rhône-Alpes, "93"=PACA, "75"=Nouvelle-Aquitaine, "44"=Grand Est, "32"=Hauts-de-France, "28"=Normandie, "53"=Bretagne, "52"=Pays de la Loire, "76"=Occitanie, "27"=Bourgogne-Franche-Comté, "24"=Centre-Val de Loire).
-- code_postal: Code postal (ex: "75001").
-- categorie_entreprise: "PME", "ETI", ou "GE".
-- tranche_effectif_salarie: "11"=10-19, "12"=20-49, "21"=50-99, "22"=100-199, "31"=200-249, "32"=250-499, "41"=500-999, "42"=1000-1999, "51"=2000-4999, "52"=5000-9999.
-
-RÈGLES :
-1. Pour chercher par SECTEUR → utilise "section_activite_principale" (JAMAIS "q" pour ça).
-2. Pour chercher une entreprise par NOM → utilise "q" avec le nom exact.
-3. Combine section_activite_principale + localisation pour trouver des entreprises d'un secteur dans une zone.
-4. NE METS PAS de "q" si tu ne cherches pas une entreprise par nom. Laisse "q" vide ou absent.
-5. Le mode est "${mode}" :
-   - "levee_de_fonds" : startup/innovation → section J (info/comm), K (finance), M (scientifique)
-   - "cession" : PME établies → categorie_entreprise: "PME" + section pertinente
-
-Réponds UNIQUEMENT avec un JSON valide. Exemples :
-Recherche sectorielle : {"section_activite_principale": "K", "categorie_entreprise": "PME"}
-Recherche géographique + secteur : {"section_activite_principale": "J", "departement": "75,92,93,94"}
-Recherche par nom : {"q": "Neosilver"}`;
-
-  let result: any;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 512,
-        system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: `Description : "${description}"${location ? `\nLocalisation : ${location}` : ""}${secteur ? `\nSecteur : ${secteur}` : ""}`,
-          },
-        ],
-      }),
-    });
-
-    if (response.status === 429) {
-      const wait = (attempt + 1) * 5000;
-      await new Promise((r) => setTimeout(r, wait));
-      continue;
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Anthropic API error (Entreprises) ${response.status}: ${errText}`);
-    }
-
-    result = await response.json();
-    break;
-  }
-  if (!result) return { q: description }; // All retries exhausted
-
-  const text = result.content?.[0]?.text ?? "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return { q: description };
-
-  return JSON.parse(jsonMatch[0]);
-}
-
-interface EntreprisesGovResult {
-  contacts: unknown[];
-  debug: { status: string; error?: string; url?: string; totalFromApi?: number };
-}
-
-async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: number = 25): Promise<EntreprisesGovResult> {
-  const perPage = 25; // Max autorisé par l'API
-  const maxPages = Math.ceil(Math.min(limit, 100) / perPage);
-  const allContacts: unknown[] = [];
-  let debugInfo: EntreprisesGovResult["debug"] = { status: "ok" };
-
-  for (let page = 1; page <= maxPages; page++) {
-    const params = new URLSearchParams();
-    params.set("per_page", String(perPage));
-    params.set("page", String(page));
-    params.set("etat_administratif", "A"); // Entreprises actives uniquement
-
-    if (filters.q) params.set("q", filters.q);
-    // Validate NAF codes: format must be XX.XXY (2 digits, dot, 2 digits, 1 letter)
-    if (filters.activite_principale) {
-      const validNaf = filters.activite_principale
-        .split(",")
-        .map(c => c.trim())
-        .filter(c => /^\d{2}\.\d{2}[A-Z]$/.test(c));
-      if (validNaf.length > 0) {
-        params.set("activite_principale", validNaf.join(","));
-      } else {
-        console.warn(`Invalid NAF codes filtered out: "${filters.activite_principale}"`);
-        // Fallback: use section_activite_principale if available
-        if (filters.section_activite_principale) {
-          params.set("section_activite_principale", filters.section_activite_principale);
-        }
-      }
-    }
-    if (filters.section_activite_principale && !params.has("activite_principale")) {
-      params.set("section_activite_principale", filters.section_activite_principale);
-    }
-    if (filters.departement) params.set("departement", filters.departement);
-    if (filters.region) params.set("region", filters.region);
-    if (filters.code_postal) params.set("code_postal", filters.code_postal);
-    if (filters.nature_juridique) params.set("nature_juridique", filters.nature_juridique);
-    if (filters.tranche_effectif_salarie) params.set("tranche_effectif_salarie", filters.tranche_effectif_salarie);
-    if (filters.categorie_entreprise) params.set("categorie_entreprise", filters.categorie_entreprise);
-
-    const url = `https://recherche-entreprises.api.gouv.fr/search?${params.toString()}`;
-
-    let response: Response;
-    try {
-      response = await fetch(url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("API Entreprises gouv network error:", msg);
-      debugInfo = { status: "network_error", error: msg, url };
-      break;
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`API Entreprises gouv error ${response.status}: ${errText}`);
-      debugInfo = { status: `http_${response.status}`, error: errText.slice(0, 200), url };
-      break;
-    }
-
-    const data = await response.json();
-    const resultats = data.results ?? [];
-
-    // Map each entreprise to contact-like objects with dirigeant info
-    for (const entreprise of resultats) {
-      const dirigeants = entreprise.dirigeants ?? [];
-      // Get the main dirigeant (président, gérant, DG) — exclude CAC, auditeurs, suppléants
-      const isRealDirector = (d: any) => {
-        const q = (d.qualite ?? d.fonction ?? "").toLowerCase();
-        if (/commissaire|suppl[eé]ant|auditeur|greffier/i.test(q)) return false;
-        return /pr[eé]sident|g[eé]rant|directeur|CEO|fondateur|associ[eé]/i.test(q);
-      };
-      const dirigeant = dirigeants.find((d: any) => isRealDirector(d)) ?? dirigeants[0];
-
-      if (!dirigeant) continue; // Skip companies without known dirigeants
-
-      // Extract first name: API returns "prenoms" (may contain multiple)
-      const prenoms = dirigeant.prenoms ?? dirigeant.prenom ?? "";
-      const firstName = prenoms.split(/[\s,]+/)[0] ?? "";
-
-      allContacts.push({
-        _source: "entreprises_gouv",
-        first_name: firstName,
-        last_name: dirigeant.nom ?? "",
-        employment: {
-          current: {
-            title: dirigeant.qualite ?? dirigeant.fonction ?? "Dirigeant",
-            company: {
-              name: entreprise.nom_complet ?? entreprise.nom_raison_sociale ?? "",
-              domain: "", // API gouv.fr ne fournit pas le site web
-              industry: {
-                main_industry: entreprise.libelle_activite_principale ?? "",
-              },
-            },
-          },
-        },
-        social_profiles: {
-          linkedin: { url: "" }, // Pas de LinkedIn dans les données publiques
-        },
-        _entreprise_extra: {
-          siren: entreprise.siren ?? "",
-          code_naf: entreprise.activite_principale ?? "",
-          ville: entreprise.siege?.libelle_commune ?? entreprise.siege?.commune ?? "",
-          effectifs: entreprise.tranche_effectif_salarie ?? "",
-          categorie: entreprise.categorie_entreprise ?? "",
-          date_creation: entreprise.date_creation ?? "",
-        },
-      });
-    }
-
-    // Stop if less than a full page (no more results)
-    if (resultats.length < perPage) break;
-  }
-
-  if (debugInfo.status === "ok") {
-    debugInfo.totalFromApi = allContacts.length;
-  }
-  console.log(`API Entreprises gouv: ${allContacts.length} contacts (status: ${debugInfo.status}, filters: ${JSON.stringify(filters)})`);
-  return { contacts: allContacts.slice(0, limit), debug: debugInfo };
-}
-
-function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: unknown[]): unknown[] {
-  // Tag Fullenrich results
-  const tagged = fullenrichResults.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
-
-  // Deduplicate by company domain or company name
-  const seenDomains = new Set<string>();
-  const seenCompanies = new Set<string>();
-
-  for (const r of tagged) {
-    const domain = r.employment?.current?.company?.domain?.toLowerCase();
-    const company = r.employment?.current?.company?.name?.toLowerCase();
-    if (domain) seenDomains.add(domain);
-    if (company) seenCompanies.add(company);
-  }
-
-  for (const r of entreprisesResults as any[]) {
-    const domain = r.employment?.current?.company?.domain?.toLowerCase();
-    const company = r.employment?.current?.company?.name?.toLowerCase();
-
-    // Skip if already present from Fullenrich
-    if (domain && seenDomains.has(domain)) continue;
-    if (company && seenCompanies.has(company)) continue;
-
-    tagged.push(r);
-    if (domain) seenDomains.add(domain);
-    if (company) seenCompanies.add(company);
-  }
-
-  return tagged;
-}
-
-/**
- * AI refinement: Claude evaluates each contact's relevance to the search description.
- * Filters out companies that don't match (e.g. "Mining" when searching silver economy).
- * Returns filtered results + reasoning.
- */
-async function refineWithAI(
+async function verifyBatch(
   description: string,
-  mode: string,
-  siteContext: string,
-  contacts: Record<string, unknown>[],
-): Promise<{ refined: Record<string, unknown>[]; refinement_reasoning: string }> {
+  aiReasoning: string,
+  contacts: Array<{ entreprise: string; titre: string; domaine: string; secteur: string }>,
+): Promise<VerifyResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || contacts.length === 0) return { refined: contacts as any, refinement_reasoning: "" };
+  if (!apiKey || contacts.length === 0) return { keepIndices: [], reasoning: "", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
 
-  // Build a compact summary of contacts for Claude to evaluate
-  const contactSummary = contacts.slice(0, 100).map((c: any, i) => (
-    `${i + 1}. ${c.prenom} ${c.nom} — ${c.titre} @ ${c.entreprise} (${c.secteur || "?"}) [${c.domaine || "?"}]`
-  )).join("\n");
+  const contactList = contacts.map((c, i) =>
+    `${i + 1}. ${c.entreprise} — ${c.titre} [${c.domaine || "?"}] (${c.secteur || "?"})`
+  ).join("\n");
 
-  const prompt = `Tu es un assistant de prospection. L'utilisateur cherche :
-"${description}" (mode: ${mode})
-${siteContext ? `\nContexte du site web mentionné :${siteContext}` : ""}
+  const prompt = `L'utilisateur cherche : "${description}"
+Analyse initiale : ${aiReasoning}
 
-Voici les ${contacts.length} contacts trouvés. Pour CHACUN, décide s'il est PERTINENT ou NON pour cette recherche.
+Voici ${contacts.length} entreprises trouvées. Pour CHAQUE entreprise, vérifie si c'est un concurrent PERTINENT.
 
-CRITÈRES D'EXCLUSION — Marque "NON" si :
-- L'entreprise n'a rien à voir avec le secteur recherché
-- Le titre n'est pas celui d'un dirigeant/décideur (Product Owner, développeur, consultant junior, stagiaire, etc.)
-- C'est un commissaire aux comptes, auditeur, expert-comptable (sauf s'il est aussi gérant)
-- L'entreprise est un grand groupe / CAC40 (pas une PME/startup à prospecter)
+GARDE si :
+- L'entreprise fait le MÊME type d'activité que celle décrite dans l'analyse
+- C'est une PME/startup indépendante
+- Le dirigeant est bien un décideur (CEO, Founder, DG, Président, Gérant)
 
-CONTACTS :
-${contactSummary}
+EXCLUS si :
+- L'entreprise n'a RIEN À VOIR avec le secteur (ex: agence immobilière classique pour un concurrent de coliving seniors)
+- C'est une filiale d'un grand groupe / CAC40 / multinationale
+- C'est un cabinet d'audit, de conseil, une banque d'affaires, un fonds d'investissement
+- Le titre n'est pas un vrai dirigeant (consultant, analyste, manager intermédiaire)
 
-Réponds avec un JSON :
-{
-  "keep": [1, 3, 5, ...],  // numéros des contacts à GARDER
-  "reasoning": "Explication courte de pourquoi certains ont été exclus"
-}`;
+En cas de doute sur une entreprise, base-toi sur son nom, domaine et secteur LinkedIn pour décider.
+
+ENTREPRISES :
+${contactList}
+
+Réponds UNIQUEMENT avec un JSON :
+{"keep": [1, 3, 5], "reasoning": "Explication courte des exclusions principales"}`;
 
   try {
     let result: any;
@@ -516,7 +116,7 @@ Réponds avec un JSON :
         },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 2048,
+          max_tokens: 1024,
           messages: [{ role: "user", content: prompt }],
         }),
       });
@@ -530,80 +130,176 @@ Réponds avec un JSON :
       break;
     }
 
-    if (!result) return { refined: contacts as any, refinement_reasoning: "Raffinage IA indisponible (rate limit)" };
+    if (!result) return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification indisponible (rate limit)", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
 
-    const text = result.content?.[0]?.text ?? "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: pas de JSON valide" };
+    // Extract text from response (may contain web_search results + text blocks)
+    const textBlocks = (result.content ?? [])
+      .filter((block: any) => block.type === "text")
+      .map((block: any) => block.text)
+      .join("");
+
+    const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification: pas de JSON", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
 
     const parsed = JSON.parse(jsonMatch[0]);
-    const keepIndices = new Set<number>((parsed.keep ?? []).map((n: number) => n - 1)); // 1-indexed → 0-indexed
+    const keepNumbers: number[] = parsed.keep ?? [];
+    const keepIndices = keepNumbers.map((n: number) => n - 1).filter((i: number) => i >= 0 && i < contacts.length);
 
-    if (keepIndices.size === 0) return { refined: contacts as any, refinement_reasoning: "Raffinage IA: aucun filtre appliqué" };
+    const usage = result.usage ?? {};
+    const inputTokens = usage.input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
+    // Haiku 4.5: $1/M input, $5/M output, $0.01/web search
+  const estimatedUsd = (inputTokens * 1 / 1_000_000) + (outputTokens * 5 / 1_000_000) + (webSearches * 0.01);
 
-    const refined = contacts.filter((_, i) => keepIndices.has(i));
-    const removed = contacts.length - refined.length;
-    const reasoning = `${removed} contacts exclus par l'IA : ${parsed.reasoning ?? ""}`;
-    console.log(`AI refinement: ${contacts.length} → ${refined.length} (removed ${removed})`);
-    return { refined, refinement_reasoning: reasoning };
+    console.log(`verifyBatch: ${contacts.length} → ${keepIndices.length} kept (${webSearches} web searches, $${estimatedUsd.toFixed(4)})`);
+
+    return {
+      keepIndices,
+      reasoning: parsed.reasoning ?? "",
+      cost: { input_tokens: inputTokens, output_tokens: outputTokens, web_searches: webSearches, estimated_usd: Math.round(estimatedUsd * 10000) / 10000 },
+    };
   } catch (err) {
-    console.error("refineWithAI error:", err);
-    return { refined: contacts as any, refinement_reasoning: "Raffinage IA: erreur" };
+    console.error("verifyBatch error:", err);
+    return { keepIndices: contacts.map((_, i) => i), reasoning: "Vérification: erreur", cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 } };
   }
 }
 
-async function suggestFilterChanges(
-  body: SearchBody,
-  filters: Record<string, unknown>
-): Promise<string[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return [];
+// ─── API Recherche d'Entreprises (INSEE/SIRENE — gratuit, sans clé) ───
+// EntreprisesGovFilters imported from _search-ai.ts
 
-  try {
-    const prompt = `La recherche Fullenrich suivante a retourné 0 résultats.
-
-Description utilisateur : "${body.description}"
-Mode : ${body.mode}
-Localisation : ${body.location || "non spécifiée"}
-Employés min : ${body.headcount_min ?? "non spécifié"}
-Employés max : ${body.headcount_max ?? "non spécifié"}
-Secteur : ${body.secteur || "non spécifié"}
-Limite : ${body.limit ?? 100}
-
-Filtres générés et envoyés à l'API :
-${JSON.stringify(filters, null, 2)}
-
-Analyse pourquoi la recherche n'a rien donné et propose 3 à 5 modifications concrètes des critères pour obtenir des résultats. Chaque suggestion doit être actionnable (ex: "Élargir la fourchette d'employés à 5-1000", "Remplacer le secteur 'insertion' par 'staffing' ou 'human resources'", "Retirer le filtre de localisation").
-
-Réponds UNIQUEMENT avec un JSON : {"suggestions": ["suggestion 1", "suggestion 2", ...]}`;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 512,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) return [];
-
-    const result = await response.json();
-    const text = result.content?.[0]?.text ?? "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return [];
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    return Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
-  } catch {
-    return [];
-  }
+interface EntreprisesGovResult {
+  contacts: unknown[];
+  debug: { status: string; error?: string; url?: string; totalFromApi?: number };
 }
+
+async function searchEntreprisesGov(filters: EntreprisesGovFilters, limit: number = 25): Promise<EntreprisesGovResult> {
+  const perPage = 25;
+  const maxPages = Math.ceil(Math.min(limit, 100) / perPage);
+  const allContacts: unknown[] = [];
+  let debugInfo: EntreprisesGovResult["debug"] = { status: "ok" };
+
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams();
+    params.set("per_page", String(perPage));
+    params.set("page", String(page));
+    params.set("etat_administratif", "A");
+
+    if (filters.q) params.set("q", filters.q);
+    if (filters.activite_principale) {
+      const validNaf = filters.activite_principale.split(",").map(c => c.trim()).filter(c => /^\d{2}\.\d{2}[A-Z]$/.test(c));
+      if (validNaf.length > 0) {
+        params.set("activite_principale", validNaf.join(","));
+      } else if (filters.section_activite_principale) {
+        params.set("section_activite_principale", filters.section_activite_principale);
+      }
+    }
+    if (filters.section_activite_principale && !params.has("activite_principale")) {
+      params.set("section_activite_principale", filters.section_activite_principale);
+    }
+    if (filters.departement) params.set("departement", filters.departement);
+    if (filters.region) params.set("region", filters.region);
+    if (filters.code_postal) params.set("code_postal", filters.code_postal);
+    if (filters.tranche_effectif_salarie) params.set("tranche_effectif_salarie", filters.tranche_effectif_salarie);
+    if (filters.categorie_entreprise) params.set("categorie_entreprise", filters.categorie_entreprise);
+
+    const url = `https://recherche-entreprises.api.gouv.fr/search?${params.toString()}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      debugInfo = { status: "network_error", error: msg, url };
+      break;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      debugInfo = { status: `http_${response.status}`, error: errText.slice(0, 200), url };
+      break;
+    }
+
+    const data = await response.json();
+    const resultats = data.results ?? [];
+
+    for (const entreprise of resultats) {
+      const dirigeants = entreprise.dirigeants ?? [];
+      const isRealDirector = (d: any) => {
+        const q = (d.qualite ?? d.fonction ?? "").toLowerCase();
+        if (/commissaire|suppl[eé]ant|auditeur|greffier/i.test(q)) return false;
+        return /pr[eé]sident|g[eé]rant|directeur|CEO|fondateur|associ[eé]/i.test(q);
+      };
+      const dirigeant = dirigeants.find((d: any) => isRealDirector(d)) ?? dirigeants[0];
+      if (!dirigeant) continue;
+
+      const prenoms = dirigeant.prenoms ?? dirigeant.prenom ?? "";
+      const firstName = prenoms.split(/[\s,]+/)[0] ?? "";
+
+      allContacts.push({
+        _source: "entreprises_gouv",
+        first_name: firstName,
+        last_name: dirigeant.nom ?? "",
+        employment: {
+          current: {
+            title: dirigeant.qualite ?? dirigeant.fonction ?? "Dirigeant",
+            company: {
+              name: entreprise.nom_complet ?? entreprise.nom_raison_sociale ?? "",
+              domain: "",
+              industry: { main_industry: entreprise.libelle_activite_principale ?? "" },
+            },
+          },
+        },
+        social_profiles: { linkedin: { url: "" } },
+        _entreprise_extra: {
+          siren: entreprise.siren ?? "",
+          code_naf: entreprise.activite_principale ?? "",
+          ville: entreprise.siege?.libelle_commune ?? entreprise.siege?.commune ?? "",
+          effectifs: entreprise.tranche_effectif_salarie ?? "",
+          categorie: entreprise.categorie_entreprise ?? "",
+          date_creation: entreprise.date_creation ?? "",
+        },
+      });
+    }
+
+    if (resultats.length < perPage) break;
+  }
+
+  if (debugInfo.status === "ok") debugInfo.totalFromApi = allContacts.length;
+  return { contacts: allContacts.slice(0, limit), debug: debugInfo };
+}
+
+// ─── Deduplication ───
+
+function deduplicateResults(fullenrichResults: unknown[], entreprisesResults: unknown[]): unknown[] {
+  const tagged = fullenrichResults.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
+  const seenDomains = new Set<string>();
+  const seenCompanies = new Set<string>();
+
+  for (const r of tagged) {
+    const domain = r.employment?.current?.company?.domain?.toLowerCase();
+    const company = r.employment?.current?.company?.name?.toLowerCase();
+    if (domain) seenDomains.add(domain);
+    if (company) seenCompanies.add(company);
+  }
+
+  for (const r of entreprisesResults as any[]) {
+    const domain = r.employment?.current?.company?.domain?.toLowerCase();
+    const company = r.employment?.current?.company?.name?.toLowerCase();
+    if (domain && seenDomains.has(domain)) continue;
+    if (company && seenCompanies.has(company)) continue;
+    tagged.push(r);
+    if (domain) seenDomains.add(domain);
+    if (company) seenCompanies.add(company);
+  }
+
+  return tagged;
+}
+
+// ─── Title filter regex ───
+const EXCLUDED_TITLES = /product\s*owner|product\s*manager|project\s*manager|account\s*(owner|manager|executive)|commissaire\s*aux?\s*comptes?|suppl[eé]ant|auditeur|expert[\s-]*comptable|greffier|secr[eé]taire\s*g[eé]n[eé]ral|community\s*manager|scrum\s*master|data\s*(analyst|scientist|engineer)|d[eé]veloppeur|developer|designer|consultant\s*(junior|senior)?$/i;
+
+// ─── Main handler ───
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
@@ -634,7 +330,6 @@ export default async (request: Request) => {
       };
       await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
 
-      // Mix sources: ~70% Fullenrich, ~30% INSEE for realistic demo
       const contacts: Record<string, string>[] = mockResults.map((r, i) => ({
         id: uuidv4(),
         nom: r.nom,
@@ -667,7 +362,7 @@ export default async (request: Request) => {
       const inseeCount = contacts.filter(c => c.source === "entreprises_gouv").length;
       const fullenrichCount = contacts.length - inseeCount;
       return json({
-        recherche: { id: rechercheId, ...recherche },
+        recherche: { id: rechercheId, description: body.description, mode: body.mode, nb_resultats: String(contacts.length) },
         contacts,
         filters: {
           current_company_industries: [{ value: "Financial Services", exact_match: false, exclude: false }],
@@ -684,106 +379,253 @@ export default async (request: Request) => {
       });
     }
 
-    // 1. Translate description to filters via Claude
-    // Call Fullenrich filters first, then INSEE filters sequentially (avoid 429 rate-limit)
-    const filters = await callClaude(body.description, body.mode, false, body.location, body.secteur);
+    // ─── 1. Get filters (from pre_filters if split, or call Claude directly) ───
+    let filters: Record<string, unknown>;
+    let entreprisesFilters: EntreprisesGovFilters;
+    let aiReasoning: string;
+    let namedCompetitors: string[];
+    let aiCost: CombinedFilters["cost"];
 
-    // Extract reasoning from filters (if Claude provided it)
-    const aiReasoning = (filters as any)._reasoning ?? "";
-    delete (filters as any)._reasoning;
+    if (body.pre_filters) {
+      // Split mode: filters already computed by /api/search-filters
+      filters = body.pre_filters.fullenrich_filters;
+      entreprisesFilters = body.pre_filters.insee_filters;
+      aiReasoning = body.pre_filters.reasoning;
+      namedCompetitors = body.pre_filters.named_competitors ?? [];
+      aiCost = body.pre_filters.cost;
+    } else {
+      // Direct mode: call Claude here (backward compat)
+      const result = await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
+      filters = result.fullenrich;
+      entreprisesFilters = result.insee;
+      aiReasoning = result.reasoning;
+      namedCompetitors = result.namedCompetitors;
+      aiCost = result.cost;
+    }
 
-    // INSEE filters — non-blocking, after Fullenrich call finishes
-    const entreprisesFilters = await callClaudeForEntreprises(body.description, body.mode, body.location, body.secteur)
-      .catch((err) => {
-        console.error("callClaudeForEntreprises failed (non-blocking):", err);
-        return null;
-      });
+    // Apply optional overrides (headcount, location)
+    if (body.headcount_min || body.headcount_max) {
+      filters.current_company_headcounts = [
+        { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
+      ];
+    }
+    if (body.location) {
+      filters.current_company_headquarters = [
+        { value: body.location, exact_match: false, exclude: false },
+      ];
+    }
 
-    // Apply optional overrides in Fullenrich v2 format
-    function applyOverrides(f: Record<string, unknown>) {
+    // ─── 3. Search + Verify loop ───
+    const targetCount = body.limit ?? 100;
+    const maxIterations = 5;
+    const batchSize = Math.min(targetCount, 100);
+    const MAX_COST_USD = 0.50;
+
+    // ─── 3. TWO PATHS: Named competitors (fast) OR Industry search + verify ───
+    const entreprisesLimit = Math.min(Math.ceil(targetCount * 0.3), 50);
+    let verifiedResults: unknown[] = [];
+    let verifyReasons: string[] = [];
+    let entreprisesDebug: EntreprisesGovResult["debug"] = { status: "skipped" };
+    let totalRawCount = 0;
+    let costCapReached = false;
+    const totalCost = { ...aiCost };
+
+    if (namedCompetitors.length > 0) {
+      // ═══ CHEMIN NOMMÉ : recherche directe par nom (rapide, pas de verify) ═══
+      console.log(`Named path: searching ${namedCompetitors.length} competitors: ${namedCompetitors.join(", ")}`);
+
+      // Search competitors in parallel groups of 3, max 8 names
+      for (let i = 0; i < namedCompetitors.slice(0, 8).length; i += 3) {
+        const nameBatch = namedCompetitors.slice(i, i + 3);
+        const searches = nameBatch.flatMap(name => [
+          // INSEE by name
+          searchEntreprisesGov({ q: name }, 3)
+            .then(r => {
+              verifiedResults.push(...r.contacts);
+              if (r.debug.status === "ok") entreprisesDebug = r.debug;
+            })
+            .catch(() => {}),
+          // Fullenrich by company name
+          searchFullenrich({
+            current_company_names: [{ value: name, exact_match: false, exclude: false }],
+            ...(filters.current_position_titles ? { current_position_titles: filters.current_position_titles } : {}),
+          }, 3)
+            .then(results => {
+              for (const r of results) verifiedResults.push({ ...(r as any), _source: "fullenrich" });
+            })
+            .catch(() => {}),
+        ]);
+        await Promise.all(searches);
+      }
+
+      // Filter titles only (no AI verify — these are already identified as competitors)
+      totalRawCount = verifiedResults.length;
+      verifiedResults = verifiedResults.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+      verifyReasons.push(`Recherche directe par nom de ${namedCompetitors.length} concurrents identifiés par l'IA`);
+
+    } else {
+      // ═══ CHEMIN INDUSTRIE : recherche large + vérification IA ═══
+
+      // Get INSEE results
+      const entreprisesGovResult = await searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
+        .catch((err): EntreprisesGovResult => ({
+          contacts: [],
+          debug: { status: "crash", error: err instanceof Error ? err.message : String(err) },
+        }));
+      const entreprisesContacts = entreprisesGovResult.contacts;
+      entreprisesDebug = entreprisesGovResult.debug;
+
+      // Search + verify loop
+      const seenCompanies = new Set<string>();
+      let fullenrichOffset = body.offset ?? 0;
+
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        if (totalCost.estimated_usd >= MAX_COST_USD) {
+          costCapReached = true;
+          break;
+        }
+
+        const batch = await searchFullenrich(
+          { ...filters, offset: fullenrichOffset },
+          batchSize,
+        );
+        totalRawCount += batch.length;
+        fullenrichOffset += batch.length;
+
+        const tagged = batch.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
+        const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        const newContacts = titleFiltered.filter((r: any) => {
+          const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
+          if (company && seenCompanies.has(company)) return false;
+          if (company) seenCompanies.add(company);
+          return true;
+        });
+
+        if (newContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+          const contactsForVerify = newContacts.map((r: any) => ({
+            entreprise: r.employment?.current?.company?.name ?? "",
+            titre: r.employment?.current?.title ?? "",
+            domaine: r.employment?.current?.company?.domain ?? "",
+            secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+          }));
+          const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, contactsForVerify);
+          for (const idx of keepIndices) verifiedResults.push(newContacts[idx]);
+          if (reasoning) verifyReasons.push(reasoning);
+          totalCost.input_tokens += cost.input_tokens;
+          totalCost.output_tokens += cost.output_tokens;
+          totalCost.web_searches += cost.web_searches;
+          totalCost.estimated_usd += cost.estimated_usd;
+        }
+
+        if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
+      }
+
+      // Verify INSEE contacts too
+      if (entreprisesContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+        const inseeForVerify = (entreprisesContacts as any[]).map((r: any) => ({
+          entreprise: r.employment?.current?.company?.name ?? "",
+          titre: r.employment?.current?.title ?? "",
+          domaine: "",
+          secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+        }));
+        const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, inseeForVerify);
+        const verifiedInsee = keepIndices.map(i => (entreprisesContacts as any[])[i]);
+        verifiedResults.push(...verifiedInsee);
+        if (reasoning) verifyReasons.push(`INSEE: ${reasoning}`);
+        totalCost.input_tokens += cost.input_tokens;
+        totalCost.output_tokens += cost.output_tokens;
+        totalCost.web_searches += cost.web_searches;
+        totalCost.estimated_usd += cost.estimated_usd;
+      }
+    }
+
+    // Deduplicate + trim
+    let results = deduplicateResults(verifiedResults, []);
+    results = results.slice(0, targetCount);
+
+    // ─── 4. Auto-retry with broader filters if 0 results (raw > 0 but all excluded by verify) ───
+    let retried = false;
+    let originalFilters: Record<string, unknown> | undefined;
+    if (results.length === 0 && totalRawCount > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      // All contacts were excluded by verification → try broader filters
+      originalFilters = { ...filters };
+      const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
+      totalCost.estimated_usd += broader.cost.estimated_usd;
       if (body.headcount_min || body.headcount_max) {
-        f.current_company_headcounts = [
+        broader.fullenrich.current_company_headcounts = [
           { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
         ];
       }
       if (body.location) {
-        f.current_company_headquarters = [
+        broader.fullenrich.current_company_headquarters = [
           { value: body.location, exact_match: false, exclude: false },
         ];
       }
-      // Note: secteur is now passed to callClaude directly, not appended post-generation
-    }
-
-    applyOverrides(filters);
-
-    // 2. Call Fullenrich + API Entreprises gouv.fr in parallel
-    const fullenrichLimit = body.limit ?? 100;
-    const entreprisesLimit = Math.min(Math.ceil(fullenrichLimit * 0.3), 50); // ~30% extra from Entreprises
-
-    const [fullenrichResults, entreprisesGovResult] = await Promise.all([
-      searchFullenrich(filters, fullenrichLimit),
-      entreprisesFilters
-        ? searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
-            .catch((err): EntreprisesGovResult => {
-              console.error("searchEntreprisesGov failed (non-blocking):", err);
-              return { contacts: [], debug: { status: "crash", error: err instanceof Error ? err.message : String(err) } };
-            })
-        : Promise.resolve({ contacts: [], debug: { status: "skipped", error: "Génération des filtres INSEE a échoué" } } as EntreprisesGovResult),
-    ]);
-    const entreprisesContacts = entreprisesGovResult.contacts;
-    const entreprisesDebug = entreprisesGovResult.debug;
-
-    let results = deduplicateResults(fullenrichResults, entreprisesContacts);
-
-    // 2a. Filter out non-director titles (Product Owner, CAC, etc.)
-    const excludedTitles = /product\s*owner|product\s*manager|project\s*manager|account\s*(owner|manager|executive)|commissaire\s*aux?\s*comptes?|suppl[eé]ant|auditeur|expert[\s-]*comptable|greffier|secr[eé]taire\s*g[eé]n[eé]ral|community\s*manager|scrum\s*master|data\s*(analyst|scientist|engineer)|d[eé]veloppeur|developer|designer|consultant\s*(junior|senior)?$/i;
-    const beforeFilter = results.length;
-    results = results.filter((r: any) => {
-      const title = r.employment?.current?.title ?? "";
-      return !excludedTitles.test(title);
-    });
-    const filteredOut = beforeFilter - results.length;
-    if (filteredOut > 0) console.log(`Filtered out ${filteredOut} non-director contacts`);
-
-    // 2b. If 0 Fullenrich results, auto-retry with broader filters
-    let retried = false;
-    let originalFilters: Record<string, unknown> | undefined;
-    if (fullenrichResults.length === 0) {
-      originalFilters = { ...filters };
-      const broaderFilters = await callClaude(body.description, body.mode, true, body.location, body.secteur);
-      applyOverrides(broaderFilters);
-      const retryResults = await searchFullenrich(broaderFilters, fullenrichLimit);
+      const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
       if (retryResults.length > 0) {
-        Object.assign(filters, broaderFilters);
-        results = deduplicateResults(retryResults, entreprisesContacts);
+        Object.assign(filters, broader.fullenrich);
+        results = deduplicateResults(retryResults, []);
+        results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        results = results.slice(0, targetCount);
+        retried = true;
+      }
+    } else if (totalRawCount === 0) {
+      originalFilters = { ...filters };
+      const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
+      if (body.headcount_min || body.headcount_max) {
+        broader.fullenrich.current_company_headcounts = [
+          { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
+        ];
+      }
+      if (body.location) {
+        broader.fullenrich.current_company_headquarters = [
+          { value: body.location, exact_match: false, exclude: false },
+        ];
+      }
+      const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
+      if (retryResults.length > 0) {
+        Object.assign(filters, broader.fullenrich);
+        results = deduplicateResults(retryResults, []);
+        results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        results = results.slice(0, targetCount);
         retried = true;
       }
     }
 
-    // 2c. If still 0 results after retry, ask AI for suggestions
-    let suggestions: string[] = [];
-    if (results.length === 0) {
-      suggestions = await suggestFilterChanges(body, filters);
+    // ─── 6. Save search to Google Sheets ───
+    const now = new Date().toISOString();
+    const rechercheId = body.append && body.recherche_id ? body.recherche_id : uuidv4();
+
+    if (body.append && body.recherche_id) {
+      // Append mode: update existing recherche's nb_resultats
+      const { findRowById, updateRow } = await import("./_sheets.js");
+      const existing = await findRowById("Recherches", body.recherche_id);
+      if (existing) {
+        const prevCount = parseInt(existing.data.nb_resultats ?? "0");
+        const newCount = prevCount + results.length;
+        const sheetHeaders = await getHeadersForWrite("Recherches", RECHERCHES_HEADERS);
+        await updateRow("Recherches", existing.rowIndex, toRow(sheetHeaders, {
+          ...existing.data,
+          nb_resultats: String(newCount),
+          date_modification: now,
+        }));
+      }
+    } else {
+      // New search: create recherche row
+      const recherche: Record<string, string> = {
+        id: rechercheId,
+        description: body.description,
+        mode: body.mode,
+        filtres_json: JSON.stringify(filters),
+        nb_resultats: String(results.length),
+        date: now,
+        user_id: auth.userId,
+      };
+      await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
     }
 
-    // 3. Save search to Google Sheets
-    const now = new Date().toISOString();
-    const rechercheId = uuidv4();
-
-    const recherche: Record<string, string> = {
-      id: rechercheId,
-      description: body.description,
-      mode: body.mode,
-      filtres_json: JSON.stringify(filters),
-      nb_resultats: String(results.length),
-      date: now,
-      user_id: auth.userId,
-    };
-
-    await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
-
-    // 4. Map results to contact objects
-    let contacts: Record<string, string>[] = results.map((r: any) => ({
+    // ─── 7. Map results to contact objects ───
+    const contacts: Record<string, string>[] = results.map((r: any) => ({
       id: uuidv4(),
       nom: r.last_name ?? "",
       prenom: r.first_name ?? "",
@@ -797,91 +639,124 @@ export default async (request: Request) => {
       statut: "nouveau",
       enrichissement_status: "",
       enrichissement_retry: "",
-      score_1: "",
-      score_2: "",
-      score_total: "",
-      score_raison: "",
-      score_feedback: "",
+      score_1: "", score_2: "", score_total: "", score_raison: "", score_feedback: "",
       recherche_id: rechercheId,
       campagne_id: "",
-      email_status: "",
-      email_sent_at: "",
-      phrase_perso: "",
+      email_status: "", email_sent_at: "", phrase_perso: "",
       source: r._source ?? "fullenrich",
       date_creation: now,
       date_modification: now,
       user_id: auth.userId,
     }));
 
-    // 4b. AI refinement — Claude filters out irrelevant contacts
-    let refinementReasoning = "";
-    if (contacts.length > 0) {
-      const siteContext = await fetchSiteContext(body.description).catch(() => "");
-      const { refined, refinement_reasoning } = await refineWithAI(
-        body.description, body.mode, siteContext, contacts,
-      );
-      contacts = refined as Record<string, string>[];
-      refinementReasoning = refinement_reasoning;
+    // ─── 7b. AI enrich: find missing names + domains for INSEE contacts ───
+    const toEnrich = contacts.filter(c => c.source === "entreprises_gouv" && (!c.nom || !c.domaine));
+    if (toEnrich.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      const enrichList = toEnrich.map((c, i) =>
+        `${i + 1}. ${c.entreprise} (${c.titre}) [domaine: ${c.domaine || "?"}] [nom: ${c.prenom} ${c.nom}]`
+      ).join("\n");
+
+      try {
+        const enrichResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.ANTHROPIC_API_KEY!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            messages: [{
+              role: "user",
+              content: `Pour chaque entreprise ci-dessous, trouve le site web (domaine) et le nom complet du dirigeant principal si manquant.
+Utilise tes connaissances des entreprises françaises.
+
+ENTREPRISES :
+${enrichList}
+
+Réponds UNIQUEMENT avec un JSON :
+{"enriched": [{"index": 1, "domaine": "famileo.com", "prenom": "Laurent", "nom": "Dock"}, ...]}
+N'inclus que les entreprises pour lesquelles tu as trouvé des informations.`,
+            }],
+          }),
+        });
+
+        if (enrichResp.ok) {
+          const enrichResult = await enrichResp.json();
+          const text = (enrichResult.content ?? [])
+            .filter((b: any) => b.type === "text")
+            .map((b: any) => b.text)
+            .join("");
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            const enriched: Array<{ index: number; domaine?: string; prenom?: string; nom?: string }> = parsed.enriched ?? [];
+            for (const e of enriched) {
+              const idx = e.index - 1;
+              if (idx >= 0 && idx < toEnrich.length) {
+                const contact = toEnrich[idx];
+                if (e.domaine && !contact.domaine) contact.domaine = e.domaine;
+                if (e.prenom && !contact.prenom) contact.prenom = e.prenom;
+                if (e.nom && !contact.nom) contact.nom = e.nom;
+              }
+            }
+            console.log(`AI enriched ${enriched.length}/${toEnrich.length} contacts with names/domains`);
+          }
+
+          // Track cost
+          const usage = enrichResult.usage ?? {};
+          totalCost.input_tokens += usage.input_tokens ?? 0;
+          totalCost.output_tokens += usage.output_tokens ?? 0;
+          totalCost.estimated_usd += ((usage.input_tokens ?? 0) / 1_000_000) + ((usage.output_tokens ?? 0) * 5 / 1_000_000);
+        }
+      } catch (err) {
+        console.error("AI enrich names/domains failed:", err);
+      }
     }
 
-    // 5. Save contacts to Google Sheets
-
-    let writeDebug: Record<string, unknown> = {};
+    // ─── 8. Save contacts to Google Sheets ───
     if (contacts.length > 0) {
       const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
-      const rows = contacts.map((c) => toRow(headers, c));
-
-      // Log what we're about to write for debugging
-      writeDebug = {
-        headers_count: headers.length,
-        headers_sample: headers.slice(0, 5).join(",") + "..." + headers.slice(15, 18).join(","),
-        first_row_sample: rows[0]
-          ? `id=${rows[0][0]}, rech_idx17=${rows[0][17]}, cols=${rows[0].length}`
-          : "none",
-        rows_count: rows.length,
-      };
-
-      // Read current row count BEFORE writing (appendRows also does this internally)
-      const preWriteColA = await readRawRange("Contacts!A1:A");
-      writeDebug.rows_before_write = preWriteColA.length;
-
-      await appendRows("Contacts", rows);
-
-      // Verify write by reading back
-      const verifyRange = await readRawRange("Contacts!A1:A");
-      writeDebug.total_rows_after_write = verifyRange.length;
-
-      // Verify recherche_id in last written row
-      const lastRow = writeDebug.total_rows_after_write as number;
-      const verifyLast = await readRawRange(`Contacts!A${lastRow}:Y${lastRow}`);
-      writeDebug.last_row_rech = verifyLast[0]?.[18] ?? "MISSING";
+      await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
     }
 
-    // Cross-reference with previously scored contacts that failed (score_total < 7)
+    // Cross-reference with previously scored contacts (skip for named path to save time)
     let previouslyFailedDomains: Record<string, { score: number; raison: string }> = {};
-    try {
-      const allContacts = await readAll("Contacts");
-      const userContacts = allContacts.filter(c => c.user_id === auth.userId);
-      for (const c of userContacts) {
-        const score = parseFloat(c.score_total);
-        if (!isNaN(score) && score < 7 && c.domaine) {
-          const domain = c.domaine.toLowerCase();
-          // Keep the most recent score for each domain
-          if (!previouslyFailedDomains[domain] || score > previouslyFailedDomains[domain].score) {
-            previouslyFailedDomains[domain] = { score, raison: c.score_raison || "" };
+    if (namedCompetitors.length === 0) {
+      try {
+        const allContacts = await readAll("Contacts");
+        const userContacts = allContacts.filter(c => c.user_id === auth.userId);
+        for (const c of userContacts) {
+          const score = parseFloat(c.score_total);
+          if (!isNaN(score) && score < 7 && c.domaine) {
+            const domain = c.domaine.toLowerCase();
+            if (!previouslyFailedDomains[domain] || score > previouslyFailedDomains[domain].score) {
+              previouslyFailedDomains[domain] = { score, raison: c.score_raison || "" };
+            }
           }
         }
+      } catch (e) {
+        console.error("Error cross-referencing previous scores:", e);
       }
-    } catch (e) {
-      console.error("Error cross-referencing previous scores:", e);
     }
 
     return json({
-      recherche: { id: rechercheId, ...recherche },
+      recherche: { id: rechercheId, description: body.description, mode: body.mode, nb_resultats: String(contacts.length) },
       contacts,
       filters,
       ai_reasoning: aiReasoning,
-      refinement_reasoning: refinementReasoning,
+      ai_cost: totalCost,
+      named_competitors: namedCompetitors,
+      named_competitors_found: namedCompetitors.length > 0 ? verifiedResults.length : 0,
+      verification: {
+        raw_count: totalRawCount,
+        verified_count: verifiedResults.length,
+        insee_verified: 0,
+        insee_raw: 0,
+        reasoning: verifyReasons.join(" | "),
+        cost_cap_reached: costCapReached,
+      },
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,
@@ -889,7 +764,7 @@ export default async (request: Request) => {
         fullenrich: contacts.filter((c) => c.source === "fullenrich" || !c.source).length,
         entreprises_gouv: contacts.filter((c) => c.source === "entreprises_gouv").length,
       },
-      suggestions,
+      suggestions: [],
       retried,
       originalFilters: retried ? originalFilters : undefined,
       previously_failed_domains: previouslyFailedDomains,

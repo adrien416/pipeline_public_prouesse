@@ -110,6 +110,7 @@ interface CombinedFilters {
   fullenrich: Record<string, unknown>;
   insee: EntreprisesGovFilters;
   reasoning: string;
+  cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
 }
 
 async function callClaudeCombined(
@@ -174,10 +175,20 @@ async function callClaudeCombined(
   if (!jsonMatch) throw new Error("Claude n'a pas retourné de JSON valide");
 
   const parsed = JSON.parse(jsonMatch[0]);
+
+  // Calculate cost from usage
+  const usage = result.usage ?? {};
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
+  // Sonnet 4.6: $3/M input, $15/M output, $0.01/web search
+  const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000) + (webSearches * 0.01);
+
   return {
     fullenrich: parsed.fullenrich ?? parsed,
     insee: parsed.insee ?? {},
     reasoning: parsed._reasoning ?? "",
+    cost: { input_tokens: inputTokens, output_tokens: outputTokens, web_searches: webSearches, estimated_usd: Math.round(estimatedUsd * 10000) / 10000 },
   };
 }
 
@@ -432,7 +443,7 @@ export default async (request: Request) => {
     }
 
     // ─── 1. SINGLE Claude call with web search → Fullenrich + INSEE filters + reasoning ───
-    const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning } =
+    const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning, cost: aiCost } =
       await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
 
     // Apply optional overrides (headcount, location)
@@ -583,6 +594,7 @@ export default async (request: Request) => {
       contacts,
       filters,
       ai_reasoning: aiReasoning,
+      ai_cost: aiCost,
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,
       total: contacts.length,

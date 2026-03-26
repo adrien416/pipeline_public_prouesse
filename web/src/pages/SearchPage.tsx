@@ -221,21 +221,26 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
-      {/* Raisonnement IA + Raffinage */}
-      {((search.data as any)?.ai_reasoning || (search.data as any)?.refinement_reasoning) && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">
-          {(search.data as any)?.ai_reasoning && (
+      {/* Raisonnement IA + Coût */}
+      {(search.data as any)?.ai_reasoning && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+          <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-indigo-700 mb-1">Raisonnement de l'IA</h3>
               <p className="text-sm text-indigo-900">{(search.data as any).ai_reasoning}</p>
             </div>
-          )}
-          {(search.data as any)?.refinement_reasoning && (
-            <div>
-              <h3 className="text-sm font-semibold text-amber-700 mb-1">Raffinage IA</h3>
-              <p className="text-sm text-amber-900">{(search.data as any).refinement_reasoning}</p>
-            </div>
-          )}
+            {(search.data as any)?.ai_cost && (
+              <div className="text-right flex-shrink-0">
+                <span className="text-xs text-gray-400">Coût IA</span>
+                <p className="text-sm font-mono font-semibold text-indigo-700">
+                  ${(search.data as any).ai_cost.estimated_usd.toFixed(3)}
+                </p>
+                {(search.data as any).ai_cost.web_searches > 0 && (
+                  <span className="text-xs text-gray-400">+ {(search.data as any).ai_cost.web_searches} web search</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

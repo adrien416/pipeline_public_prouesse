@@ -10,8 +10,6 @@ import {
   toRow,
 } from "./_sheets.js";
 
-const MAX_PER_CALL = 1;
-
 interface ScoreBody {
   recherche_id: string;
   mode?: string; // optional — frontend can send it to skip Recherches lookup

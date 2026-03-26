@@ -241,6 +241,19 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               </div>
             )}
           </div>
+          {(search.data as any)?.named_competitors?.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-indigo-200">
+              <span className="text-xs font-semibold text-indigo-700">Concurrents identifiés par l'IA : </span>
+              <span className="text-xs text-indigo-900">
+                {(search.data as any).named_competitors.join(", ")}
+              </span>
+              {(search.data as any)?.named_competitors_found > 0 && (
+                <span className="text-xs text-green-600 ml-1">
+                  ({(search.data as any).named_competitors_found} contacts trouvés)
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

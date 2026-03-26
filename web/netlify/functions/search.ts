@@ -88,18 +88,23 @@ PEOPLE :
 ═══ RÈGLE CONCURRENTS (CRITIQUE) ═══
 Si "concurrents de X", "entreprises comme X", ou "similaires à X" :
 1. UTILISE LE WEB SEARCH pour comprendre ce que X fait RÉELLEMENT
-2. Identifie le TYPE d'entreprise (pas juste le marché client)
-3. fullenrich : industries LinkedIn du MÊME TYPE que X
-   - Cosima.eu = habitats partagés seniors, alternative EHPAD → "Individual & Family Services", "Hospital & Health Care"
-   - Un SaaS immobilier → "Computer Software" (pas "Real Estate")
-4. insee.section_activite_principale : section NAF du TYPE de X
-5. NE METS JAMAIS le nom de X dans insee.q
-6. NE RESTREINS PAS géographiquement par région (pas de region:11) sauf si explicitement demandé — la localisation "France" = pas de filtre géo INSEE
+2. UTILISE LE WEB SEARCH pour chercher "[nom de X] concurrents" ou "[nom de X] alternatives"
+3. Liste les concurrents SPÉCIFIQUES trouvés dans "named_competitors" (max 10 noms d'entreprises)
+4. fullenrich : industries LinkedIn du MÊME TYPE que X
+5. insee.section_activite_principale : section NAF du TYPE de X
+6. NE METS JAMAIS le nom de X dans insee.q
+7. NE RESTREINS PAS géographiquement par région sauf si explicitement demandé
 
 ═══ FORMAT DE RÉPONSE ═══
 {
   "_reasoning": "Explication en 1-2 phrases",
   "fullenrich": { ...filtres Fullenrich... },
+  "insee": { ...filtres INSEE... },
+  "named_competitors": ["CetteFamille", "Domani", "Ages&Vie"]
+}
+
+Le champ "named_competitors" est OBLIGATOIRE quand la description mentionne un concurrent.
+Ces noms seront cherchés directement par nom dans les bases INSEE et Fullenrich.
   "insee": { ...filtres INSEE... }
 }${breadthInstruction}`;
 }
@@ -110,6 +115,7 @@ interface CombinedFilters {
   fullenrich: Record<string, unknown>;
   insee: EntreprisesGovFilters;
   reasoning: string;
+  namedCompetitors: string[];
   cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
 }
 
@@ -188,6 +194,7 @@ async function callClaudeCombined(
     fullenrich: parsed.fullenrich ?? parsed,
     insee: parsed.insee ?? {},
     reasoning: parsed._reasoning ?? "",
+    namedCompetitors: Array.isArray(parsed.named_competitors) ? parsed.named_competitors.slice(0, 10) : [],
     cost: { input_tokens: inputTokens, output_tokens: outputTokens, web_searches: webSearches, estimated_usd: Math.round(estimatedUsd * 10000) / 10000 },
   };
 }
@@ -547,7 +554,7 @@ export default async (request: Request) => {
     }
 
     // ─── 1. SINGLE Claude call with web search → Fullenrich + INSEE filters + reasoning ───
-    const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning, cost: aiCost } =
+    const { fullenrich: filters, insee: entreprisesFilters, reasoning: aiReasoning, namedCompetitors, cost: aiCost } =
       await callClaudeCombined(body.description, body.mode, false, body.location, body.secteur);
 
     // Apply optional overrides (headcount, location)
@@ -656,6 +663,44 @@ export default async (request: Request) => {
       totalCost.web_searches += cost.web_searches;
       totalCost.estimated_usd += cost.estimated_usd;
       console.log(`INSEE verify: ${entreprisesContacts.length} → ${verifiedInsee.length} kept`);
+    }
+
+    // ─── Named competitors search (direct by name) ───
+    const competitorContacts: unknown[] = [];
+    if (namedCompetitors.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      console.log(`Searching ${namedCompetitors.length} named competitors: ${namedCompetitors.join(", ")}`);
+
+      // Search competitors in parallel groups of 3 (avoid rate limits)
+      for (let i = 0; i < namedCompetitors.slice(0, 5).length; i += 3) {
+        const batch = namedCompetitors.slice(i, i + 3);
+        const searches = batch.flatMap(name => [
+          // INSEE by name
+          searchEntreprisesGov({ q: name }, 3)
+            .then(r => competitorContacts.push(...r.contacts))
+            .catch(() => {}),
+          // Fullenrich by company name
+          searchFullenrich({
+            current_company_names: [{ value: name, exact_match: false, exclude: false }],
+            ...(filters.current_position_titles ? { current_position_titles: filters.current_position_titles } : {}),
+          }, 3)
+            .then(results => {
+              for (const r of results) {
+                competitorContacts.push({ ...(r as any), _source: "fullenrich" });
+              }
+            })
+            .catch(() => {}),
+        ]);
+        await Promise.all(searches);
+      }
+
+      // Filter titles on competitor results
+      const filteredCompetitors = competitorContacts.filter(
+        (r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? "")
+      );
+      console.log(`Named competitors: ${competitorContacts.length} raw → ${filteredCompetitors.length} after title filter`);
+
+      // Add to verified results (these are already identified as competitors, no need to re-verify)
+      verifiedResults.push(...filteredCompetitors);
     }
 
     let results = deduplicateResults(verifiedResults, verifiedInsee);
@@ -781,6 +826,8 @@ export default async (request: Request) => {
       filters,
       ai_reasoning: aiReasoning,
       ai_cost: totalCost,
+      named_competitors: namedCompetitors,
+      named_competitors_found: competitorContacts.length,
       verification: {
         raw_count: totalRawCount,
         verified_count: verifiedResults.length,

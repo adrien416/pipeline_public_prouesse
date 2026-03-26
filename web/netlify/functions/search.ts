@@ -144,7 +144,7 @@ async function callClaudeCombined(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: systemPrompt,
         tools: tools.length > 0 ? tools : undefined,
@@ -188,8 +188,8 @@ async function callClaudeCombined(
   const outputTokens = usage.output_tokens ?? 0;
   const webSearches = usage.server_tool_use?.web_search_requests ?? 0;
   // Sonnet 4.6: $3/M input, $15/M output, $0.01/web search
-  // Haiku 4.5: $1/M input, $5/M output, $0.01/web search
-  const estimatedUsd = (inputTokens * 1 / 1_000_000) + (outputTokens * 5 / 1_000_000) + (webSearches * 0.01);
+  // Sonnet 4.6: $3/M input, $15/M output, $0.01/web search
+  const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000) + (webSearches * 0.01);
 
   return {
     fullenrich: parsed.fullenrich ?? parsed,

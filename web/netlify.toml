@@ -4,6 +4,8 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["@anthropic-ai/sdk"]
+  timeout = 26
 
 [[headers]]
   for = "/*"

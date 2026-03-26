@@ -136,7 +136,7 @@ export async function callClaudeCombined(
   // Enable web search when description mentions a company, URL, or competitor search
   const needsWebSearch = /https?:\/\/|concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(description);
   const tools: any[] = needsWebSearch
-    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]
+    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]
     : [];
 
   let result: any;
@@ -150,7 +150,7 @@ export async function callClaudeCombined(
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 1024,
+        max_tokens: 800,
         system: systemPrompt,
         tools: tools.length > 0 ? tools : undefined,
         messages: [{

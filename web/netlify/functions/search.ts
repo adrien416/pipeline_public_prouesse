@@ -76,15 +76,25 @@ PEOPLE :
 3. JAMAIS "Owner" seul (matche Product Owner). Utilise des titres de DIRIGEANTS explicites.
 4. PAS de current_company_specialties sauf description très précise.
 5. TOUJOURS exclure : current_company_types: nonprofit, government agency (avec exclude: true).
-6. URLs/noms d'entreprise : si la description contient une URL, UTILISE LE WEB SEARCH pour aller voir le site et comprendre ce que l'entreprise fait RÉELLEMENT. Ne devine JAMAIS le secteur à partir du nom.
+6. URLs/noms d'entreprise : si tu as accès au web search, UTILISE-LE pour comprendre ce que l'entreprise fait. Mets le résultat de ta recherche dans _reasoning. Base tes filtres UNIQUEMENT sur ce que tu as trouvé, pas sur des suppositions.
 7. Si "Secteur :" fourni, c'est ta source PRINCIPALE pour les industries.
+8. **TYPE D'ENTREPRISE vs MARCHÉ CLIENT** — Choisis l'industrie LinkedIn qui correspond au TYPE de l'entreprise :
+   - Éditeur SaaS/logiciel → "Computer Software", "Information Technology and Services" (même si le logiciel est pour l'immobilier, la santé, etc.)
+   - Fintech → "Financial Services" (même si c'est pour les seniors)
+   - Habitat/coliving/résidences → "Real Estate", "Hospital & Health Care", "Individual & Family Services"
+   - Marketplace → "Internet", "E-commerce"
+   - Cabinet de conseil → "Management Consulting"
 
 ═══ RÈGLE CONCURRENTS (CRITIQUE) ═══
 Si "concurrents de X", "entreprises comme X", ou "similaires à X" :
-1. Identifie le SECTEUR réel de X (utilise tes connaissances, pas l'étymologie)
-2. fullenrich : industries LinkedIn du secteur de X
-3. insee.section_activite_principale : section(s) NAF du secteur
-4. NE METS JAMAIS le nom de X dans insee.q — q cherche par nom d'entreprise, pas par secteur
+1. UTILISE LE WEB SEARCH pour comprendre ce que X fait RÉELLEMENT
+2. Identifie le TYPE d'entreprise (pas juste le marché client)
+3. fullenrich : industries LinkedIn du MÊME TYPE que X
+   - Cosima.eu = habitats partagés seniors, alternative EHPAD → "Individual & Family Services", "Hospital & Health Care"
+   - Un SaaS immobilier → "Computer Software" (pas "Real Estate")
+4. insee.section_activite_principale : section NAF du TYPE de X
+5. NE METS JAMAIS le nom de X dans insee.q
+6. NE RESTREINS PAS géographiquement par région (pas de region:11) sauf si explicitement demandé — la localisation "France" = pas de filtre géo INSEE
 
 ═══ FORMAT DE RÉPONSE ═══
 {

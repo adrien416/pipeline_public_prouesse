@@ -28,6 +28,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [stepFilters, setStepFilters] = useState<SearchFiltersResult | null>(null);
   const [loadedRecherche, setLoadedRecherche] = useState<Record<string, string> | null>(null);
   const [loadedContacts, setLoadedContacts] = useState<Array<Record<string, string>> | null>(null);
+  const [correction, setCorrection] = useState("");
 
   const search = useMutation({
     mutationFn: async (params: SearchParams) => {
@@ -45,7 +46,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       setStepFilters(filtersResult);
 
       // ─── Step 1b: If competitor search, web search for names (~5-8s) ───
-      const isCompetitorSearch = /concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(params.description);
+      const isCompetitorSearch = /concurrent|concurrents|similaire|comme\s+\w|alternative|\.com|\.fr|\.eu|\.io|\.net|\.org|https?:\/\//i.test(params.description);
       let enrichedFilters = filtersResult;
 
       if (isCompetitorSearch) {
@@ -312,10 +313,31 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
-      {/* Error */}
+      {/* Error with retry button */}
       {search.isError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          {search.error instanceof Error ? search.error.message : "Erreur de recherche"}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-700 mb-2">
+            {search.error instanceof Error
+              ? (search.error.message === "Load failed" || search.error.message === "Failed to fetch"
+                ? "Timeout serveur (10s). L'API Anthropic est peut-être rate-limitée."
+                : search.error.message)
+              : "Erreur de recherche"}
+          </p>
+          <button
+            type="button"
+            onClick={() => search.mutate({
+              description: description.trim(),
+              mode,
+              headcount_min: parseInt(headcountMin) || undefined,
+              headcount_max: parseInt(headcountMax) || undefined,
+              location: location || undefined,
+              secteur: secteur || undefined,
+              limit: parseInt(limit) || 100,
+            })}
+            className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-red-700"
+          >
+            Réessayer
+          </button>
         </div>
       )}
 
@@ -352,6 +374,39 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               )}
             </div>
           )}
+          {/* Correction field */}
+          <div className="mt-3 pt-3 border-t border-indigo-200">
+            <label className="text-xs font-semibold text-amber-700 block mb-1">
+              L'IA se trompe ? Corrige ici :
+            </label>
+            <textarea
+              value={correction}
+              onChange={(e) => setCorrection(e.target.value)}
+              rows={2}
+              className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm bg-amber-50 focus:ring-2 focus:ring-amber-400"
+              placeholder="Ex: HappyVisio = plateforme de prévention santé en visio pour seniors, pas de visite virtuelle immobilière"
+            />
+            <button
+              type="button"
+              disabled={search.isPending || !correction.trim()}
+              onClick={() => {
+                const correctedDesc = `${description.trim()}\n\nCORRECTION IMPORTANTE : ${correction.trim()}`;
+                setCorrection("");
+                search.mutate({
+                  description: correctedDesc,
+                  mode,
+                  headcount_min: parseInt(headcountMin) || undefined,
+                  headcount_max: parseInt(headcountMax) || undefined,
+                  location: location || undefined,
+                  secteur: secteur || undefined,
+                  limit: parseInt(limit) || 100,
+                });
+              }}
+              className="mt-2 w-full bg-amber-500 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-amber-600 disabled:opacity-50"
+            >
+              Relancer avec la correction
+            </button>
+          </div>
         </div>
       )}
 

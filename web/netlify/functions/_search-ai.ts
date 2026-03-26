@@ -133,12 +133,13 @@ export async function callClaudeCombined(
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
 
-  // NO web search in this call — too slow for 10s Netlify timeout
-  // Web search is done in a separate step (search-competitors.ts)
+  // NO web search here — it causes pause_turn/JSON parsing failures in 10s timeout
+  // Web search is done in search-competitors.ts (separate endpoint, separate 10s)
+  // Sonnet is smart enough to identify most companies from its training data
   const tools: any[] = [];
 
   let result: any;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -159,7 +160,7 @@ export async function callClaudeCombined(
     });
 
     if (response.status === 429) {
-      const wait = (attempt + 1) * 5000;
+      const wait = (attempt + 1) * 2000; // 2s, 4s max — must fit in 10s Netlify timeout
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }
@@ -174,16 +175,45 @@ export async function callClaudeCombined(
   }
   if (!result) throw new Error("Anthropic API: rate limited, réessaie dans quelques secondes");
 
-  // Extract the text content from response (may contain web_search results + text blocks)
-  const textBlocks = (result.content ?? [])
+  // Extract text blocks from response (may contain web_search results interspersed)
+  const allText = (result.content ?? [])
     .filter((block: any) => block.type === "text")
     .map((block: any) => block.text)
-    .join("");
+    .join("\n");
 
-  const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Claude n'a pas retourné de JSON valide");
+  // Find valid JSON by brace-counting (handles nested objects like fullenrich filters)
+  let parsed: any = null;
+  for (let i = allText.length - 1; i >= 0; i--) {
+    if (allText[i] !== "{") continue;
+    let depth = 0;
+    let end = -1;
+    for (let j = i; j < allText.length; j++) {
+      if (allText[j] === "{") depth++;
+      else if (allText[j] === "}") depth--;
+      if (depth === 0) { end = j; break; }
+    }
+    if (end === -1) continue;
+    const candidate = allText.slice(i, end + 1);
+    try {
+      const obj = JSON.parse(candidate);
+      if (obj.fullenrich || obj._reasoning || obj.insee) {
+        parsed = obj;
+        break;
+      }
+    } catch { /* not valid JSON at this position, try next { */ }
+  }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  if (!parsed) {
+    // Fallback: Claude didn't return valid JSON (common with web search / pause_turn)
+    // Return minimal filters based on the description
+    console.error("JSON parsing failed. allText:", allText.slice(0, 500));
+    parsed = {
+      _reasoning: "Filtres générés par défaut (l'IA n'a pas retourné de JSON valide)",
+      fullenrich: {},
+      insee: {},
+      named_competitors: [],
+    };
+  }
 
   const usage = result.usage ?? {};
   const inputTokens = usage.input_tokens ?? 0;

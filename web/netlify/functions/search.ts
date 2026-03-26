@@ -574,109 +574,30 @@ export default async (request: Request) => {
     const maxIterations = 5;
     const batchSize = Math.min(targetCount, 100);
     const MAX_COST_USD = 0.50;
-    let fullenrichOffset = 0;
-    let totalRawCount = 0;
-    const totalCost = { ...aiCost };
-    let verifyReasons: string[] = [];
-    let costCapReached = false;
 
-    // First: get INSEE results (one-shot, supplementary)
+    // ─── 3. TWO PATHS: Named competitors (fast) OR Industry search + verify ───
     const entreprisesLimit = Math.min(Math.ceil(targetCount * 0.3), 50);
-    const entreprisesGovResult = await searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
-      .catch((err): EntreprisesGovResult => ({
-        contacts: [],
-        debug: { status: "crash", error: err instanceof Error ? err.message : String(err) },
-      }));
-    const entreprisesContacts = entreprisesGovResult.contacts;
-    const entreprisesDebug = entreprisesGovResult.debug;
-
-    // Loop: fetch → filter titles → verify with AI → accumulate
     let verifiedResults: unknown[] = [];
-    const seenCompanies = new Set<string>();
+    let verifyReasons: string[] = [];
+    let entreprisesDebug: EntreprisesGovResult["debug"] = { status: "skipped" };
+    let totalRawCount = 0;
+    let costCapReached = false;
+    const totalCost = { ...aiCost };
 
-    for (let iteration = 0; iteration < maxIterations; iteration++) {
-      if (totalCost.estimated_usd >= MAX_COST_USD) {
-        costCapReached = true;
-        console.log(`Cost cap reached: $${totalCost.estimated_usd.toFixed(3)}`);
-        break;
-      }
+    if (namedCompetitors.length > 0) {
+      // ═══ CHEMIN NOMMÉ : recherche directe par nom (rapide, pas de verify) ═══
+      console.log(`Named path: searching ${namedCompetitors.length} competitors: ${namedCompetitors.join(", ")}`);
 
-      const batch = await searchFullenrich(
-        { ...filters, offset: fullenrichOffset },
-        batchSize,
-      );
-      totalRawCount += batch.length;
-      fullenrichOffset += batch.length;
-
-      const tagged = batch.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
-      const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
-
-      const newContacts = titleFiltered.filter((r: any) => {
-        const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
-        if (company && seenCompanies.has(company)) return false;
-        if (company) seenCompanies.add(company);
-        return true;
-      });
-
-      if (newContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
-        const contactsForVerify = newContacts.map((r: any) => ({
-          entreprise: r.employment?.current?.company?.name ?? "",
-          titre: r.employment?.current?.title ?? "",
-          domaine: r.employment?.current?.company?.domain ?? "",
-          secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
-        }));
-
-        const { keepIndices, reasoning, cost } = await verifyBatch(
-          body.description, aiReasoning, contactsForVerify,
-        );
-
-        for (const idx of keepIndices) verifiedResults.push(newContacts[idx]);
-        if (reasoning) verifyReasons.push(reasoning);
-        totalCost.input_tokens += cost.input_tokens;
-        totalCost.output_tokens += cost.output_tokens;
-        totalCost.web_searches += cost.web_searches;
-        totalCost.estimated_usd += cost.estimated_usd;
-      }
-
-      console.log(`Search iteration ${iteration + 1}: ${totalRawCount} raw → ${verifiedResults.length} verified (target: ${targetCount}, cost: $${totalCost.estimated_usd.toFixed(3)})`);
-
-      // Stop if: enough verified, OR Fullenrich exhausted (returned less than requested)
-      if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
-    }
-
-    // Verify INSEE contacts too (same verifyBatch, not just passed through)
-    let verifiedInsee: unknown[] = [];
-    if (entreprisesContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
-      const inseeForVerify = (entreprisesContacts as any[]).map((r: any) => ({
-        entreprise: r.employment?.current?.company?.name ?? "",
-        titre: r.employment?.current?.title ?? "",
-        domaine: "",
-        secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
-      }));
-      const { keepIndices, reasoning, cost } = await verifyBatch(
-        body.description, aiReasoning, inseeForVerify,
-      );
-      verifiedInsee = keepIndices.map(i => (entreprisesContacts as any[])[i]);
-      if (reasoning) verifyReasons.push(`INSEE: ${reasoning}`);
-      totalCost.input_tokens += cost.input_tokens;
-      totalCost.output_tokens += cost.output_tokens;
-      totalCost.web_searches += cost.web_searches;
-      totalCost.estimated_usd += cost.estimated_usd;
-      console.log(`INSEE verify: ${entreprisesContacts.length} → ${verifiedInsee.length} kept`);
-    }
-
-    // ─── Named competitors search (direct by name) ───
-    const competitorContacts: unknown[] = [];
-    if (namedCompetitors.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
-      console.log(`Searching ${namedCompetitors.length} named competitors: ${namedCompetitors.join(", ")}`);
-
-      // Search competitors in parallel groups of 3 (avoid rate limits)
-      for (let i = 0; i < namedCompetitors.slice(0, 5).length; i += 3) {
-        const batch = namedCompetitors.slice(i, i + 3);
-        const searches = batch.flatMap(name => [
+      // Search competitors in parallel groups of 3, max 8 names
+      for (let i = 0; i < namedCompetitors.slice(0, 8).length; i += 3) {
+        const nameBatch = namedCompetitors.slice(i, i + 3);
+        const searches = nameBatch.flatMap(name => [
           // INSEE by name
           searchEntreprisesGov({ q: name }, 3)
-            .then(r => competitorContacts.push(...r.contacts))
+            .then(r => {
+              verifiedResults.push(...r.contacts);
+              if (r.debug.status === "ok") entreprisesDebug = r.debug;
+            })
             .catch(() => {}),
           // Fullenrich by company name
           searchFullenrich({
@@ -684,26 +605,96 @@ export default async (request: Request) => {
             ...(filters.current_position_titles ? { current_position_titles: filters.current_position_titles } : {}),
           }, 3)
             .then(results => {
-              for (const r of results) {
-                competitorContacts.push({ ...(r as any), _source: "fullenrich" });
-              }
+              for (const r of results) verifiedResults.push({ ...(r as any), _source: "fullenrich" });
             })
             .catch(() => {}),
         ]);
         await Promise.all(searches);
       }
 
-      // Filter titles on competitor results
-      const filteredCompetitors = competitorContacts.filter(
-        (r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? "")
-      );
-      console.log(`Named competitors: ${competitorContacts.length} raw → ${filteredCompetitors.length} after title filter`);
+      // Filter titles only (no AI verify — these are already identified as competitors)
+      totalRawCount = verifiedResults.length;
+      verifiedResults = verifiedResults.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+      verifyReasons.push(`Recherche directe par nom de ${namedCompetitors.length} concurrents identifiés par l'IA`);
 
-      // Add to verified results (these are already identified as competitors, no need to re-verify)
-      verifiedResults.push(...filteredCompetitors);
+    } else {
+      // ═══ CHEMIN INDUSTRIE : recherche large + vérification IA ═══
+
+      // Get INSEE results
+      const entreprisesGovResult = await searchEntreprisesGov(entreprisesFilters, entreprisesLimit)
+        .catch((err): EntreprisesGovResult => ({
+          contacts: [],
+          debug: { status: "crash", error: err instanceof Error ? err.message : String(err) },
+        }));
+      const entreprisesContacts = entreprisesGovResult.contacts;
+      entreprisesDebug = entreprisesGovResult.debug;
+
+      // Search + verify loop
+      const seenCompanies = new Set<string>();
+      let fullenrichOffset = 0;
+
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        if (totalCost.estimated_usd >= MAX_COST_USD) {
+          costCapReached = true;
+          break;
+        }
+
+        const batch = await searchFullenrich(
+          { ...filters, offset: fullenrichOffset },
+          batchSize,
+        );
+        totalRawCount += batch.length;
+        fullenrichOffset += batch.length;
+
+        const tagged = batch.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
+        const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        const newContacts = titleFiltered.filter((r: any) => {
+          const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
+          if (company && seenCompanies.has(company)) return false;
+          if (company) seenCompanies.add(company);
+          return true;
+        });
+
+        if (newContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+          const contactsForVerify = newContacts.map((r: any) => ({
+            entreprise: r.employment?.current?.company?.name ?? "",
+            titre: r.employment?.current?.title ?? "",
+            domaine: r.employment?.current?.company?.domain ?? "",
+            secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+          }));
+          const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, contactsForVerify);
+          for (const idx of keepIndices) verifiedResults.push(newContacts[idx]);
+          if (reasoning) verifyReasons.push(reasoning);
+          totalCost.input_tokens += cost.input_tokens;
+          totalCost.output_tokens += cost.output_tokens;
+          totalCost.web_searches += cost.web_searches;
+          totalCost.estimated_usd += cost.estimated_usd;
+        }
+
+        if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
+      }
+
+      // Verify INSEE contacts too
+      if (entreprisesContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+        const inseeForVerify = (entreprisesContacts as any[]).map((r: any) => ({
+          entreprise: r.employment?.current?.company?.name ?? "",
+          titre: r.employment?.current?.title ?? "",
+          domaine: "",
+          secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+        }));
+        const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, inseeForVerify);
+        const verifiedInsee = keepIndices.map(i => (entreprisesContacts as any[])[i]);
+        verifiedResults.push(...verifiedInsee);
+        if (reasoning) verifyReasons.push(`INSEE: ${reasoning}`);
+        totalCost.input_tokens += cost.input_tokens;
+        totalCost.output_tokens += cost.output_tokens;
+        totalCost.web_searches += cost.web_searches;
+        totalCost.estimated_usd += cost.estimated_usd;
+      }
     }
 
-    let results = deduplicateResults(verifiedResults, verifiedInsee);
+    // Deduplicate + trim
+    let results = deduplicateResults(verifiedResults, []);
     results = results.slice(0, targetCount);
 
     // ─── 4. Auto-retry with broader filters if 0 results (raw > 0 but all excluded by verify) ───
@@ -727,7 +718,7 @@ export default async (request: Request) => {
       const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
       if (retryResults.length > 0) {
         Object.assign(filters, broader.fullenrich);
-        results = deduplicateResults(retryResults, verifiedInsee);
+        results = deduplicateResults(retryResults, []);
         results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
         results = results.slice(0, targetCount);
         retried = true;
@@ -748,7 +739,7 @@ export default async (request: Request) => {
       const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
       if (retryResults.length > 0) {
         Object.assign(filters, broader.fullenrich);
-        results = deduplicateResults(retryResults, verifiedInsee);
+        results = deduplicateResults(retryResults, []);
         results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
         results = results.slice(0, targetCount);
         retried = true;
@@ -827,12 +818,12 @@ export default async (request: Request) => {
       ai_reasoning: aiReasoning,
       ai_cost: totalCost,
       named_competitors: namedCompetitors,
-      named_competitors_found: competitorContacts.length,
+      named_competitors_found: namedCompetitors.length > 0 ? verifiedResults.length : 0,
       verification: {
         raw_count: totalRawCount,
         verified_count: verifiedResults.length,
-        insee_verified: verifiedInsee.length,
-        insee_raw: entreprisesContacts.length,
+        insee_verified: 0,
+        insee_raw: 0,
         reasoning: verifyReasons.join(" | "),
         cost_cap_reached: costCapReached,
       },

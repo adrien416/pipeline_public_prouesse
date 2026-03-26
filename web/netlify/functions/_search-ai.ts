@@ -92,13 +92,23 @@ PEOPLE :
 
 ═══ RÈGLE CONCURRENTS (CRITIQUE) ═══
 Si "concurrents de X", "entreprises comme X", ou "similaires à X" :
-1. UTILISE LE WEB SEARCH pour comprendre ce que X fait RÉELLEMENT
-2. UTILISE LE WEB SEARCH pour chercher "[nom de X] concurrents" ou "[nom de X] alternatives"
-3. Liste les concurrents SPÉCIFIQUES trouvés dans "named_competitors" (max 10 noms d'entreprises)
-4. fullenrich : industries LinkedIn du MÊME TYPE que X
-5. insee.section_activite_principale : section NAF du TYPE de X
-6. NE METS JAMAIS le nom de X dans insee.q
-7. NE RESTREINS PAS géographiquement par région sauf si explicitement demandé
+
+ÉTAPE 1 — COMPRENDRE : Fais un web search sur le nom/URL de X pour comprendre EXACTEMENT ce que l'entreprise fait. NE DEVINE PAS. Lis les résultats attentivement.
+
+ÉTAPE 2 — CHERCHER LES CONCURRENTS : Fais un web search "[nom de X] concurrents France" ou "[nom de X] alternatives". Lis les articles qui listent les concurrents réels.
+
+ÉTAPE 3 — LISTER : Mets les noms des vrais concurrents dans "named_competitors". N'invente JAMAIS de noms — ne mets QUE des entreprises que tu as trouvées dans les résultats web.
+
+RÈGLES :
+- NE METS JAMAIS le nom de X dans insee.q
+- NE RESTREINS PAS géographiquement par région sauf si explicitement demandé
+- Si tu ne trouves pas de concurrents dans les résultats web, laisse named_competitors vide et utilise les filtres industrie à la place
+
+═══ RECHERCHE GÉNÉRALE (pas de concurrent spécifique) ═══
+Si la description ne mentionne PAS de concurrent ("cleantech en série A", "startups fintech en France") :
+- N'utilise PAS le web search
+- Génère directement les filtres fullenrich + insee à partir de la description
+- named_competitors : [] (vide)
 
 ═══ FORMAT DE RÉPONSE ═══
 {
@@ -123,10 +133,10 @@ export async function callClaudeCombined(
 
   const systemPrompt = buildCombinedPrompt(mode, broad);
 
-  // Include web search tool so Claude can look up what the company actually does
-  const hasUrl = /https?:\/\/[^\s]+/.test(description);
-  const tools: any[] = hasUrl
-    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }]
+  // Enable web search when description mentions a company, URL, or competitor search
+  const needsWebSearch = /https?:\/\/|concurrent|concurrents|similaire|comme\s+\w|alternative/i.test(description);
+  const tools: any[] = needsWebSearch
+    ? [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]
     : [];
 
   let result: any;

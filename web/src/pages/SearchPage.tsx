@@ -315,7 +315,11 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       {/* Error */}
       {search.isError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          {search.error instanceof Error ? search.error.message : "Erreur de recherche"}
+          {search.error instanceof Error
+            ? (search.error.message === "Load failed" || search.error.message === "Failed to fetch"
+              ? "Timeout serveur (10s). Réessaie — la recherche a peut-être été rate-limitée par l'API Anthropic."
+              : search.error.message)
+            : "Erreur de recherche"}
         </div>
       )}
 

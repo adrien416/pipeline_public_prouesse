@@ -6,7 +6,7 @@
  */
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
-import { buildCombinedPrompt, callClaudeCombined } from "./_search-ai.js";
+import { callClaudeCombined } from "./_search-ai.js";
 
 export default async (request: Request) => {
   if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);

@@ -56,7 +56,7 @@ Réponds avec un JSON :
       });
 
       if (response.status === 429) {
-        await new Promise((r) => setTimeout(r, (attempt + 1) * 3000));
+        await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
         continue;
       }
       if (!response.ok) {

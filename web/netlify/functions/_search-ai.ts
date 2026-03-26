@@ -138,7 +138,7 @@ export async function callClaudeCombined(
   const tools: any[] = [];
 
   let result: any;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -159,7 +159,7 @@ export async function callClaudeCombined(
     });
 
     if (response.status === 429) {
-      const wait = (attempt + 1) * 5000;
+      const wait = (attempt + 1) * 2000; // 2s, 4s max — must fit in 10s Netlify timeout
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }

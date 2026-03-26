@@ -566,10 +566,12 @@ export default async (request: Request) => {
     const targetCount = body.limit ?? 100;
     const maxIterations = 5;
     const batchSize = Math.min(targetCount, 100);
+    const MAX_COST_USD = 0.50;
     let fullenrichOffset = 0;
     let totalRawCount = 0;
     const totalCost = { ...aiCost };
     let verifyReasons: string[] = [];
+    let costCapReached = false;
 
     // First: get INSEE results (one-shot, supplementary)
     const entreprisesLimit = Math.min(Math.ceil(targetCount * 0.3), 50);
@@ -583,9 +585,15 @@ export default async (request: Request) => {
 
     // Loop: fetch → filter titles → verify with AI → accumulate
     let verifiedResults: unknown[] = [];
-    const seenCompanies = new Set<string>(); // dedup across iterations
+    const seenCompanies = new Set<string>();
 
     for (let iteration = 0; iteration < maxIterations; iteration++) {
+      if (totalCost.estimated_usd >= MAX_COST_USD) {
+        costCapReached = true;
+        console.log(`Cost cap reached: $${totalCost.estimated_usd.toFixed(3)}`);
+        break;
+      }
+
       const batch = await searchFullenrich(
         { ...filters, offset: fullenrichOffset },
         batchSize,
@@ -593,14 +601,9 @@ export default async (request: Request) => {
       totalRawCount += batch.length;
       fullenrichOffset += batch.length;
 
-      // Tag + filter titles
       const tagged = batch.map((r: any) => ({ ...r, _source: r._source ?? "fullenrich" }));
-      const titleFiltered = tagged.filter((r: any) => {
-        const title = r.employment?.current?.title ?? "";
-        return !EXCLUDED_TITLES.test(title);
-      });
+      const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
 
-      // Dedup within this batch (skip already-seen companies)
       const newContacts = titleFiltered.filter((r: any) => {
         const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
         if (company && seenCompanies.has(company)) return false;
@@ -608,8 +611,7 @@ export default async (request: Request) => {
         return true;
       });
 
-      // Verify all new contacts in ONE Haiku call (fast, no web search)
-      if (newContacts.length > 0) {
+      if (newContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
         const contactsForVerify = newContacts.map((r: any) => ({
           entreprise: r.employment?.current?.company?.name ?? "",
           titre: r.employment?.current?.title ?? "",
@@ -621,9 +623,7 @@ export default async (request: Request) => {
           body.description, aiReasoning, contactsForVerify,
         );
 
-        for (const idx of keepIndices) {
-          verifiedResults.push(newContacts[idx]);
-        }
+        for (const idx of keepIndices) verifiedResults.push(newContacts[idx]);
         if (reasoning) verifyReasons.push(reasoning);
         totalCost.input_tokens += cost.input_tokens;
         totalCost.output_tokens += cost.output_tokens;
@@ -631,19 +631,63 @@ export default async (request: Request) => {
         totalCost.estimated_usd += cost.estimated_usd;
       }
 
-      console.log(`Search iteration ${iteration + 1}: ${totalRawCount} raw → ${verifiedResults.length} verified (target: ${targetCount})`);
+      console.log(`Search iteration ${iteration + 1}: ${totalRawCount} raw → ${verifiedResults.length} verified (target: ${targetCount}, cost: $${totalCost.estimated_usd.toFixed(3)})`);
 
+      // Stop if: enough verified, OR Fullenrich exhausted (returned less than requested)
       if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
     }
 
-    // Add INSEE contacts (already filtered by dirigeant type)
-    let results = deduplicateResults(verifiedResults, entreprisesContacts);
+    // Verify INSEE contacts too (same verifyBatch, not just passed through)
+    let verifiedInsee: unknown[] = [];
+    if (entreprisesContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      const inseeForVerify = (entreprisesContacts as any[]).map((r: any) => ({
+        entreprise: r.employment?.current?.company?.name ?? "",
+        titre: r.employment?.current?.title ?? "",
+        domaine: "",
+        secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+      }));
+      const { keepIndices, reasoning, cost } = await verifyBatch(
+        body.description, aiReasoning, inseeForVerify,
+      );
+      verifiedInsee = keepIndices.map(i => (entreprisesContacts as any[])[i]);
+      if (reasoning) verifyReasons.push(`INSEE: ${reasoning}`);
+      totalCost.input_tokens += cost.input_tokens;
+      totalCost.output_tokens += cost.output_tokens;
+      totalCost.web_searches += cost.web_searches;
+      totalCost.estimated_usd += cost.estimated_usd;
+      console.log(`INSEE verify: ${entreprisesContacts.length} → ${verifiedInsee.length} kept`);
+    }
+
+    let results = deduplicateResults(verifiedResults, verifiedInsee);
     results = results.slice(0, targetCount);
 
-    // ─── 4. Auto-retry with broader filters if 0 Fullenrich results ───
+    // ─── 4. Auto-retry with broader filters if 0 results (raw > 0 but all excluded by verify) ───
     let retried = false;
     let originalFilters: Record<string, unknown> | undefined;
-    if (totalRawCount === 0) {
+    if (results.length === 0 && totalRawCount > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      // All contacts were excluded by verification → try broader filters
+      originalFilters = { ...filters };
+      const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
+      totalCost.estimated_usd += broader.cost.estimated_usd;
+      if (body.headcount_min || body.headcount_max) {
+        broader.fullenrich.current_company_headcounts = [
+          { min: body.headcount_min ?? 1, max: body.headcount_max ?? 10000, exclude: false },
+        ];
+      }
+      if (body.location) {
+        broader.fullenrich.current_company_headquarters = [
+          { value: body.location, exact_match: false, exclude: false },
+        ];
+      }
+      const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
+      if (retryResults.length > 0) {
+        Object.assign(filters, broader.fullenrich);
+        results = deduplicateResults(retryResults, verifiedInsee);
+        results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+        results = results.slice(0, targetCount);
+        retried = true;
+      }
+    } else if (totalRawCount === 0) {
       originalFilters = { ...filters };
       const broader = await callClaudeCombined(body.description, body.mode, true, body.location, body.secteur);
       if (body.headcount_min || body.headcount_max) {
@@ -659,7 +703,7 @@ export default async (request: Request) => {
       const retryResults = await searchFullenrich(broader.fullenrich, batchSize);
       if (retryResults.length > 0) {
         Object.assign(filters, broader.fullenrich);
-        results = deduplicateResults(retryResults, entreprisesContacts);
+        results = deduplicateResults(retryResults, verifiedInsee);
         results = results.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
         results = results.slice(0, targetCount);
         retried = true;
@@ -740,7 +784,10 @@ export default async (request: Request) => {
       verification: {
         raw_count: totalRawCount,
         verified_count: verifiedResults.length,
+        insee_verified: verifiedInsee.length,
+        insee_raw: entreprisesContacts.length,
         reasoning: verifyReasons.join(" | "),
+        cost_cap_reached: costCapReached,
       },
       entreprises_filters: entreprisesFilters,
       entreprises_debug: entreprisesDebug,

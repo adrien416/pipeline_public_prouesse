@@ -362,11 +362,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 const verification = (search.data as any)?.verification;
                 return (
                   <div className="text-xs mt-0.5 space-y-0.5">
-                    {verification && verification.raw_count > verification.verified_count && (
+                    {verification && (verification.raw_count > 0 || verification.insee_raw > 0) && (
                       <p className="text-green-700">
-                        {verification.verified_count} vérifiés sur {verification.raw_count} bruts par l'IA
-                        {verification.reasoning && <span className="text-gray-500 ml-1">— {verification.reasoning.slice(0, 150)}</span>}
+                        {verification.verified_count + (verification.insee_verified ?? 0)} vérifiés sur {verification.raw_count + (verification.insee_raw ?? 0)} bruts par l'IA
+                        {verification.reasoning && <span className="text-gray-500 ml-1">— {verification.reasoning.slice(0, 200)}</span>}
                       </p>
+                    )}
+                    {verification?.cost_cap_reached && (
+                      <p className="text-red-600 font-medium">Budget IA atteint ($0.50) — recherche arrêtée</p>
                     )}
                     <p>
                       <span className="inline-block bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full mr-1">{fullenrichCount} Fullenrich</span>

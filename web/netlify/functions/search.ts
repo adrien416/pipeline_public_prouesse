@@ -819,6 +819,72 @@ export default async (request: Request) => {
       user_id: auth.userId,
     }));
 
+    // ─── 7b. AI enrich: find missing names + domains for INSEE contacts ───
+    const toEnrich = contacts.filter(c => c.source === "entreprises_gouv" && (!c.nom || !c.domaine));
+    if (toEnrich.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
+      const enrichList = toEnrich.map((c, i) =>
+        `${i + 1}. ${c.entreprise} (${c.titre}) [domaine: ${c.domaine || "?"}] [nom: ${c.prenom} ${c.nom}]`
+      ).join("\n");
+
+      try {
+        const enrichResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": process.env.ANTHROPIC_API_KEY!,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1024,
+            messages: [{
+              role: "user",
+              content: `Pour chaque entreprise ci-dessous, trouve le site web (domaine) et le nom complet du dirigeant principal si manquant.
+Utilise tes connaissances des entreprises françaises.
+
+ENTREPRISES :
+${enrichList}
+
+Réponds UNIQUEMENT avec un JSON :
+{"enriched": [{"index": 1, "domaine": "famileo.com", "prenom": "Laurent", "nom": "Dock"}, ...]}
+N'inclus que les entreprises pour lesquelles tu as trouvé des informations.`,
+            }],
+          }),
+        });
+
+        if (enrichResp.ok) {
+          const enrichResult = await enrichResp.json();
+          const text = (enrichResult.content ?? [])
+            .filter((b: any) => b.type === "text")
+            .map((b: any) => b.text)
+            .join("");
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            const enriched: Array<{ index: number; domaine?: string; prenom?: string; nom?: string }> = parsed.enriched ?? [];
+            for (const e of enriched) {
+              const idx = e.index - 1;
+              if (idx >= 0 && idx < toEnrich.length) {
+                const contact = toEnrich[idx];
+                if (e.domaine && !contact.domaine) contact.domaine = e.domaine;
+                if (e.prenom && !contact.prenom) contact.prenom = e.prenom;
+                if (e.nom && !contact.nom) contact.nom = e.nom;
+              }
+            }
+            console.log(`AI enriched ${enriched.length}/${toEnrich.length} contacts with names/domains`);
+          }
+
+          // Track cost
+          const usage = enrichResult.usage ?? {};
+          totalCost.input_tokens += usage.input_tokens ?? 0;
+          totalCost.output_tokens += usage.output_tokens ?? 0;
+          totalCost.estimated_usd += ((usage.input_tokens ?? 0) / 1_000_000) + ((usage.output_tokens ?? 0) * 5 / 1_000_000);
+        }
+      } catch (err) {
+        console.error("AI enrich names/domains failed:", err);
+      }
+    }
+
     // ─── 8. Save contacts to Google Sheets ───
     if (contacts.length > 0) {
       const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);

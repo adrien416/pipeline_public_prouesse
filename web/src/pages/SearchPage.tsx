@@ -50,7 +50,8 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         setSearchStep("Recherche de contacts sur Fullenrich + INSEE...");
       }
 
-      // Step 2: Execute search with pre-computed filters
+      // Step 2: Execute search + enrich missing names/domains
+      setSearchStep("Recherche et enrichissement des contacts...");
       const result = await launchSearch({
         ...params,
         pre_filters: filtersResult,

@@ -1,5 +1,5 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Mis a jour le : 2026-03-26*
+*Mis a jour le : 2026-03-28*
 
 ## 0. Pour demarrer immediatement
 ```bash
@@ -149,6 +149,12 @@ npx netlify dev     # Dev server local
 - **Authentification** : JWT cookie, login unique
 
 ## 4. Historique des changements
+
+### Session 7 (2026-03-28) — Robustesse Google Sheets (onglet Jobs)
+
+23. **Fix parse range `Jobs!1:1`** : `readHeaders()` n'utilise plus le range ambigu `tab!1:1` et passe en A1 explicite (`'tab'!A1:ZZ1`).  
+24. **Auto-creation des onglets manquants** : ajout de `ensureSheetExists(tabName)` avant la lecture des headers. Si `Jobs` (ou autre) n'existe pas, l'onglet est cree automatiquement au lieu de faire planter la function.  
+25. **Noms d'onglets echappes** : les ecritures d'headers utilisent maintenant un nom d'onglet quote/escape (`'tab'!A1:...`) pour eviter les erreurs de parsing.
 
 ### Session 6 (2026-03-26) — Refonte recherche
 

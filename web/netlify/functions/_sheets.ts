@@ -7,6 +7,14 @@ import { google, sheets_v4 } from "googleapis";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
+function quoteSheetName(tabName: string): string {
+  return `'${tabName.replace(/'/g, "''")}'`;
+}
+
+function rowOneRange(tabName: string): string {
+  return `${quoteSheetName(tabName)}!A1:ZZ1`;
+}
+
 /** Convert 1-based column number to sheet letter (1=A, 26=Z, 27=AA, etc.) */
 function colLetter(n: number): string {
   let s = "";
@@ -37,6 +45,28 @@ function getSheets(): sheets_v4.Sheets {
     sheetsClient = google.sheets({ version: "v4", auth: getAuth() });
   }
   return sheetsClient;
+}
+
+async function getSheetMeta(tabName: string): Promise<sheets_v4.Schema$Sheet | null> {
+  const sheets = getSheets();
+  const spreadsheetId = getSpreadsheetId();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties" });
+  return meta.data.sheets?.find((s) => s.properties?.title === tabName) ?? null;
+}
+
+async function ensureSheetExists(tabName: string): Promise<void> {
+  const existing = await getSheetMeta(tabName);
+  if (existing) return;
+
+  const sheets = getSheets();
+  const spreadsheetId = getSpreadsheetId();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: tabName } } }],
+    },
+  });
+  console.warn(`Sheet "${tabName}" was missing and has been auto-created.`);
 }
 
 function getSpreadsheetId(): string {
@@ -282,10 +312,11 @@ async function deleteColumns(tabName: string, colIndices: number[]): Promise<voi
  * Lit uniquement la 1ère ligne (headers) d'un onglet.
  */
 export async function readHeaders(tabName: string): Promise<string[]> {
+  await ensureSheetExists(tabName);
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
-    range: `${tabName}!1:1`,
+    range: rowOneRange(tabName),
   });
   return res.data.values?.[0] ?? [];
 }
@@ -328,7 +359,7 @@ export async function getHeadersForWrite(
       const endCol = colLetter(headers.length);
       await sheets.spreadsheets.values.update({
         spreadsheetId: getSpreadsheetId(),
-        range: `${tabName}!A1:${endCol}1`,
+        range: `${quoteSheetName(tabName)}!A1:${endCol}1`,
         valueInputOption: "RAW",
         requestBody: { values: [headers] },
       });
@@ -341,7 +372,7 @@ export async function getHeadersForWrite(
     const endCol = colLetter(headers.length);
     await sheets.spreadsheets.values.update({
       spreadsheetId: getSpreadsheetId(),
-      range: `${tabName}!A1:${endCol}1`,
+      range: `${quoteSheetName(tabName)}!A1:${endCol}1`,
       valueInputOption: "RAW",
       requestBody: { values: [headers] },
     });

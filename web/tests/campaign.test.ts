@@ -177,7 +177,6 @@ describe("campaign POST", () => {
         recherche_id: "r1",
         template_sujet: "Bonjour {Prenom}",
         template_corps: "Cher {Prenom} de {Entreprise}...",
-        mode: "levee_de_fonds",
       }),
     });
 

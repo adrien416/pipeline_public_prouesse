@@ -10,7 +10,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { recherche_id, mode, template_sujet, template_corps } = await request.json();
+    const { recherche_id, template_sujet, template_corps } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     // Demo mode: return neutral template
@@ -38,8 +38,6 @@ export default async (request: Request) => {
       secteur: c.secteur,
     }));
 
-    const modeLabel = mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise";
-
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -55,7 +53,6 @@ export default async (request: Request) => {
           content: `Tu es un expert en cold emailing B2B en francais. Reecris et ameliore ce template d'email de prospection.
 
 CONTEXTE DE LA CAMPAGNE :
-- Mode : ${modeLabel}
 - Description de la recherche : ${description || "non specifiee"}
 - Profils types des contacts : ${JSON.stringify(sample)}
 - Nombre total de contacts : ${qualified.length}

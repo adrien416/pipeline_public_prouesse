@@ -29,7 +29,7 @@ export interface Contact {
 export interface Recherche {
   id: string;
   description: string;
-  mode: "levee_de_fonds" | "cession";
+  mode?: string; // legacy, no longer used
   filtres_json: string;
   nb_resultats: string;
   date: string;
@@ -41,7 +41,7 @@ export interface Campagne {
   nom: string;
   template_sujet: string;
   template_corps: string;
-  mode: "levee_de_fonds" | "cession";
+  mode?: string; // legacy, no longer used
   status: "draft" | "active" | "paused" | "completed";
   max_par_jour: string;
   jours_semaine: string;
@@ -60,11 +60,6 @@ export interface Campagne {
 // ─── API payloads ───
 export interface SearchRequest {
   description: string;
-  mode: "levee_de_fonds" | "cession";
-  headcount_min?: number;
-  headcount_max?: number;
-  location?: string;
-  secteur?: string;
 }
 
 export interface SearchResult {
@@ -89,7 +84,6 @@ export interface CampaignSettings {
   recherche_id: string;
   template_sujet: string;
   template_corps: string;
-  mode: "levee_de_fonds" | "cession";
   max_par_jour: number;
   jours_semaine: string[];
   heure_debut: string;

@@ -145,7 +145,7 @@ export default async (request: Request) => {
       recherche_id,
       template_sujet,
       template_corps,
-      mode: mode || "levee_de_fonds",
+      mode: "",
       status: "paused",
       max_par_jour: String(validMaxParJour),
       jours_semaine: JSON.stringify(jours_semaine || ["lun", "mar", "mer", "jeu", "ven"]),

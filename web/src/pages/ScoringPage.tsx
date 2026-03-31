@@ -6,7 +6,6 @@ import { Spinner } from "../components/Spinner";
 
 interface Props {
   rechercheId: string;
-  mode: "levee_de_fonds" | "cession";
   onComplete: () => void;
   onBackToSearch?: () => void;
 }
@@ -106,7 +105,7 @@ function FeedbackCell({
   );
 }
 
-export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: Props) {
+export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) {
   const queryClient = useQueryClient();
   const [scoring, setScoring] = useState(false);
   const [progress, setProgress] = useState({ total: 0, scored: 0, qualified: 0 });
@@ -129,7 +128,7 @@ export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: P
     try {
       let isDone = false;
       while (!isDone && !cancelRef.current) {
-        const result = await launchScoring(rechercheId, mode);
+        const result = await launchScoring(rechercheId);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         if (result.contacts?.length) {
           queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
@@ -148,7 +147,7 @@ export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: P
     } finally {
       setScoring(false);
     }
-  }, [rechercheId, mode, queryClient]);
+  }, [rechercheId, queryClient]);
 
   /** Save a feedback comment to the backend */
   async function saveFeedback(contactId: string, feedback: string) {
@@ -216,10 +215,7 @@ export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: P
         <div>
           <h2 className="text-xl font-bold text-gray-900">2. Scoring IA</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {mode === "levee_de_fonds"
-              ? "Scalabilite + Impact social/environnemental"
-              : "Impact environnemental + Signaux de cession"}
-            {" (seuil "}{">="}{ " 7/10)"}
+            Pertinence sectorielle + Impact social/environnemental (seuil {">="} 7/10)
           </p>
         </div>
       </div>
@@ -325,12 +321,8 @@ export function ScoringPage({ rechercheId, mode, onComplete, onBackToSearch }: P
                 <th className="px-3 py-2 text-left">Entreprise</th>
                 <th className="px-3 py-2 text-left">Site</th>
                 <th className="px-3 py-2 text-center">LinkedIn</th>
-                <th className="px-3 py-2 text-center">
-                  {mode === "levee_de_fonds" ? "Scalabilite" : "Impact env."}
-                </th>
-                <th className="px-3 py-2 text-center">
-                  {mode === "levee_de_fonds" ? "Impact" : "Potentiel cession"}
-                </th>
+                <th className="px-3 py-2 text-center">Pertinence</th>
+                <th className="px-3 py-2 text-center">Impact</th>
                 <th className="px-3 py-2 text-center">Total</th>
                 <th className="px-3 py-2 text-left">Raison</th>
                 <th className="px-3 py-2 text-left">Ton feedback</th>

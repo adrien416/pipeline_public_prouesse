@@ -3,7 +3,7 @@ import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 import { mockPhrase } from "./_demo.js";
 
-async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
+async function generatePhrase(contact: Record<string, string>): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return "";
 
@@ -24,7 +24,7 @@ async function generatePhrase(contact: Record<string, string>, mode: string): Pr
 
 Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
-Mode : ${mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise"}
+Objectif : prospection B2B
 
 Regles STRICTES :
 - NE MENTIONNE JAMAIS le prenom ou le nom du contact (le mail commence deja par "Bonjour {Prenom}")
@@ -55,7 +55,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { recherche_id, mode } = await request.json();
+    const { recherche_id } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     const allContacts = await readAll("Contacts");
@@ -106,7 +106,7 @@ export default async (request: Request) => {
     const BATCH_SIZE = 5;
     const batch = needPhrase.slice(0, BATCH_SIZE);
     const phrases = await Promise.all(
-      batch.map((c) => generatePhrase(c, mode || "levee_de_fonds"))
+      batch.map((c) => generatePhrase(c))
     );
 
     // Update contacts with generated phrases

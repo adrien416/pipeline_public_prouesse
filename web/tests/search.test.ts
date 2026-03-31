@@ -1,5 +1,5 @@
 /**
- * Tests for search.ts — search pipeline with auto-retry on 0 results.
+ * Tests for search.ts — simplified search pipeline (Fullenrich only, no INSEE).
  * Mocks: Google Sheets (_sheets), Anthropic API + Fullenrich (fetch), _auth.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -12,6 +12,8 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
   appendRow: (...args: unknown[]) => mockAppendRow(...args),
   appendRows: (...args: unknown[]) => mockAppendRows(...args),
   readAll: vi.fn().mockResolvedValue([]),
+  findRowById: vi.fn().mockResolvedValue(null),
+  updateRow: vi.fn().mockResolvedValue(undefined),
   CONTACTS_HEADERS: [
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
@@ -25,17 +27,6 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
   ],
   RECHERCHES_HEADERS: ["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id"],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
-  readHeaders: vi.fn().mockResolvedValue([
-    "id", "nom", "prenom", "email", "entreprise", "titre",
-    "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status", "enrichissement_retry",
-    "score_1", "score_2", "score_total", "score_raison", "score_feedback",
-    "recherche_id", "campagne_id",
-    "email_status", "email_sent_at", "phrase_perso",
-    "source",
-    "date_creation", "date_modification",
-    "user_id",
-  ]),
   getHeadersForWrite: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
@@ -47,12 +38,11 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "date_creation", "date_modification",
     "user_id",
   ]),
-  readRawRange: vi.fn().mockResolvedValue([["header"], ["row1"]]),
 }));
 
 // ─── Mock _auth ───
 vi.mock("../netlify/functions/_auth.js", () => ({
-  requireAuth: () => ({ email: "adrien@prouesse.vc" }),
+  requireAuth: () => ({ userId: "admin", email: "adrien@prouesse.vc", role: "admin" }),
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -91,7 +81,6 @@ const FULLENRICH_RESULT = {
   social_profiles: { linkedin: { url: "https://linkedin.com/in/marie" } },
 };
 
-// Helper: counts calls by URL pattern
 function countCalls(pattern: string): number {
   return (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
     (c: any[]) => {
@@ -108,43 +97,37 @@ beforeEach(() => {
   process.env.ANTHROPIC_API_KEY = "test-key";
   process.env.FULLENRICH_API_KEY = "test-key";
 
-  // Default mock: Anthropic returns combined filters OR verify results, Fullenrich returns 1 result
-  let anthropicCallIdx = 0;
   globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
 
     if (urlStr.includes("anthropic")) {
-      anthropicCallIdx++;
-      // First call = combined filters, subsequent calls = verifyBatch
       const bodyStr = typeof init?.body === "string" ? init.body : "";
       const isVerify = bodyStr.includes("GARDE si") || bodyStr.includes("EXCLUS si");
       if (isVerify) {
         return new Response(JSON.stringify({
           content: [{ type: "text", text: '{"keep": [1], "reasoning": "test verify"}' }],
+          usage: { input_tokens: 100, output_tokens: 50 },
         }));
       }
+      // AI filter generation with web_search
       return new Response(JSON.stringify({
         content: [{
           type: "text",
           text: JSON.stringify({
-            _reasoning: "Test reasoning",
-            fullenrich: {
+            filters: {
               current_company_industries: [{ value: "Cleantech", exact_match: false, exclude: false }],
               current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }],
+              current_company_headquarters: [{ value: "France", exact_match: false, exclude: false }],
             },
-            insee: { section_activite_principale: "J" },
+            reasoning: "Test reasoning",
           }),
         }],
+        usage: { input_tokens: 200, output_tokens: 100, server_tool_use: { web_search_requests: 1 } },
       }));
     }
 
     if (urlStr.includes("fullenrich")) {
       return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
-    }
-
-    // API Recherche d'Entreprises (gouv.fr) — return empty by default
-    if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-      return new Response(JSON.stringify({ results: [], total_results: 0 }));
     }
 
     return new Response("Not found", { status: 404 });
@@ -164,29 +147,22 @@ describe("search handler — method", () => {
 // ─── Validation ───
 
 describe("search handler — validation", () => {
-  it("requires description and mode", async () => {
+  it("requires description", async () => {
     const res = await searchHandler(makeRequest({}));
     expect(res.status).toBe(400);
   });
 
-  it("requires description", async () => {
-    const res = await searchHandler(makeRequest({ mode: "levee_de_fonds" }));
-    expect(res.status).toBe(400);
-  });
-
-  it("requires mode", async () => {
+  it("does not require mode (mode removed)", async () => {
     const res = await searchHandler(makeRequest({ description: "test" }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
   });
 });
 
-// ─── Successful search (first try) ───
+// ─── Successful search ───
 
 describe("search handler — success", () => {
-  it("returns contacts and filters on first try", async () => {
-    const res = await searchHandler(
-      makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
-    );
+  it("returns contacts on successful search", async () => {
+    const res = await searchHandler(makeRequest({ description: "societes cleantech" }));
     const body = await res.json();
 
     expect(body.contacts).toHaveLength(1);
@@ -202,31 +178,36 @@ describe("search handler — success", () => {
     expect(body.filters).toBeDefined();
     expect(body.total).toBe(1);
     expect(body.retried).toBe(false);
-    expect(body.suggestions).toEqual([]);
   });
 
-  it("does not retry when first call has results", async () => {
-    await searchHandler(
-      makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
-    );
-
-    // 2 Anthropic calls (combined filters + verify batch) and 1 Fullenrich call
+  it("calls Anthropic for filter generation + verification", async () => {
+    await searchHandler(makeRequest({ description: "societes cleantech" }));
+    // 1 Anthropic call for filters + 1 for verify batch
     expect(countCalls("anthropic")).toBe(2);
     expect(countCalls("fullenrich")).toBe(1);
   });
 
+  it("does not call INSEE API (removed)", async () => {
+    await searchHandler(makeRequest({ description: "societes cleantech" }));
+    expect(countCalls("recherche-entreprises")).toBe(0);
+  });
+
   it("saves recherche to Google Sheets", async () => {
-    await searchHandler(
-      makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
-    );
+    await searchHandler(makeRequest({ description: "societes cleantech" }));
     expect(mockAppendRow).toHaveBeenCalledWith("Recherches", expect.any(Array));
   });
 
   it("saves contacts to Google Sheets", async () => {
-    await searchHandler(
-      makeRequest({ description: "societes cleantech", mode: "levee_de_fonds" })
-    );
+    await searchHandler(makeRequest({ description: "societes cleantech" }));
     expect(mockAppendRows).toHaveBeenCalledWith("Contacts", expect.any(Array));
+  });
+
+  it("all contacts have source=fullenrich", async () => {
+    const res = await searchHandler(makeRequest({ description: "societes cleantech" }));
+    const body = await res.json();
+    for (const c of body.contacts) {
+      expect(c.source).toBe("fullenrich");
+    }
   });
 });
 
@@ -240,249 +221,71 @@ describe("search handler — auto-retry", () => {
       if (urlStr.includes("anthropic")) {
         const bodyStr = typeof init?.body === "string" ? init.body : "";
         if (bodyStr.includes("GARDE si")) {
-          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
+          return new Response(JSON.stringify({
+            content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }],
+            usage: { input_tokens: 100, output_tokens: 50 },
+          }));
         }
         return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries": [{"value": "Environmental Services"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"filters":{"current_company_industries":[{"value":"Environmental Services"}]},"reasoning":"test"}' }],
+          usage: { input_tokens: 200, output_tokens: 100, server_tool_use: { web_search_requests: 1 } },
         }));
       }
       if (urlStr.includes("fullenrich")) {
         fullenrichCallCount++;
-        // First call: 0 results; second call (broader): has results
         if (fullenrichCallCount === 1) {
           return new Response(JSON.stringify({ results: [] }));
         }
         return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
       }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
-    const res = await searchHandler(
-      makeRequest({ description: "recyclage electronique", mode: "levee_de_fonds" })
-    );
+    const res = await searchHandler(makeRequest({ description: "recyclage electronique" }));
     const body = await res.json();
 
     expect(body.contacts).toHaveLength(1);
     expect(body.retried).toBe(true);
-    expect(body.originalFilters).toBeDefined();
-    expect(body.suggestions).toEqual([]);
-    // 2 Anthropic calls (combined + broad retry) + 2 Fullenrich calls (no verify since retry path skips it)
-    expect(countCalls("anthropic")).toBe(2);
-    expect(fullenrichCallCount).toBe(2);
   });
 
-  it("returns empty suggestions when both attempts return 0", async () => {
+  it("returns empty when both attempts return 0", async () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Niche"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"filters":{"current_company_industries":[{"value":"Niche"}]},"reasoning":"test"}' }],
+          usage: { input_tokens: 200, output_tokens: 100, server_tool_use: { web_search_requests: 1 } },
         }));
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
       }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
-    const res = await searchHandler(
-      makeRequest({ description: "test niche", mode: "levee_de_fonds" })
-    );
+    const res = await searchHandler(makeRequest({ description: "test niche" }));
     const body = await res.json();
 
     expect(body.contacts).toHaveLength(0);
-    expect(body.suggestions).toEqual([]);
-    // 2 Anthropic calls: combined + broad retry
-    expect(countCalls("anthropic")).toBe(2);
   });
 
-  it("does not save contacts to Sheets when both attempts return 0", async () => {
+  it("does not save contacts to Sheets when 0 results", async () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"filters":{"current_company_industries":[{"value":"Test"}]},"reasoning":"test"}' }],
+          usage: { input_tokens: 200, output_tokens: 100, server_tool_use: { web_search_requests: 1 } },
         }));
       }
       if (urlStr.includes("fullenrich")) {
         return new Response(JSON.stringify({ results: [] }));
       }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
       return new Response("Not found", { status: 404 });
     }) as typeof fetch;
 
-    await searchHandler(
-      makeRequest({ description: "test", mode: "levee_de_fonds" })
-    );
-
+    await searchHandler(makeRequest({ description: "test" }));
     expect(mockAppendRows).not.toHaveBeenCalled();
-  });
-});
-
-// ─── Filter overrides ───
-
-describe("search handler — filter overrides", () => {
-  it("applies headcount override", async () => {
-    await searchHandler(
-      makeRequest({
-        description: "test",
-        mode: "levee_de_fonds",
-        headcount_min: 10,
-        headcount_max: 50,
-      })
-    );
-
-    const fetchCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    const fullenrichCall = fetchCalls.find((c: any[]) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("fullenrich");
-    });
-
-    expect(fullenrichCall).toBeDefined();
-    const callBody = JSON.parse(fullenrichCall![1].body);
-    expect(callBody.current_company_headcounts).toEqual([
-      { min: 10, max: 50, exclude: false },
-    ]);
-  });
-
-  it("applies location override", async () => {
-    await searchHandler(
-      makeRequest({
-        description: "test",
-        mode: "levee_de_fonds",
-        location: "Paris",
-      })
-    );
-
-    const fetchCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    const fullenrichCall = fetchCalls.find((c: any[]) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("fullenrich");
-    });
-
-    const callBody = JSON.parse(fullenrichCall![1].body);
-    expect(callBody.current_company_headquarters).toEqual([
-      { value: "Paris", exact_match: false, exclude: false },
-    ]);
-  });
-
-  it("applies limit to Fullenrich call", async () => {
-    await searchHandler(
-      makeRequest({
-        description: "test",
-        mode: "levee_de_fonds",
-        limit: 25,
-      })
-    );
-
-    const fetchCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    const fullenrichCall = fetchCalls.find((c: any[]) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("fullenrich");
-    });
-
-    const callBody = JSON.parse(fullenrichCall![1].body);
-    expect(callBody.limit).toBe(25);
-  });
-
-  it("applies overrides on retry too", async () => {
-    let fullenrichCallCount = 0;
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-      if (urlStr.includes("anthropic")) {
-        return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
-        }));
-      }
-      if (urlStr.includes("fullenrich")) {
-        fullenrichCallCount++;
-        if (fullenrichCallCount === 1) {
-          return new Response(JSON.stringify({ results: [] }));
-        }
-        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
-      }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof fetch;
-
-    await searchHandler(
-      makeRequest({
-        description: "test",
-        mode: "levee_de_fonds",
-        location: "France",
-        headcount_min: 5,
-        headcount_max: 100,
-      })
-    );
-
-    // The second (retry) Fullenrich call should also have the overrides
-    const fetchCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
-    const fullenrichCalls = fetchCalls.filter((c: any[]) => {
-      const url = typeof c[0] === "string" ? c[0] : c[0].toString();
-      return url.includes("fullenrich");
-    });
-
-    expect(fullenrichCalls).toHaveLength(2);
-    const retryBody = JSON.parse(fullenrichCalls[1][1].body);
-    expect(retryBody.current_company_headquarters).toEqual([
-      { value: "France", exact_match: false, exclude: false },
-    ]);
-    expect(retryBody.current_company_headcounts).toEqual([
-      { min: 5, max: 100, exclude: false },
-    ]);
-  });
-});
-
-// ─── Claude receives context ───
-
-describe("search handler — Claude context", () => {
-  it("passes location and secteur to Claude prompt", async () => {
-    let claudeCallBody = "";
-    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-      if (urlStr.includes("anthropic")) {
-        const bodyStr = typeof init?.body === "string" ? init.body : "";
-        if (bodyStr.includes("GARDE si")) {
-          return new Response(JSON.stringify({ content: [{ type: "text", text: '{"keep": [1], "reasoning": "test"}' }] }));
-        }
-        claudeCallBody = bodyStr;
-        return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
-        }));
-      }
-      if (urlStr.includes("fullenrich")) {
-        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
-      }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof fetch;
-
-    await searchHandler(
-      makeRequest({
-        description: "insertion professionnelle",
-        mode: "levee_de_fonds",
-        location: "Paris",
-        secteur: "social",
-      })
-    );
-
-    const parsed = JSON.parse(claudeCallBody);
-    const promptText = parsed.messages[0].content;
-    expect(promptText).toContain("insertion professionnelle");
-    expect(promptText).toContain("Paris");
-    expect(promptText).toContain("social");
   });
 });
 
@@ -498,9 +301,7 @@ describe("search handler — errors", () => {
       return new Response(JSON.stringify({ results: [] }));
     }) as typeof fetch;
 
-    const res = await searchHandler(
-      makeRequest({ description: "test", mode: "levee_de_fonds" })
-    );
+    const res = await searchHandler(makeRequest({ description: "test" }));
     expect(res.status).toBe(500);
   });
 
@@ -509,42 +310,14 @@ describe("search handler — errors", () => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("anthropic")) {
         return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"Test"}]},"insee":{"section_activite_principale":"J"}}' }],
+          content: [{ type: "text", text: '{"filters":{"current_company_industries":[{"value":"Test"}]},"reasoning":"test"}' }],
+          usage: { input_tokens: 200, output_tokens: 100, server_tool_use: { web_search_requests: 1 } },
         }));
       }
       return new Response("API error", { status: 500 });
     }) as typeof fetch;
 
-    const res = await searchHandler(
-      makeRequest({ description: "test", mode: "levee_de_fonds" })
-    );
+    const res = await searchHandler(makeRequest({ description: "test" }));
     expect(res.status).toBe(500);
-  });
-
-  it("returns 200 with empty suggestions when 0 results after retry", async () => {
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-      if (urlStr.includes("anthropic")) {
-        return new Response(JSON.stringify({
-          content: [{ type: "text", text: '{"_reasoning":"test","fullenrich":{"current_company_industries":[{"value":"test"}]},"insee":{"section_activite_principale":"J"}}' }],
-        }));
-      }
-      if (urlStr.includes("fullenrich")) {
-        return new Response(JSON.stringify({ results: [] }));
-      }
-      if (urlStr.includes("recherche-entreprises.api.gouv.fr")) {
-        return new Response(JSON.stringify({ results: [], total_results: 0 }));
-      }
-      return new Response("Not found", { status: 404 });
-    }) as typeof fetch;
-
-    const res = await searchHandler(
-      makeRequest({ description: "test", mode: "levee_de_fonds" })
-    );
-    const body = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(body.contacts).toHaveLength(0);
-    expect(body.suggestions).toEqual([]);
   });
 });

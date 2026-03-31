@@ -12,7 +12,6 @@ import {
 
 interface ScoreBody {
   recherche_id: string;
-  mode?: string; // optional — frontend can send it to skip Recherches lookup
 }
 
 function safeDomain(domaine: string): string {
@@ -51,9 +50,11 @@ async function fetchMetaDescription(domain: string): Promise<string> {
   }
 }
 
-function buildLeveePrompt(contact: Record<string, string>, metaDesc: string): string {
+function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, rechercheDescription: string): string {
   const host = safeDomain(contact.domaine);
-  return `Tu es un analyste spécialisé en levées de fonds pour des entreprises à impact.
+  return `Tu es un analyste B2B spécialisé en qualification de prospects.
+
+Contexte de la recherche : "${rechercheDescription}"
 
 Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
 Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
@@ -62,10 +63,19 @@ Description du site : ${metaDesc || "Non disponible"}
 Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
 
 Évalue sur 2 critères :
-1. SCALABILITÉ (1-5) : business scalable ? Potentiel de croissance rapide ?
-   1=local/artisanal, 5=plateforme/SaaS très scalable
+1. PERTINENCE (1-5) : l'entreprise correspond-elle bien au secteur/industrie recherché ?
+   1=aucun rapport avec la recherche
+   2=rapport indirect ou marginal
+   3=pertinence modérée (même industrie large mais activité différente)
+   4=bonne correspondance (même secteur, activité similaire)
+   5=correspondance parfaite (exactement le type d'entreprise recherché)
+
 2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable ?
-   1=aucun impact, 5=transformateur
+   1=aucun impact (consulting généraliste, immobilier classique)
+   2=impact indirect ou marginal
+   3=contribution positive modérée (éducation, santé, alimentation saine, mobilité douce, économie circulaire)
+   4=impact significatif et mesurable (cleantech, énergies renouvelables, agriculture durable, inclusion sociale)
+   5=impact transformateur sur un enjeu majeur (dépollution, reforestation, accès à l'eau)
 
 IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
 - une association, charité, coopérative, organisme public, ONG
@@ -74,42 +84,7 @@ IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
 On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d'éducation/formation SONT acceptées.
 
 JSON uniquement :
-{"scalabilite": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
-}
-
-function buildCessionPrompt(contact: Record<string, string>, metaDesc: string): string {
-  const host = safeDomain(contact.domaine);
-  return `Tu es un analyste M&A spécialisé en cessions d'entreprises à impact.
-
-Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
-Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
-Description du site : ${metaDesc || "Non disponible"}
-
-Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
-
-Évalue sur 2 critères :
-1. IMPACT ENVIRONNEMENTAL (1-5) : l'activité de l'entreprise contribue-t-elle positivement à l'environnement ou à la société ?
-   1=activité sans lien avec l'impact (ex: consulting généraliste, immobilier classique)
-   2=impact indirect ou marginal (ex: service B2B neutre mais pas polluant)
-   3=contribution positive modérée (ex: éducation, santé, alimentation saine, mobilité douce, économie circulaire)
-   4=impact significatif et mesurable (ex: cleantech, énergies renouvelables, agriculture durable, inclusion sociale)
-   5=impact transformateur sur un enjeu majeur (ex: dépollution, reforestation, accès à l'eau)
-   Note : l'éducation, la formation, la santé, l'alimentation bio/responsable, et les services sociaux comptent comme impact positif (>=3).
-
-2. POTENTIEL DE CESSION (1-5) : cette entreprise est-elle un bon candidat pour une acquisition ?
-   Évalue selon : taille et maturité de l'entreprise, secteur en consolidation,
-   type de business (récurrent vs one-shot), attractivité pour un acquéreur stratégique ou financier,
-   positionnement de niche, potentiel de croissance externe.
-   1=peu attractif pour un acquéreur, 5=cible idéale
-
-IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
-- une association, charité, coopérative, organisme public, ONG
-- une banque d'affaires ou cabinet de conseil M&A
-- une filiale de grand groupe (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...)
-On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d'éducation/formation SONT acceptées.
-
-JSON uniquement :
-{"impact_env": <1-5>, "signaux_vente": <1-5>, "raison": "<2-3 phrases>"}`;
+{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
 }
 
 /**
@@ -133,17 +108,14 @@ Tiens compte de ces retours pour affiner ton scoring.`;
 
 async function scoreContact(
   contact: Record<string, string>,
-  mode: string,
   metaDesc: string,
+  rechercheDescription: string,
   allContacts?: Record<string, string>[]
 ): Promise<{ score_1: number; score_2: number; score_total: number; raison: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie — ajoute-la dans les variables d'environnement Netlify");
 
-  const basePrompt =
-    mode === "cession"
-      ? buildCessionPrompt(contact, metaDesc)
-      : buildLeveePrompt(contact, metaDesc);
+  const basePrompt = buildScoringPrompt(contact, metaDesc, rechercheDescription);
 
   const feedbackContext = allContacts ? buildFeedbackContext(allContacts) : "";
   const prompt = basePrompt + feedbackContext;
@@ -195,14 +167,8 @@ async function scoreContact(
     throw new Error(`JSON invalide pour ${contact.entreprise}: ${jsonMatch[0].slice(0, 100)}`);
   }
 
-  let s1: number, s2: number;
-  if (mode === "cession") {
-    s1 = Number(parsed.impact_env) || 0;
-    s2 = Number(parsed.signaux_vente) || 0;
-  } else {
-    s1 = Number(parsed.scalabilite) || 0;
-    s2 = Number(parsed.impact) || 0;
-  }
+  const s1 = Number(parsed.pertinence) || 0;
+  const s2 = Number(parsed.impact) || 0;
 
   if (s1 === 0 && s2 === 0) {
     return {
@@ -233,15 +199,12 @@ export default async (request: Request) => {
       return json({ error: "recherche_id requis" }, 400);
     }
 
-    // Get mode: prefer from body (skips a Sheets API call), fallback to Recherches lookup
-    let mode = body.mode;
-    if (!mode) {
-      const recherche = await findRowById("Recherches", body.recherche_id);
-      if (!recherche) {
-        return json({ error: `Recherche ${body.recherche_id} introuvable dans la feuille Recherches` }, 404);
-      }
-      mode = recherche.data.mode || "levee_de_fonds";
+    // Fetch recherche description for scoring context
+    const recherche = await findRowById("Recherches", body.recherche_id);
+    if (!recherche) {
+      return json({ error: `Recherche ${body.recherche_id} introuvable dans la feuille Recherches` }, 404);
     }
+    const rechercheDescription = recherche.data.description || "";
 
     // Read all contacts and filter by user + recherche_id
     const allContacts = await readAll("Contacts");
@@ -334,7 +297,7 @@ export default async (request: Request) => {
       };
     } else {
       const metaDesc = await fetchMetaDescription(contact.domaine);
-      scores = await scoreContact(contact, mode, metaDesc, searchContacts);
+      scores = await scoreContact(contact, metaDesc, rechercheDescription, searchContacts);
     }
 
     // Apply score to this contact AND all unscored contacts from the same company

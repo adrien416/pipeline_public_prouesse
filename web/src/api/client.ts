@@ -46,58 +46,20 @@ export function fetchCredits() {
 // ─── Search ───
 export interface SearchParams {
   description: string;
-  mode: "levee_de_fonds" | "cession";
-  headcount_min?: number;
-  headcount_max?: number;
-  location?: string;
-  secteur?: string;
   limit?: number;
-  pre_filters?: SearchFiltersResult;
   // "Find more" mode
   append?: boolean;
   recherche_id?: string;
   offset?: number;
 }
 
-export interface SearchFiltersResult {
-  fullenrich_filters: Record<string, unknown>;
-  insee_filters: Record<string, string>;
-  reasoning: string;
-  named_competitors: string[];
-  cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
-}
-
-// Step 1: AI analyzes sector + generates filters (~2-3s, no web search)
-export function searchFilters(params: { description: string; mode: string; location?: string; secteur?: string }) {
-  return request<SearchFiltersResult>("/search-filters", {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-}
-
-// Step 1b (optional): Web search to find named competitors (~5-8s)
-export function searchCompetitors(params: { description: string; reasoning: string }) {
-  return request<{
-    competitors: string[];
-    reasoning: string;
-    cost: { estimated_usd: number; web_searches: number };
-  }>("/search-competitors", {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-}
-
-// Step 2: Execute search with pre-computed filters (takes 3-8s)
 export function launchSearch(params: SearchParams) {
   return request<{
     contacts: Array<Record<string, string>>;
     recherche: Record<string, string>;
     filters: Record<string, unknown>;
-    explication: string;
-    suggestions: string[];
-    retried: boolean;
-    originalFilters?: Record<string, unknown>;
-    previously_failed_domains?: Record<string, { score: number; raison: string }>;
+    total: number;
+    retried?: boolean;
   }>("/search", {
     method: "POST",
     body: JSON.stringify(params),
@@ -105,7 +67,7 @@ export function launchSearch(params: SearchParams) {
 }
 
 // ─── Score ───
-export function launchScoring(recherche_id: string, mode?: string) {
+export function launchScoring(recherche_id: string) {
   return request<{
     total: number;
     scored: number;
@@ -114,7 +76,7 @@ export function launchScoring(recherche_id: string, mode?: string) {
     contacts: Array<Record<string, string>>;
   }>("/score", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, mode }),
+    body: JSON.stringify({ recherche_id }),
   });
 }
 
@@ -173,7 +135,7 @@ export function fetchContacts(recherche_id?: string) {
 }
 
 // ─── Campaign ───
-export function generatePhrases(recherche_id: string, mode: string) {
+export function generatePhrases(recherche_id: string) {
   return request<{
     generated: number;
     total: number;
@@ -182,14 +144,14 @@ export function generatePhrases(recherche_id: string, mode: string) {
     contacts: Array<Record<string, string>>;
   }>("/generate-phrases", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, mode }),
+    body: JSON.stringify({ recherche_id }),
   });
 }
 
-export function rewriteTemplate(recherche_id: string, mode: string, template_sujet: string, template_corps: string) {
+export function rewriteTemplate(recherche_id: string, template_sujet: string, template_corps: string) {
   return request<{ sujet: string; corps: string }>("/rewrite-template", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, mode, template_sujet, template_corps }),
+    body: JSON.stringify({ recherche_id, template_sujet, template_corps }),
   });
 }
 

@@ -42,16 +42,15 @@ function AppContent() {
   const saved = loadSavedState();
   const [tab, setTab] = useState<Tab>(saved?.tab || "search");
   const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
-  const [searchMode, setSearchMode] = useState<"levee_de_fonds" | "cession">(saved?.searchMode || "levee_de_fonds");
   const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
   const [maxReachedStep, setMaxReachedStep] = useState<number>(saved?.maxReachedStep || 0);
 
   // Persist state to localStorage
   useEffect(() => {
     localStorage.setItem("prouesse_session", JSON.stringify({
-      tab, rechercheId, searchMode, campaignId, maxReachedStep,
+      tab, rechercheId, campaignId, maxReachedStep,
     }));
-  }, [tab, rechercheId, searchMode, campaignId, maxReachedStep]);
+  }, [tab, rechercheId, campaignId, maxReachedStep]);
 
   /** Advance to a tab AND unlock it (and all previous tabs). */
   function goTo(target: Tab) {
@@ -61,10 +60,9 @@ function AppContent() {
   }
 
   /** Load a previous search (from search selector) */
-  function loadRecherche(id: string, mode: "levee_de_fonds" | "cession", targetTab?: Tab) {
+  function loadRecherche(id: string, targetTab?: Tab) {
     setRechercheId(id);
-    setSearchMode(mode);
-    setCampaignId(null); // Reset so auto-select picks the right campaign
+    setCampaignId(null);
     setMaxReachedStep((prev) => Math.max(prev, 2)); // Unlock up to enrich
     if (targetTab) {
       const idx = TAB_INDEX[targetTab];
@@ -87,9 +85,8 @@ function AppContent() {
     <Layout activeTab={tab} onTabChange={setTab} maxReachedStep={maxReachedStep}>
       {tab === "search" && (
         <SearchPage
-          onComplete={(id, mode) => {
+          onComplete={(id) => {
             setRechercheId(id);
-            setSearchMode(mode);
             goTo("scoring");
           }}
           onLoadRecherche={loadRecherche}
@@ -99,7 +96,6 @@ function AppContent() {
         <ScoringPage
           key={rechercheId}
           rechercheId={rechercheId}
-          mode={searchMode}
           onComplete={() => goTo("enrich")}
           onBackToSearch={() => setTab("search")}
         />
@@ -123,12 +119,11 @@ function AppContent() {
       {tab === "campaign" && rechercheId && (
         <CampaignPage
           rechercheId={rechercheId}
-          mode={searchMode}
           onComplete={(cId) => {
             setCampaignId(cId);
             goTo("analytics");
           }}
-          onNavigateToSearch={(id, m) => loadRecherche(id, m as "levee_de_fonds" | "cession", "campaign")}
+          onNavigateToSearch={(id) => loadRecherche(id, "campaign")}
         />
       )}
       {tab === "campaign" && !rechercheId && (

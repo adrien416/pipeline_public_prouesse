@@ -59,9 +59,8 @@ import { Spinner } from "../components/Spinner";
 
 interface Props {
   rechercheId: string;
-  mode: "levee_de_fonds" | "cession";
   onComplete: (campaignId: string) => void;
-  onNavigateToSearch?: (rechercheId: string, mode: string) => void;
+  onNavigateToSearch?: (rechercheId: string) => void;
 }
 
 const DEFAULT_TEMPLATE = `Bonjour {Prenom},
@@ -93,7 +92,7 @@ const TEST_EMAILS = [
   "adpannetier@gmail.com",
 ];
 
-export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch }: Props) {
+export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Props) {
   const qc = useQueryClient();
   const [nom, setNom] = useState("");
   const [sujet, setSujet] = useState("{Entreprise} — échange sur votre développement");
@@ -197,12 +196,10 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
   );
   const hasActiveCampaign = !!activeCampaign;
 
-  // Build maps of recherche_id -> description and mode for display/navigation
+  // Build map of recherche_id -> description for display/navigation
   const rechercheMap = new Map<string, string>();
-  const rechercheModeMap = new Map<string, string>();
   (allRecherches.data?.recherches || []).forEach((r) => {
     rechercheMap.set(r.id, r.description || "Sans nom");
-    rechercheModeMap.set(r.id, r.mode || "levee_de_fonds");
   });
 
   // Active campaigns from OTHER searches
@@ -275,7 +272,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
     try {
       let done = false;
       while (!done) {
-        const r = await generatePhrases(rechercheId, mode);
+        const r = await generatePhrases(rechercheId);
         setPhraseProgress({ generated: r.total - (r.remaining ?? 0), total: r.total });
         done = r.done;
         if (r.contacts?.length) {
@@ -308,7 +305,6 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
         recherche_id: rechercheId,
         template_sujet: sujet,
         template_corps: corps,
-        mode,
         max_par_jour: parseInt(maxParJour) || 15,
         jours_semaine: jours,
         heure_debut: heureDebut,
@@ -582,7 +578,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
                     </button>
                     {onNavigateToSearch && (
                       <button
-                        onClick={() => onNavigateToSearch(c.recherche_id, rechercheModeMap.get(c.recherche_id) || "levee_de_fonds")}
+                        onClick={() => onNavigateToSearch(c.recherche_id)}
                         className="px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                       >
                         Gérer
@@ -968,7 +964,7 @@ export function CampaignPage({ rechercheId, mode, onComplete, onNavigateToSearch
                   onClick={async () => {
                     setRewriting(true);
                     try {
-                      const result = await rewriteTemplate(rechercheId, mode, sujet, corps);
+                      const result = await rewriteTemplate(rechercheId, sujet, corps);
                       setSujet(result.sujet);
                       setCorps(result.corps);
                     } catch (err) {

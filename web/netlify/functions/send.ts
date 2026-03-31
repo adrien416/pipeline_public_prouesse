@@ -33,7 +33,7 @@ function textToHtml(text: string): string {
   return `<!DOCTYPE html><html style="margin:0;padding:0;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:16px 20px;-webkit-text-size-adjust:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;"><div style="padding:0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">${escaped}</div></body></html>`;
 }
 
-async function generatePhrase(contact: Record<string, string>, mode: string): Promise<string> {
+async function generatePhrase(contact: Record<string, string>): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return "";
 
@@ -54,7 +54,7 @@ async function generatePhrase(contact: Record<string, string>, mode: string): Pr
 
 Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
-Mode : ${mode === "levee_de_fonds" ? "levee de fonds" : "cession d'entreprise"}
+Objectif : prospection B2B
 
 Regles STRICTES :
 - NE MENTIONNE JAMAIS le prenom ou le nom du contact (le mail commence deja par "Bonjour {Prenom}")
@@ -200,7 +200,7 @@ export default async (request: Request) => {
 
     // Generate phrase if not already done
     if (!contact.phrase_perso) {
-      contact.phrase_perso = await generatePhrase(contact, campaign.mode);
+      contact.phrase_perso = await generatePhrase(contact);
     }
 
     // Build email from template

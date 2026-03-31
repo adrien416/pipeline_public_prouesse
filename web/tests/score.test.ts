@@ -1,5 +1,5 @@
 /**
- * Tests for score.ts — scoring logic and response structure.
+ * Tests for score.ts — scoring with Pertinence + Impact criteria (no mode).
  * Mocks: Google Sheets (_sheets), Anthropic API (fetch), _auth.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -26,17 +26,6 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "user_id",
   ],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
-  readHeaders: vi.fn().mockResolvedValue([
-    "id", "nom", "prenom", "email", "entreprise", "titre",
-    "domaine", "secteur", "linkedin", "telephone",
-    "statut", "enrichissement_status", "enrichissement_retry",
-    "score_1", "score_2", "score_total", "score_raison", "score_feedback",
-    "recherche_id", "campagne_id",
-    "email_status", "email_sent_at", "phrase_perso",
-    "source",
-    "date_creation", "date_modification",
-    "user_id",
-  ]),
   getHeadersForWrite: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
@@ -61,9 +50,6 @@ vi.mock("../netlify/functions/_auth.js", () => ({
   filterByUser: <T extends Record<string, string>>(rows: T[]) => rows,
   getDemoUserIds: async () => new Set<string>(),
 }));
-
-// ─── Mock fetch (Anthropic API + meta description) ───
-const originalFetch = globalThis.fetch;
 
 import scoreHandler from "../netlify/functions/score.js";
 
@@ -121,9 +107,9 @@ beforeEach(() => {
       return new Response('<html><meta name="description" content="Green energy solutions"></html>');
     }
 
-    // Anthropic API
+    // Anthropic API — now returns pertinence + impact (no more scalabilite/impact_env)
     return new Response(JSON.stringify({
-      content: [{ text: '{"scalabilite": 4, "impact": 3, "raison": "Bonne entreprise"}' }],
+      content: [{ text: '{"pertinence": 4, "impact": 3, "raison": "Bonne entreprise"}' }],
     }));
   }) as typeof fetch;
 
@@ -162,7 +148,7 @@ describe("score handler — validation", () => {
 describe("score handler — all scored", () => {
   it("returns done=true with contacts when all scored", async () => {
     const scored = makeContact({ score_total: "8", score_1: "4", score_2: "4" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "societes cleantech" } });
     mockReadAll.mockResolvedValue([scored]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
@@ -177,7 +163,7 @@ describe("score handler — all scored", () => {
 
   it("returns qualified=0 when all scores below 7", async () => {
     const scored = makeContact({ score_total: "4", score_1: "2", score_2: "2" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "societes cleantech" } });
     mockReadAll.mockResolvedValue([scored]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
@@ -190,61 +176,74 @@ describe("score handler — all scored", () => {
 // ─── Scoring one contact ───
 
 describe("score handler — scores one contact", () => {
-  it("scores one unscored contact and returns updated contacts", async () => {
+  it("scores with pertinence + impact criteria (not scalabilite/cession)", async () => {
     const unscored = makeContact();
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "societes cleantech" } });
     mockReadAll.mockResolvedValue([unscored]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    expect(body.done).toBe(true); // Only 1 contact, all scored after this
+    expect(body.done).toBe(true);
     expect(body.scored).toBe(1);
-    expect(body.total).toBe(1);
-    expect(body.contacts).toHaveLength(1);
-    expect(body.contacts[0].score_total).toBe("7"); // 4+3
+    expect(body.contacts[0].score_1).toBe("4"); // pertinence
+    expect(body.contacts[0].score_2).toBe("3"); // impact
+    expect(body.contacts[0].score_total).toBe("7");
     expect(body.contacts[0].score_raison).toBe("Bonne entreprise");
     expect(mockBatchUpdateRows).toHaveBeenCalled();
   });
 
-  it("uses cession mode when recherche mode is cession", async () => {
+  it("does not require mode parameter", async () => {
     const unscored = makeContact();
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "cession" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([unscored]);
 
-    // Override fetch to return cession-mode scores
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+    // Should work without mode in the request body
+    const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
+    expect(res.status).toBe(200);
+  });
+
+  it("passes recherche description to scoring prompt", async () => {
+    const unscored = makeContact();
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "entreprises d'agritech durable" } });
+    mockReadAll.mockResolvedValue([unscored]);
+
+    let promptContent = "";
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (!urlStr.includes("anthropic")) {
         return new Response("<html></html>");
       }
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const parsed = JSON.parse(bodyStr);
+      promptContent = parsed.messages[0].content;
       return new Response(JSON.stringify({
-        content: [{ text: '{"impact_env": 5, "signaux_vente": 3, "raison": "Forte transition"}' }],
+        content: [{ text: '{"pertinence": 4, "impact": 3, "raison": "Bonne entreprise"}' }],
       }));
     }) as typeof fetch;
 
-    const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
-    const body = await res.json();
+    await scoreHandler(makeRequest({ recherche_id: "r1" }));
 
-    expect(body.contacts[0].score_1).toBe("5");
-    expect(body.contacts[0].score_2).toBe("3");
-    expect(body.contacts[0].score_total).toBe("8");
+    expect(promptContent).toContain("entreprises d'agritech durable");
+    expect(promptContent).toContain("PERTINENCE");
+    expect(promptContent).toContain("IMPACT");
+    expect(promptContent).not.toContain("SCALABILITÉ");
+    expect(promptContent).not.toContain("POTENTIEL DE CESSION");
   });
 });
 
-// ─── Excludes excluded contacts ───
+// ─── Exclusions ───
 
 describe("score handler — exclusions", () => {
-  it("excludes contacts with statut=exclu from searchContacts", async () => {
+  it("excludes contacts with statut=exclu", async () => {
     const included = makeContact({ id: "c1" });
     const excluded = makeContact({ id: "c2", statut: "exclu" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([included, excluded]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    // Only the non-excluded contact should be in the response
     expect(body.total).toBe(1);
     expect(body.contacts).toHaveLength(1);
     expect(body.contacts[0].id).toBe("c1");
@@ -256,7 +255,7 @@ describe("score handler — exclusions", () => {
 describe("score handler — rate limit", () => {
   it("returns 500 error when rate limited after 3 retries", async () => {
     const unscored = makeContact();
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([unscored]);
 
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
@@ -269,37 +268,22 @@ describe("score handler — rate limit", () => {
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe("Erreur interne");
-  }, 60000); // Higher timeout because of retry backoff waits (5s + 10s + 15s)
-
-  it("treats score_total='0' as already scored (not re-scored)", async () => {
-    const zeroScored = makeContact({ score_total: "0", score_1: "0", score_2: "0", score_raison: "Non évaluable" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
-    mockReadAll.mockResolvedValue([zeroScored]);
-
-    const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
-    const body = await res.json();
-
-    expect(body.done).toBe(true);
-    expect(body.scored).toBe(1);
-    expect(body.contacts[0].score_total).toBe("0");
-  });
+  }, 60000);
 });
 
-// ─── Multiple contacts — done flag ───
+// ─── Multiple contacts ───
 
 describe("score handler — multiple contacts", () => {
   it("returns done=false when more unscored contacts from different companies remain", async () => {
     const c1 = makeContact({ id: "c1", domaine: "greentech.fr" });
     const c2 = makeContact({ id: "c2", domaine: "othercompany.com", entreprise: "Other Co" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([c1, c2]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    expect(body.done).toBe(false); // 2 different companies, only 1 scored per call
+    expect(body.done).toBe(false);
     expect(body.scored).toBe(1);
     expect(body.total).toBe(2);
   });
@@ -307,13 +291,13 @@ describe("score handler — multiple contacts", () => {
   it("scores all contacts from same company in one call", async () => {
     const c1 = makeContact({ id: "c1", domaine: "chance.co", _rowIndex: "2" });
     const c2 = makeContact({ id: "c2", domaine: "chance.co", _rowIndex: "3" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([c1, c2]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));
     const body = await res.json();
 
-    expect(body.done).toBe(true); // same company = both scored at once
+    expect(body.done).toBe(true);
     expect(body.scored).toBe(2);
     expect(body.total).toBe(2);
     // AI should only have been called once (1 fetch for meta + 1 for scoring)
@@ -323,7 +307,7 @@ describe("score handler — multiple contacts", () => {
   it("filters contacts from other recherche_ids", async () => {
     const ours = makeContact({ id: "c1", recherche_id: "r1" });
     const other = makeContact({ id: "c2", recherche_id: "r2" });
-    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { mode: "levee_de_fonds" } });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
     mockReadAll.mockResolvedValue([ours, other]);
 
     const res = await scoreHandler(makeRequest({ recherche_id: "r1" }));

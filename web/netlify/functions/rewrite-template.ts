@@ -10,7 +10,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { recherche_id, template_sujet, template_corps } = await request.json();
+    const { recherche_id, template_sujet, template_corps, instructions } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     // Demo mode: return neutral template
@@ -73,7 +73,7 @@ REGLES STRICTES :
 - Pas d'emojis, pas de bullet points
 - L'objet doit etre court, naturel, et peut utiliser {Entreprise}
 - Signe "Adrien" a la fin
-
+${instructions ? `\nINSTRUCTIONS SUPPLEMENTAIRES DE L'UTILISATEUR :\n${instructions}\n` : ""}
 Reponds UNIQUEMENT en JSON valide :
 {"sujet": "<nouvel objet>", "corps": "<nouveau corps>"}`,
         }],

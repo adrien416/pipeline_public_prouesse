@@ -151,10 +151,10 @@ export function generatePhrases(recherche_id: string) {
   });
 }
 
-export function rewriteTemplate(recherche_id: string, template_sujet: string, template_corps: string) {
+export function rewriteTemplate(recherche_id: string, template_sujet: string, template_corps: string, instructions?: string) {
   return request<{ sujet: string; corps: string }>("/rewrite-template", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, template_sujet, template_corps }),
+    body: JSON.stringify({ recherche_id, template_sujet, template_corps, instructions }),
   });
 }
 

@@ -26,87 +26,87 @@ export const MOCK_CONTACTS = [
   { nom: "Mercier", prenom: "Romain", entreprise: "AutoDrive", titre: "CTO", domaine: "autodrive.eu", secteur: "Automobile", linkedin: "https://linkedin.com/in/romain-mercier" },
 ];
 
-/** Realistic impact reasons per sector (for demo scoring) */
+/** Realistic scoring reasons per sector (Pertinence + Impact) */
 const MOCK_SCORE_REASONS: Record<string, string[]> = {
   SaaS: [
-    "Modèle SaaS avec récurrence forte et faible churn. Scalabilité élevée grâce à l'architecture cloud multi-tenant. Impact limité sur le plan social/environnemental direct.",
-    "Forte traction MRR et potentiel d'expansion international. La solution optimise les processus métier mais pas d'impact environnemental mesurable.",
+    "Entreprise SaaS pertinente pour le secteur recherché. Modèle cloud scalable mais impact social/environnemental direct limité.",
+    "Bonne correspondance sectorielle avec un modèle B2B récurrent. Impact indirect via l'optimisation des processus clients.",
   ],
   Logistique: [
-    "Optimisation logistique réduisant les trajets à vide de 30%. Impact environnemental significatif sur la réduction des émissions CO2 du transport.",
-    "Solution de logistique verte avec traçabilité carbone intégrée. Fort potentiel de scalabilité sur le marché européen.",
+    "Très pertinent : optimisation logistique réduisant les trajets à vide de 30%. Impact environnemental significatif sur les émissions CO2.",
+    "Bonne correspondance avec le secteur logistique durable. Impact environnemental mesurable via la traçabilité carbone intégrée.",
   ],
   "Data Analytics": [
-    "Plateforme data scalable avec modèle de licence récurrent. Impact indirect via l'aide à la décision pour des entreprises à impact.",
-    "Forte scalabilité technique mais impact social/environnemental modéré. Positionnement B2B niche avec bon potentiel de croissance.",
+    "Pertinence modérée — plateforme data généraliste. Impact indirect via l'aide à la décision pour entreprises à impact.",
+    "Correspondance sectorielle correcte. Impact social/environnemental modéré, contribution indirecte à l'efficacité opérationnelle.",
   ],
   HealthTech: [
-    "Impact social fort : amélioration de l'accès aux soins dans les zones sous-dotées. Scalabilité via la télémédecine et les partenariats hospitaliers.",
-    "Solution de santé connectée avec un vrai impact patient. Marché réglementé qui limite la vitesse de scaling mais protège les marges.",
+    "Très pertinent pour le secteur santé. Impact social fort : amélioration de l'accès aux soins dans les zones sous-dotées.",
+    "Excellente correspondance HealthTech. Solution de santé connectée avec un vrai impact patient mesurable.",
   ],
   "Mobilité": [
-    "Solution de mobilité douce réduisant l'empreinte carbone des trajets urbains. Scalabilité prouvée dans 3 villes pilotes.",
-    "Impact environnemental direct avec réduction mesurée de 25% des émissions sur les zones déployées. Modèle marketplace scalable.",
+    "Pertinence parfaite — mobilité douce réduisant l'empreinte carbone des trajets urbains. Impact environnemental direct et mesurable.",
+    "Correspondance exacte avec le secteur mobilité. Réduction mesurée de 25% des émissions sur les zones déployées.",
   ],
   "Cybersécurité": [
-    "Marché en forte croissance (+15%/an). Modèle SaaS avec rétention élevée. Impact social via la protection des données personnelles.",
-    "Forte scalabilité technique et commerciale. Impact indirect sur la résilience des entreprises et la protection des citoyens.",
+    "Bonne pertinence sectorielle. Impact social indirect via la protection des données personnelles et la résilience des entreprises.",
+    "Pertinent pour le marché cyber en forte croissance. Impact limité sur le plan environnemental direct.",
   ],
   AgriTech: [
-    "Impact environnemental majeur : réduction de 40% des intrants chimiques grâce à l'agriculture de précision. Scalabilité via les coopératives.",
-    "Solution qui répond aux enjeux de souveraineté alimentaire. Potentiel de déploiement européen avec les subventions PAC.",
+    "Excellente pertinence AgriTech. Impact environnemental majeur : réduction de 40% des intrants chimiques grâce à l'agriculture de précision.",
+    "Correspondance parfaite avec le secteur. Répond aux enjeux de souveraineté alimentaire avec impact environnemental direct.",
   ],
   FinTech: [
-    "Forte scalabilité avec modèle transactionnel. Impact social via l'inclusion financière des TPE/PME mal servies par les banques.",
-    "Plateforme financière avec effet réseau. Impact modéré mais croissance rapide et marges élevées.",
+    "Bonne pertinence FinTech. Impact social via l'inclusion financière des TPE/PME mal servies par les banques traditionnelles.",
+    "Pertinent pour le secteur financier digital. Impact modéré mais potentiel d'inclusion financière intéressant.",
   ],
   EdTech: [
-    "Impact social fort : démocratisation de l'accès à la formation continue. Scalabilité via le modèle B2B2C et les partenariats académiques.",
-    "Solution de formation adaptative avec réduction du décrochage de 35%. Marché en expansion post-COVID.",
+    "Très pertinent EdTech. Impact social fort : démocratisation de l'accès à la formation continue, réduction du décrochage de 35%.",
+    "Excellente correspondance sectorielle. Impact social significatif via l'éducation et la montée en compétences.",
   ],
   Construction: [
-    "Impact environnemental via l'optimisation des matériaux et la réduction des déchets de chantier. Scalabilité limitée par le caractère local.",
-    "Solution de construction durable avec suivi carbone intégré. Potentiel de croissance lié aux nouvelles normes RE2025.",
+    "Pertinent pour le secteur construction. Impact environnemental via l'optimisation des matériaux et la réduction des déchets de chantier.",
+    "Bonne correspondance. Construction durable avec suivi carbone intégré, en ligne avec les normes RE2025.",
   ],
   BioTech: [
-    "Impact environnemental et sanitaire majeur. Scalabilité dépendante des essais cliniques mais potentiel de valorisation très élevé.",
-    "Deep tech avec barrières à l'entrée fortes. Impact sociétal via les thérapies innovantes. Long cycle mais forte valeur à terme.",
+    "Très pertinent BioTech. Impact sanitaire et environnemental majeur via les thérapies innovantes et la recherche.",
+    "Excellente correspondance. Deep tech avec impact sociétal fort, barrières à l'entrée élevées.",
   ],
   "Retail Tech": [
-    "Scalabilité via le modèle marketplace. Impact environnemental indirect via l'optimisation des stocks et la réduction du gaspillage.",
-    "Forte adoption e-commerce. Impact limité sur le plan environnemental direct mais efficacité opérationnelle prouvée.",
+    "Pertinence modérée Retail Tech. Impact environnemental indirect via l'optimisation des stocks et la réduction du gaspillage.",
+    "Correspondance correcte. Impact limité sur le plan environnemental direct mais efficacité opérationnelle prouvée.",
   ],
   LegalTech: [
-    "Impact social via la démocratisation de l'accès au droit. Modèle SaaS avec forte rétention. Scalabilité prouvée sur le marché français.",
-    "Solution qui réduit les délais juridiques de 60%. Impact social significatif pour les PME et particuliers.",
+    "Très pertinent LegalTech. Impact social via la démocratisation de l'accès au droit, réduction des délais de 60%.",
+    "Bonne correspondance. Impact social significatif pour les PME et particuliers face aux complexités juridiques.",
   ],
   Immobilier: [
-    "Impact environnemental via l'optimisation énergétique des bâtiments. Scalabilité via les partenariats avec les foncières et promoteurs.",
-    "PropTech avec modèle récurrent. Contribution à la rénovation énergétique du parc immobilier français.",
+    "Pertinent PropTech. Impact environnemental via l'optimisation énergétique des bâtiments et la rénovation du parc immobilier.",
+    "Bonne correspondance immobilier. Contribution à la transition énergétique du secteur bâtiment.",
   ],
   "Énergie": [
-    "Impact environnemental direct et mesurable : transition vers les énergies renouvelables. Scalabilité européenne avec le cadre réglementaire favorable.",
-    "Acteur clé de la transition énergétique. Fort impact carbone évité. Scalabilité via les projets multi-sites.",
+    "Excellente pertinence énergie. Impact environnemental direct et mesurable : accélération de la transition vers les renouvelables.",
+    "Correspondance parfaite. Acteur clé de la transition énergétique avec fort impact carbone évité.",
   ],
   SportTech: [
-    "Scalabilité via le modèle freemium et les partenariats fédérations. Impact social via la promotion du sport-santé.",
-    "Marché en croissance avec la digitalisation du sport. Impact santé publique indirect mais mesurable.",
+    "Pertinence modérée SportTech. Impact social via la promotion du sport-santé et la digitalisation du secteur.",
+    "Correspondance correcte. Impact santé publique indirect mais contribution à l'activité physique mesurable.",
   ],
   TravelTech: [
-    "Scalabilité internationale du modèle marketplace. Impact environnemental via la promotion du tourisme durable et la compensation carbone.",
-    "Plateforme de voyage responsable avec fort potentiel de croissance. Impact via la redistribution aux communautés locales.",
+    "Pertinent TravelTech. Impact environnemental via la promotion du tourisme durable et la compensation carbone.",
+    "Bonne correspondance. Plateforme de voyage responsable avec impact via la redistribution aux communautés locales.",
   ],
   InsurTech: [
-    "Forte scalabilité du modèle digital. Impact social via l'accès à l'assurance pour les populations mal couvertes.",
-    "Modèle data-driven avec marges croissantes. Impact indirect via la prévention des risques et la résilience des assurés.",
+    "Pertinence InsurTech. Impact social via l'accès à l'assurance pour les populations mal couvertes.",
+    "Bonne correspondance assurance digitale. Impact indirect via la prévention des risques et la résilience.",
   ],
   HRTech: [
-    "Impact social via l'amélioration des conditions de travail et la réduction du turnover. Modèle SaaS B2B scalable.",
-    "Solution RH qui favorise l'inclusion et la diversité en entreprise. Forte demande post-COVID avec le travail hybride.",
+    "Très pertinent HRTech. Impact social via l'amélioration des conditions de travail, l'inclusion et la diversité.",
+    "Bonne correspondance RH. Impact social significatif via la réduction du turnover et le travail hybride.",
   ],
   Automobile: [
-    "Impact environnemental direct via l'électrification et l'optimisation de la conduite. Marché en transformation profonde.",
-    "Contribution à la mobilité propre. Scalabilité via les partenariats constructeurs. Impact carbone significatif.",
+    "Pertinent automobile. Impact environnemental direct via l'électrification et l'optimisation de la conduite.",
+    "Bonne correspondance mobilité propre. Contribution significative à la réduction des émissions du transport.",
   ],
 };
 
@@ -117,13 +117,13 @@ function getReasonForSector(secteur: string): string {
 
 const MOCK_PHRASES_POOL = [
   "J'ai vu que ta boîte connaît une belle croissance ces derniers mois, et je me suis dit que ce serait le bon moment pour en discuter.",
-  "Ton entreprise est dans un secteur en pleine transformation, et les opportunités de structuration capitalistique sont nombreuses.",
-  "En regardant ton parcours et ce que tu as construit, je pense qu'un échange pourrait être intéressant pour explorer les prochaines étapes.",
-  "Le marché bouge vite dans ton secteur et les fenêtres pour bien se positionner ne restent pas ouvertes longtemps.",
+  "Ton entreprise est dans un secteur en pleine transformation, et les opportunités sont nombreuses en ce moment.",
+  "En regardant ton parcours et ce que tu as construit, je pense qu'un échange pourrait être mutuellement intéressant.",
+  "Le marché bouge vite dans ton secteur et j'aimerais partager quelques réflexions avec toi.",
   "Avec les tendances actuelles dans ton industrie, c'est un moment stratégique pour évaluer les options de développement.",
-  "Ton positionnement sur le marché est intéressant et j'aimerais te partager quelques réflexions sur les opportunités qui se présentent.",
+  "Ton positionnement sur le marché est intéressant et j'aimerais te partager quelques retours du terrain.",
   "J'accompagne des dirigeants dans ton secteur et je vois des dynamiques très intéressantes en ce moment.",
-  "Ta croissance ces dernières années montre une vraie traction — c'est souvent à ce stade que les bonnes décisions stratégiques font la différence.",
+  "Ta croissance ces dernières années montre une vraie traction — c'est souvent à ce stade que les bonnes décisions font la différence.",
   "Je suis ton actualité depuis un moment et je pense que le timing est bon pour un échange.",
   "Les retours que j'ai de ton marché sont très positifs, et je pense qu'il y a des choses concrètes à explorer ensemble.",
 ];
@@ -141,8 +141,7 @@ export function mockScoreForContact(secteur?: string): {
   score_total: string;
   score_raison: string;
 } {
-  // Realistic scores: each 1-5, total 2-10 (matching real IA scoring)
-  // Weighted toward higher scores to show a good demo pipeline
+  // score_1 = Pertinence, score_2 = Impact
   const weights = [0, 0.05, 0.1, 0.25, 0.35, 0.25]; // idx 0-5, biased toward 3-5
   function weightedRandom(): number {
     const r = Math.random();
@@ -153,15 +152,12 @@ export function mockScoreForContact(secteur?: string): {
     }
     return 4;
   }
-  const s1 = weightedRandom();
-  const s2 = weightedRandom();
-  // Ensure at least some score
-  const finalS1 = Math.max(1, s1);
-  const finalS2 = Math.max(1, s2);
+  const s1 = Math.max(1, weightedRandom());
+  const s2 = Math.max(1, weightedRandom());
   return {
-    score_1: String(finalS1),
-    score_2: String(finalS2),
-    score_total: String(finalS1 + finalS2),
+    score_1: String(s1),
+    score_2: String(s2),
+    score_total: String(s1 + s2),
     score_raison: getReasonForSector(secteur || "SaaS"),
   };
 }
@@ -179,15 +175,14 @@ export function mockCredits(): { credits: number; used: number } {
   return { credits: 500, used: 47 };
 }
 
-export const DEMO_TEMPLATE_SUJET = "Échange sur les perspectives de {Entreprise}";
+export const DEMO_TEMPLATE_SUJET = "{Entreprise} — échange sur votre développement";
 
 export const DEMO_TEMPLATE_CORPS = `Bonjour {Prenom},
 
 {Phrase}
 
-Notre cabinet accompagne les dirigeants dans leurs projets de croissance et de transmission. Nous serions ravis d'échanger avec vous sur les opportunités qui se présentent pour {Entreprise}.
+Chez Prouesse, nous accompagnons les fondateurs comme toi à accéder à des investisseurs qualifiés (fonds, family offices, impact investors). Tu trouveras nos références sur notre site.
 
-Seriez-vous disponible pour un appel de 15 minutes cette semaine ?
+Est-ce que tu serais dispo pour un échange de 15 min cette semaine ?
 
-Cordialement,
-L'équipe`;
+Adrien`;

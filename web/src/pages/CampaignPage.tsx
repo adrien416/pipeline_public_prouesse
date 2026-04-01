@@ -121,6 +121,8 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
   const [aiInstructions, setAiInstructions] = useState("");
   const [showAiInstructions, setShowAiInstructions] = useState(false);
   const [sendConfirm, setSendConfirm] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [editName, setEditName] = useState("");
   const cancelSendRef = useRef(false);
 
   const contacts = useQuery({
@@ -706,9 +708,39 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
 
             {/* Campaign name + date */}
             <div>
-              <h3 className="text-base font-semibold text-gray-900">
-                {campaignData.nom || "Campagne sans nom"}
-              </h3>
+              {editingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter") {
+                        await updateCampaign({ id: campaignData.id, nom: editName });
+                        queryClient.invalidateQueries({ queryKey: ["campaign"] });
+                        setEditingName(false);
+                      }
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    onBlur={async () => {
+                      if (editName !== (campaignData.nom || "")) {
+                        await updateCampaign({ id: campaignData.id, nom: editName });
+                        queryClient.invalidateQueries({ queryKey: ["campaign"] });
+                      }
+                      setEditingName(false);
+                    }}
+                    className="text-base font-semibold text-gray-900 border-b-2 border-blue-500 outline-none bg-transparent px-0 py-0 w-full"
+                  />
+                </div>
+              ) : (
+                <h3
+                  className="text-base font-semibold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                  onClick={() => { setEditName(campaignData.nom || ""); setEditingName(true); }}
+                  title="Cliquer pour renommer"
+                >
+                  {campaignData.nom || "Campagne sans nom"}
+                </h3>
+              )}
               <p className="text-xs text-gray-500 mt-0.5">
                 Créée le {(() => {
                   if (!campaignData.date_creation) return "—";

@@ -1,11 +1,19 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchSearch, excludeContacts, fetchRecherches } from "../api/client";
+import { launchSearch, excludeContacts, fetchRecherches, fetchContacts } from "../api/client";
 import { Spinner } from "../components/Spinner";
 
 interface Props {
   onComplete: (rechercheId: string) => void;
   onLoadRecherche?: (id: string, tab?: "scoring" | "enrich") => void;
+}
+
+interface SearchDebugInfo {
+  ai_reasoning?: string;
+  filters?: Record<string, unknown>;
+  ai_cost?: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
+  verification?: { raw_count: number; verified_count: number; reasoning: string; cost_cap_reached: boolean };
+  retried?: boolean;
 }
 
 export function SearchPage({ onComplete, onLoadRecherche }: Props) {
@@ -20,10 +28,13 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [searchStep, setSearchStep] = useState<string | null>(null);
   const [loadedRecherche, setLoadedRecherche] = useState<Record<string, string> | null>(null);
   const [loadedContacts, setLoadedContacts] = useState<Array<Record<string, string>> | null>(null);
+  const [debugInfo, setDebugInfo] = useState<SearchDebugInfo | null>(null);
+  const [showDebug, setShowDebug] = useState(true);
 
   const search = useMutation({
     mutationFn: async (desc: string) => {
-      setSearchStep("Recherche en cours...");
+      setSearchStep("Analyse IA + recherche web...");
+      setDebugInfo(null);
       const result = await launchSearch({ description: desc });
       setSearchStep(null);
       return result;
@@ -32,6 +43,13 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       setLoadedRecherche(data.recherche);
       setLoadedContacts(data.contacts);
       setExcluded(new Set());
+      setDebugInfo({
+        ai_reasoning: data.ai_reasoning,
+        filters: data.filters,
+        ai_cost: data.ai_cost,
+        verification: data.verification,
+        retried: data.retried,
+      });
       queryClient.invalidateQueries({ queryKey: ["recherches"] });
     },
   });
@@ -56,6 +74,23 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   function handleComplete() {
     if (!loadedRecherche) return;
     onComplete(loadedRecherche.id);
+  }
+
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+
+  async function loadPreviousSearch(rechercheId: string, desc?: string) {
+    setLoadingPrevious(true);
+    setDebugInfo(null);
+    try {
+      const result = await fetchContacts(rechercheId);
+      setLoadedContacts(result.contacts);
+      setLoadedRecherche({ id: rechercheId, description: desc || "" });
+      setExcluded(new Set());
+    } catch (err) {
+      console.error("Load previous search error:", err);
+    } finally {
+      setLoadingPrevious(false);
+    }
   }
 
   const contacts = loadedContacts ?? [];
@@ -101,10 +136,84 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       </form>
 
+      {/* Loading previous search */}
+      {loadingPrevious && (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Spinner className="h-4 w-4" />
+          Chargement des contacts...
+        </div>
+      )}
+
       {/* Error */}
       {search.isError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          {search.error instanceof Error ? search.error.message : "Erreur de recherche"}
+          Erreur: {search.error instanceof Error ? search.error.message : "Erreur de recherche"}
+        </div>
+      )}
+
+      {/* AI Debug Panel */}
+      {debugInfo && (
+        <div className="bg-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <span>Raisonnement IA</span>
+            <span className="text-xs text-slate-400">{showDebug ? "Masquer" : "Afficher"}</span>
+          </button>
+          {showDebug && (
+            <div className="px-4 pb-4 space-y-3">
+              {/* AI Reasoning */}
+              {debugInfo.ai_reasoning && (
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Analyse IA</h4>
+                  <p className="text-sm text-slate-700 bg-white rounded-lg p-3 border border-slate-200">
+                    {debugInfo.ai_reasoning}
+                  </p>
+                </div>
+              )}
+
+              {/* Filters used */}
+              {debugInfo.filters && (
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Filtres Fullenrich envoyés</h4>
+                  <pre className="text-xs text-slate-600 bg-white rounded-lg p-3 border border-slate-200 overflow-x-auto max-h-48">
+                    {JSON.stringify(debugInfo.filters, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Verification info */}
+              {debugInfo.verification && (
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase mb-1">Vérification</h4>
+                  <div className="text-sm text-slate-700 bg-white rounded-lg p-3 border border-slate-200 space-y-1">
+                    <p>
+                      Fullenrich a retourné <span className="font-semibold">{debugInfo.verification.raw_count}</span> résultats bruts
+                      → <span className="font-semibold">{debugInfo.verification.verified_count}</span> validés par l'IA
+                      → <span className="font-semibold">{contacts.length}</span> contacts finaux
+                    </p>
+                    {debugInfo.verification.reasoning && (
+                      <p className="text-slate-500 text-xs italic">{debugInfo.verification.reasoning}</p>
+                    )}
+                    {debugInfo.verification.cost_cap_reached && (
+                      <p className="text-orange-600 text-xs">Plafond de coût atteint — recherche arrêtée</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Cost */}
+              {debugInfo.ai_cost && (
+                <div className="flex gap-4 text-xs text-slate-400">
+                  <span>Coût: ${debugInfo.ai_cost.estimated_usd.toFixed(4)}</span>
+                  <span>Web searches: {debugInfo.ai_cost.web_searches}</span>
+                  <span>Tokens: {debugInfo.ai_cost.input_tokens + debugInfo.ai_cost.output_tokens}</span>
+                  {debugInfo.retried && <span className="text-orange-500">Relance avec filtres élargis</span>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -223,6 +332,13 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
+      {/* No results message */}
+      {search.isSuccess && contacts.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-700">
+          Aucun contact trouvé. Essaie avec une description plus large ou un secteur différent.
+        </div>
+      )}
+
       {/* Previous searches */}
       {previousSearches.data?.recherches && previousSearches.data.recherches.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border p-4">
@@ -237,14 +353,15 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   </p>
                 </div>
                 <div className="flex gap-1 ml-3">
+                  <button
+                    onClick={() => loadPreviousSearch(r.id, r.description)}
+                    disabled={loadingPrevious}
+                    className="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {loadingPrevious ? "..." : "Voir"}
+                  </button>
                   {onLoadRecherche && (
                     <>
-                      <button
-                        onClick={() => onLoadRecherche(r.id)}
-                        className="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 rounded hover:bg-blue-50"
-                      >
-                        Voir
-                      </button>
                       <button
                         onClick={() => onLoadRecherche(r.id, "scoring")}
                         className="text-green-600 hover:text-green-800 text-xs font-medium px-2 py-1 rounded hover:bg-green-50"

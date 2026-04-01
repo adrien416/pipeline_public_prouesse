@@ -58,6 +58,9 @@ export function launchSearch(params: SearchParams) {
     contacts: Array<Record<string, string>>;
     recherche: Record<string, string>;
     filters: Record<string, unknown>;
+    ai_reasoning?: string;
+    ai_cost?: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
+    verification?: { raw_count: number; verified_count: number; reasoning: string; cost_cap_reached: boolean };
     total: number;
     retried?: boolean;
   }>("/search", {

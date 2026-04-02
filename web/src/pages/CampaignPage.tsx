@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, updateContact, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
@@ -120,6 +120,9 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
   const [rewriting, setRewriting] = useState(false);
   const [aiInstructions, setAiInstructions] = useState("");
   const [showAiInstructions, setShowAiInstructions] = useState(false);
+  const [editingPhrase, setEditingPhrase] = useState(false);
+  const [draftPhrase, setDraftPhrase] = useState("");
+  const [savingPhrase, setSavingPhrase] = useState(false);
   const [sendConfirm, setSendConfirm] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState("");
@@ -1140,6 +1143,67 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                       {previewEmail(selectedContact)}
                     </div>
                   </div>
+                  {/* Phrase perso editor */}
+                  {selectedContact.phrase_perso && (
+                    <div className="border border-purple-200 rounded-lg p-3 bg-purple-50/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-purple-700">Phrase IA</span>
+                        {!editingPhrase ? (
+                          <button
+                            onClick={() => { setDraftPhrase(selectedContact.phrase_perso || ""); setEditingPhrase(true); }}
+                            className="text-xs text-purple-600 hover:text-purple-800"
+                          >
+                            Modifier
+                          </button>
+                        ) : (
+                          <div className="flex gap-1">
+                            <button
+                              disabled={savingPhrase}
+                              onClick={async () => {
+                                setSavingPhrase(true);
+                                try {
+                                  await updateContact(selectedContact.id, { phrase_perso: draftPhrase });
+                                  // Update local cache
+                                  const list = contacts.data?.contacts || [];
+                                  qc.setQueryData(["contacts", rechercheId], {
+                                    contacts: list.map((x) =>
+                                      x.id === selectedContact.id ? { ...x, phrase_perso: draftPhrase } : x
+                                    ),
+                                  });
+                                  setSelectedContact({ ...selectedContact, phrase_perso: draftPhrase });
+                                  setEditingPhrase(false);
+                                } catch (err) {
+                                  console.error("Save phrase error:", err);
+                                } finally {
+                                  setSavingPhrase(false);
+                                }
+                              }}
+                              className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded hover:bg-purple-700 disabled:opacity-50"
+                            >
+                              {savingPhrase ? "..." : "Sauver"}
+                            </button>
+                            <button
+                              onClick={() => setEditingPhrase(false)}
+                              className="text-xs text-gray-500 hover:text-gray-700 px-1"
+                            >
+                              Annuler
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {editingPhrase ? (
+                        <textarea
+                          autoFocus
+                          value={draftPhrase}
+                          onChange={(e) => setDraftPhrase(e.target.value)}
+                          rows={3}
+                          className="w-full border border-purple-300 rounded px-2 py-1.5 text-xs resize-none focus:ring-2 focus:ring-purple-400 bg-white"
+                        />
+                      ) : (
+                        <p className="text-xs text-gray-700">{selectedContact.phrase_perso}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

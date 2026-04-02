@@ -101,7 +101,7 @@ function AppContent() {
         />
       )}
       {tab === "scoring" && !rechercheId && (
-        <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
+        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
       )}
       {tab === "enrich" && rechercheId && (
         <EnrichPage
@@ -114,7 +114,7 @@ function AppContent() {
         />
       )}
       {tab === "enrich" && !rechercheId && (
-        <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
+        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
       )}
       {tab === "campaign" && rechercheId && (
         <CampaignPage
@@ -127,7 +127,7 @@ function AppContent() {
         />
       )}
       {tab === "campaign" && !rechercheId && (
-        <EmptyState message="Lance d'abord une recherche" onAction={() => setTab("search")} />
+        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
       )}
       {tab === "analytics" && <AnalyticsPage campaignId={campaignId || undefined} />}
     </Layout>

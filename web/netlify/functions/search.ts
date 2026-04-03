@@ -352,84 +352,66 @@ export default async (request: Request) => {
       });
     }
 
+    // ─── Time budget: Netlify has 26s timeout, keep 4s margin for Sheets save ───
+    const startTime = Date.now();
+    const TIME_BUDGET_MS = 22_000;
+    function timeLeft(): number { return TIME_BUDGET_MS - (Date.now() - startTime); }
+
     // ─── 1. Claude + web search → generate Fullenrich filters ───
     const { filters, reasoning: aiReasoning, cost: aiCost } = await generateFiltersWithWebSearch(body.description);
 
-    // ─── 2. Search Fullenrich with filters ───
+    // ─── 2. Search Fullenrich with filters (1 batch only to save time) ───
     const targetCount = body.limit ?? 100;
-    const maxIterations = 5;
     const batchSize = Math.min(targetCount, 100);
-    const MAX_COST_USD = 0.50;
-
-    let verifiedResults: unknown[] = [];
-    let verifyReasons: string[] = [];
-    let totalRawCount = 0;
-    let costCapReached = false;
     const totalCost = { ...aiCost };
 
     const seenCompanies = new Set<string>();
     let fullenrichOffset = body.offset ?? 0;
+    let totalRawCount = 0;
+    let verifyReasons: string[] = [];
 
-    for (let iteration = 0; iteration < maxIterations; iteration++) {
-      if (totalCost.estimated_usd >= MAX_COST_USD) {
-        costCapReached = true;
-        break;
-      }
+    const batch = await searchFullenrich(
+      { ...filters, offset: fullenrichOffset },
+      batchSize,
+    );
+    totalRawCount = batch.length;
 
-      const batch = await searchFullenrich(
-        { ...filters, offset: fullenrichOffset },
-        batchSize,
-      );
-      totalRawCount += batch.length;
-      fullenrichOffset += batch.length;
+    const tagged = batch.map((r: any) => ({ ...r, _source: "fullenrich" }));
+    const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
+    const uniqueContacts = titleFiltered.filter((r: any) => {
+      const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
+      if (company && seenCompanies.has(company)) return false;
+      if (company) seenCompanies.add(company);
+      return true;
+    });
 
-      const tagged = batch.map((r: any) => ({ ...r, _source: "fullenrich" }));
-      const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
-      const newContacts = titleFiltered.filter((r: any) => {
-        const company = (r.employment?.current?.company?.name ?? "").toLowerCase();
-        if (company && seenCompanies.has(company)) return false;
-        if (company) seenCompanies.add(company);
-        return true;
-      });
+    // ─── 3. Verify batch with AI (only if time allows) ───
+    let results: unknown[];
+    const retried = false;
 
-      if (newContacts.length > 0 && totalCost.estimated_usd < MAX_COST_USD) {
-        const contactsForVerify = newContacts.map((r: any) => ({
-          entreprise: r.employment?.current?.company?.name ?? "",
-          titre: r.employment?.current?.title ?? "",
-          domaine: r.employment?.current?.company?.domain ?? "",
-          secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
-        }));
-        const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, contactsForVerify);
-        for (const idx of keepIndices) verifiedResults.push(newContacts[idx]);
-        if (reasoning) verifyReasons.push(reasoning);
-        totalCost.input_tokens += cost.input_tokens;
-        totalCost.output_tokens += cost.output_tokens;
-        totalCost.web_searches += cost.web_searches;
-        totalCost.estimated_usd += cost.estimated_usd;
-      }
-
-      if (verifiedResults.length >= targetCount || batch.length < batchSize) break;
-    }
-
-    let results = verifiedResults.slice(0, targetCount);
-
-    // ─── 3. Auto-retry with broader prompt if 0 results ───
-    let retried = false;
-    if (results.length === 0 && totalCost.estimated_usd < MAX_COST_USD) {
-      // Either all excluded by verify OR 0 raw results → try broader filters
-      const broader = await generateFiltersWithWebSearch(
-        `${body.description} (ÉLARGI: utilise des industries LinkedIn plus larges et des filtres moins restrictifs)`
-      );
-      totalCost.estimated_usd += broader.cost.estimated_usd;
-      const retryResults = await searchFullenrich(broader.filters, batchSize);
-      if (retryResults.length > 0) {
-        results = retryResults
-          .map((r: any) => ({ ...r, _source: "fullenrich" }))
-          .filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""))
-          .slice(0, targetCount);
-        retried = true;
+    if (uniqueContacts.length > 0 && timeLeft() > 8000) {
+      const contactsForVerify = uniqueContacts.map((r: any) => ({
+        entreprise: r.employment?.current?.company?.name ?? "",
+        titre: r.employment?.current?.title ?? "",
+        domaine: r.employment?.current?.company?.domain ?? "",
+        secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+      }));
+      const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, contactsForVerify);
+      results = keepIndices.map((idx) => uniqueContacts[idx]);
+      if (reasoning) verifyReasons.push(reasoning);
+      totalCost.input_tokens += cost.input_tokens;
+      totalCost.output_tokens += cost.output_tokens;
+      totalCost.web_searches += cost.web_searches;
+      totalCost.estimated_usd += cost.estimated_usd;
+    } else {
+      // Skip verification to save time — keep all title-filtered contacts
+      results = uniqueContacts;
+      if (uniqueContacts.length > 0 && timeLeft() <= 8000) {
+        verifyReasons.push("Vérification IA ignorée (budget temps)");
       }
     }
+
+    results = results.slice(0, targetCount);
 
     // ─── 4. Save to Google Sheets ───
     const now = new Date().toISOString();
@@ -499,9 +481,8 @@ export default async (request: Request) => {
       ai_cost: totalCost,
       verification: {
         raw_count: totalRawCount,
-        verified_count: verifiedResults.length,
+        verified_count: results.length,
         reasoning: verifyReasons.join(" | "),
-        cost_cap_reached: costCapReached,
       },
       total: contacts.length,
       retried,

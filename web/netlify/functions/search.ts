@@ -84,6 +84,7 @@ IMPORTANT :
 - Choisis 1 à 3 industries LinkedIn pertinentes
 - Ajoute des specialties si utile pour préciser le secteur
 - Mets une taille d'entreprise raisonnable (10-500 employés par défaut)
+- EXCLUS les associations, entités publiques, coopératives (SCOP, SCIC), fondations, ONG, mutuelles — on cherche UNIQUEMENT des entreprises privées
 
 Réponds UNIQUEMENT avec un JSON :
 {
@@ -214,6 +215,9 @@ GARDE si :
 
 EXCLUS si :
 - L'entreprise n'a RIEN À VOIR avec le secteur
+- C'est une association, ONG, fondation, ou entité caritative
+- C'est une entité publique (mairie, collectivité, agence gouvernementale, hôpital public, université publique)
+- C'est une coopérative (SCOP, SCIC, coopérative agricole, mutuelle)
 - C'est une filiale d'un grand groupe / CAC40 / multinationale
 - C'est un cabinet d'audit, de conseil, une banque d'affaires, un fonds d'investissement
 - Le titre n'est pas un vrai dirigeant (consultant, analyste, manager intermédiaire)

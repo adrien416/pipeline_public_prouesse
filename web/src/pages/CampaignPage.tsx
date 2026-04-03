@@ -911,11 +911,12 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                     <div className="flex flex-wrap gap-2">
                       {DAYS.map((d) => (
                         <button
+                          type="button"
                           key={d.id}
                           onClick={() => toggleDay(d.id)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                          className={`px-4 py-2.5 rounded-lg text-sm font-medium min-w-[48px] min-h-[44px] select-none touch-manipulation ${
                             jours.includes(d.id)
-                              ? "bg-blue-100 text-blue-700"
+                              ? "bg-blue-100 text-blue-700 ring-2 ring-blue-300"
                               : "bg-gray-100 text-gray-500"
                           }`}
                         >

@@ -351,7 +351,10 @@ export default async (request: Request) => {
       return json({
         recherche: { id: rechercheId, description: body.description, nb_resultats: String(contacts.length) },
         contacts,
-        filters: {},
+        filters: { demo: true },
+        ai_reasoning: "Mode démo — contacts fictifs générés automatiquement",
+        ai_cost: { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 },
+        verification: { raw_count: contacts.length, verified_count: contacts.length, reasoning: "Mode démo" },
         total: contacts.length,
       });
     }

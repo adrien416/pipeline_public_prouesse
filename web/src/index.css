@@ -1,1 +1,163 @@
 @import "tailwindcss";
+
+/* ─── Dark theme overrides ─── */
+
+/* Body background */
+body {
+  background-color: #0f1117;
+  color: #e5e7eb;
+}
+
+/* Cards: bg-white → dark card */
+.bg-white {
+  background-color: #161822 !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  color: #e5e7eb;
+}
+
+/* Gray backgrounds → darker */
+.bg-gray-50 {
+  background-color: #1a1d2e !important;
+}
+.bg-gray-100 {
+  background-color: #1e2235 !important;
+}
+.bg-gray-200 {
+  background-color: #252940 !important;
+}
+
+/* Text colors for dark bg */
+.text-gray-900 {
+  color: #f3f4f6 !important;
+}
+.text-gray-800 {
+  color: #e5e7eb !important;
+}
+.text-gray-700 {
+  color: #d1d5db !important;
+}
+.text-gray-600 {
+  color: #9ca3af !important;
+}
+.text-gray-500 {
+  color: #6b7280 !important;
+}
+
+/* Borders */
+.border-gray-100 {
+  border-color: rgba(255, 255, 255, 0.04) !important;
+}
+.border-gray-200 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+.border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.border-gray-50 {
+  border-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Form inputs */
+input, textarea, select {
+  background-color: #0f1117 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #e5e7eb !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #4b5563 !important;
+}
+
+/* Tables */
+thead.bg-gray-50 {
+  background-color: #1a1d2e !important;
+}
+th {
+  color: #9ca3af !important;
+}
+
+/* Alert/info boxes */
+.bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+  border-color: rgba(239, 68, 68, 0.2) !important;
+}
+.bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  border-color: rgba(245, 158, 11, 0.2) !important;
+}
+.bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.08) !important;
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+.bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.2) !important;
+}
+.bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.08) !important;
+}
+.bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.08) !important;
+}
+.bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.08) !important;
+}
+
+/* Slate (AI panel) */
+.bg-slate-50 {
+  background-color: #161822 !important;
+}
+.border-slate-200 {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+.text-slate-700 {
+  color: #d1d5db !important;
+}
+.text-slate-600 {
+  color: #9ca3af !important;
+}
+.text-slate-500 {
+  color: #6b7280 !important;
+}
+.text-slate-400 {
+  color: #4b5563 !important;
+}
+
+/* Shadow adjustments for dark */
+.shadow-sm {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+}
+.shadow-lg {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1117;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2e42;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b4060;
+}
+
+/* Score badges — keep readable */
+.bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+.bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+}
+.bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+/* Progress bar background */
+.bg-gray-200.rounded-full {
+  background-color: #252940 !important;
+}

@@ -91,27 +91,41 @@ Réponds UNIQUEMENT avec un JSON :
   "reasoning": "Explication courte de ton analyse et des filtres choisis"
 }`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
-      messages: [{ role: "user", content: prompt }],
-    }),
+  const requestBody = JSON.stringify({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
+    messages: [{ role: "user", content: prompt }],
   });
+  const headers = {
+    "Content-Type": "application/json",
+    "x-api-key": apiKey,
+    "anthropic-version": "2023-06-01",
+  };
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${errText.slice(0, 200)}`);
+  let result: any;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers,
+      body: requestBody,
+    });
+
+    if (response.status === 429 || response.status === 529) {
+      const wait = (attempt + 1) * 3000;
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Anthropic API error ${response.status}: ${errText.slice(0, 200)}`);
+    }
+
+    result = await response.json();
+    break;
   }
-
-  const result = await response.json();
+  if (!result) throw new Error("API Anthropic surchargée — réessaie dans quelques secondes");
 
   // Extract text from response — use only the LAST text block (after web searches)
   const textBlocks = (result.content ?? [])

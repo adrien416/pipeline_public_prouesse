@@ -100,7 +100,7 @@ Réponds UNIQUEMENT avec un JSON :
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 4096,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
       messages: [{ role: "user", content: prompt }],
     }),
@@ -113,22 +113,45 @@ Réponds UNIQUEMENT avec un JSON :
 
   const result = await response.json();
 
-  // Extract text from response (may include web_search tool use blocks)
+  // Extract text from response — use only the LAST text block (after web searches)
   const textBlocks = (result.content ?? [])
     .filter((block: any) => block.type === "text")
-    .map((block: any) => block.text)
-    .join("");
+    .map((block: any) => block.text);
 
-  const jsonMatch = textBlocks.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
+  const lastText = textBlocks[textBlocks.length - 1] || textBlocks.join("");
+
+  // Strip markdown code fences if present
+  const cleaned = lastText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+  // Extract JSON with balanced bracket counting (handles nested objects)
+  function extractJSON(text: string): string | null {
+    const start = text.indexOf("{");
+    if (start === -1) return null;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (escape) { escape = false; continue; }
+      if (ch === "\\") { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === "{") depth++;
+      else if (ch === "}") { depth--; if (depth === 0) return text.slice(start, i + 1); }
+    }
+    return null;
+  }
+
+  const jsonStr = extractJSON(cleaned);
+  if (!jsonStr) {
     throw new Error("L'IA n'a pas retourné de JSON valide pour les filtres");
   }
 
   let parsed: any;
   try {
-    parsed = JSON.parse(jsonMatch[0]);
+    parsed = JSON.parse(jsonStr);
   } catch {
-    throw new Error(`JSON invalide de l'IA: ${jsonMatch[0].slice(0, 200)}`);
+    throw new Error(`JSON invalide de l'IA: ${jsonStr.slice(0, 200)}`);
   }
 
   const usage = result.usage ?? {};

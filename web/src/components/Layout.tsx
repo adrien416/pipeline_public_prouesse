@@ -19,7 +19,7 @@ const TABS: { id: Tab; label: string; step: string }[] = [
   { id: "analytics", label: "Analytics", step: "5" },
 ];
 
-export function Layout({ children, activeTab, onTabChange, maxReachedStep }: Props) {
+export function Layout({ children, activeTab, onTabChange }: Props) {
   const { logout, user } = useAuth();
 
   return (

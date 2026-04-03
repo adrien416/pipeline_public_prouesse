@@ -720,7 +720,7 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                     onKeyDown={async (e) => {
                       if (e.key === "Enter") {
                         await updateCampaign({ id: campaignData.id, nom: editName });
-                        queryClient.invalidateQueries({ queryKey: ["campaign"] });
+                        qc.invalidateQueries({ queryKey: ["campaign"] });
                         setEditingName(false);
                       }
                       if (e.key === "Escape") setEditingName(false);
@@ -728,7 +728,7 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                     onBlur={async () => {
                       if (editName !== (campaignData.nom || "")) {
                         await updateCampaign({ id: campaignData.id, nom: editName });
-                        queryClient.invalidateQueries({ queryKey: ["campaign"] });
+                        qc.invalidateQueries({ queryKey: ["campaign"] });
                       }
                       setEditingName(false);
                     }}
@@ -1164,12 +1164,10 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                                 try {
                                   await updateContact(selectedContact.id, { phrase_perso: draftPhrase });
                                   // Update local cache
-                                  const list = contacts.data?.contacts || [];
-                                  qc.setQueryData(["contacts", rechercheId], {
-                                    contacts: list.map((x) =>
-                                      x.id === selectedContact.id ? { ...x, phrase_perso: draftPhrase } : x
-                                    ),
-                                  });
+                                  const list = contacts.data || [];
+                                  qc.setQueryData(["contacts", rechercheId], list.map((x: Record<string, string>) =>
+                                    x.id === selectedContact.id ? { ...x, phrase_perso: draftPhrase } : x
+                                  ));
                                   setSelectedContact({ ...selectedContact, phrase_perso: draftPhrase });
                                   setEditingPhrase(false);
                                 } catch (err) {

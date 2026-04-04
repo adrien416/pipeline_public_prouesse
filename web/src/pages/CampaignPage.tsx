@@ -1123,6 +1123,11 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
                           déjà contacté
                         </span>
                       )}
+                      {c.email_status === "skipped_duplicate" && (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 shrink-0" title="Email ou domaine déjà envoyé">
+                          doublon
+                        </span>
+                      )}
                     </div>
                   );
                 })}

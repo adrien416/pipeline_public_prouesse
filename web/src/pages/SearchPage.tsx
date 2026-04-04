@@ -12,7 +12,7 @@ interface SearchDebugInfo {
   ai_reasoning?: string;
   filters?: Record<string, unknown>;
   ai_cost?: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
-  verification?: { raw_count: number; verified_count: number; reasoning: string; cost_cap_reached: boolean };
+  verification?: { raw_count: number; verified_count: number; skipped_duplicates?: number; reasoning: string; cost_cap_reached?: boolean };
   retried?: boolean;
 }
 
@@ -246,6 +246,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Duplicates banner */}
+      {debugInfo?.verification?.skipped_duplicates && debugInfo.verification.skipped_duplicates > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+          <span className="font-semibold">{debugInfo.verification.skipped_duplicates} doublons ignorés</span>
+          <span className="text-amber-500">— contacts déjà présents en base (même LinkedIn ou même nom+entreprise)</span>
         </div>
       )}
 

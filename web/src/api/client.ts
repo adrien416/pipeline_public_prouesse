@@ -70,7 +70,7 @@ export function launchSearch(params: SearchParams) {
 }
 
 // ─── Score ───
-export function launchScoring(recherche_id: string) {
+export function launchScoring(recherche_id: string, custom_instructions?: string) {
   return request<{
     total: number;
     scored: number;
@@ -79,7 +79,7 @@ export function launchScoring(recherche_id: string) {
     contacts: Array<Record<string, string>>;
   }>("/score", {
     method: "POST",
-    body: JSON.stringify({ recherche_id }),
+    body: JSON.stringify({ recherche_id, custom_instructions }),
   });
 }
 

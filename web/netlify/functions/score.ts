@@ -12,6 +12,7 @@ import {
 
 interface ScoreBody {
   recherche_id: string;
+  custom_instructions?: string;
 }
 
 function safeDomain(domaine: string): string {
@@ -87,6 +88,11 @@ JSON uniquement :
 {"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
 }
 
+function addCustomInstructions(prompt: string, instructions?: string): string {
+  if (!instructions) return prompt;
+  return prompt + `\n\nINSTRUCTIONS SUPPLÉMENTAIRES DE L'UTILISATEUR :\n${instructions}`;
+}
+
 /**
  * Build a "learning" block from previous feedbacks in the same search.
  * This teaches the AI from the user's corrections.
@@ -110,7 +116,8 @@ async function scoreContact(
   contact: Record<string, string>,
   metaDesc: string,
   rechercheDescription: string,
-  allContacts?: Record<string, string>[]
+  allContacts?: Record<string, string>[],
+  customInstructions?: string,
 ): Promise<{ score_1: number; score_2: number; score_total: number; raison: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie — ajoute-la dans les variables d'environnement Netlify");
@@ -118,7 +125,7 @@ async function scoreContact(
   const basePrompt = buildScoringPrompt(contact, metaDesc, rechercheDescription);
 
   const feedbackContext = allContacts ? buildFeedbackContext(allContacts) : "";
-  const prompt = basePrompt + feedbackContext;
+  const prompt = addCustomInstructions(basePrompt + feedbackContext, customInstructions);
 
   const model = "claude-haiku-4-5-20251001";
 
@@ -297,7 +304,7 @@ export default async (request: Request) => {
       };
     } else {
       const metaDesc = await fetchMetaDescription(contact.domaine);
-      scores = await scoreContact(contact, metaDesc, rechercheDescription, allContacts);
+      scores = await scoreContact(contact, metaDesc, rechercheDescription, allContacts, body.custom_instructions);
     }
 
     // Apply score to this contact AND all unscored contacts from the same company

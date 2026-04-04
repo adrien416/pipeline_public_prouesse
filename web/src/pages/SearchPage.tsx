@@ -31,6 +31,8 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [debugInfo, setDebugInfo] = useState<SearchDebugInfo | null>(null);
   const [showDebug, setShowDebug] = useState(true);
 
+  const [findingMore, setFindingMore] = useState(false);
+
   const search = useMutation({
     mutationFn: async (desc: string) => {
       setSearchStep("Analyse IA + recherche web...");
@@ -53,6 +55,36 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       queryClient.invalidateQueries({ queryKey: ["recherches"] });
     },
   });
+
+  async function handleFindMore() {
+    if (!loadedRecherche || !description.trim()) return;
+    setFindingMore(true);
+    setSearchStep("Recherche de contacts supplémentaires...");
+    try {
+      const currentCount = loadedContacts?.length ?? 0;
+      const result = await launchSearch({
+        description: description.trim(),
+        append: true,
+        recherche_id: loadedRecherche.id,
+        offset: currentCount,
+      });
+      // Append new contacts to existing
+      setLoadedContacts((prev) => [...(prev ?? []), ...result.contacts]);
+      setDebugInfo({
+        ai_reasoning: result.ai_reasoning,
+        filters: result.filters,
+        ai_cost: result.ai_cost,
+        verification: result.verification,
+        retried: result.retried,
+      });
+      queryClient.invalidateQueries({ queryKey: ["recherches"] });
+    } catch (err) {
+      console.error("Find more error:", err);
+    } finally {
+      setFindingMore(false);
+      setSearchStep(null);
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -236,6 +268,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   Confirmer l'exclusion ({excluded.size})
                 </button>
               )}
+              <button
+                onClick={handleFindMore}
+                disabled={findingMore || search.isPending}
+                className="border border-blue-500 text-blue-500 font-medium rounded-lg px-3 py-1.5 text-sm hover:bg-blue-500/10 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {findingMore && <Spinner className="h-3.5 w-3.5" />}
+                Chercher plus
+              </button>
               <button
                 onClick={handleComplete}
                 disabled={activeContacts.length === 0}

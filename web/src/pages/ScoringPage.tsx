@@ -114,6 +114,8 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const cancelRef = useRef(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [customInstructions, setCustomInstructions] = useState("");
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -128,7 +130,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
     try {
       let isDone = false;
       while (!isDone && !cancelRef.current) {
-        const result = await launchScoring(rechercheId);
+        const result = await launchScoring(rechercheId, customInstructions || undefined);
         setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
         if (result.contacts?.length) {
           queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
@@ -147,7 +149,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
     } finally {
       setScoring(false);
     }
-  }, [rechercheId, queryClient]);
+  }, [rechercheId, queryClient, customInstructions]);
 
   /** Save a feedback comment to the backend */
   async function saveFeedback(contactId: string, feedback: string) {
@@ -239,12 +241,17 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
           )}
           {!scoring && !contacts.isLoading && !contacts.isError && progress.total === 0 && (
             <div className="text-sm">
-              <span className="text-gray-500">{contactsList.length} contacts a scorer</span>
-              {contactsList.length > 0 && (
-                <span className="text-gray-400 ml-2">
-                  (cout IA estime : ~${(contactsList.length * 0.001).toFixed(2)})
-                </span>
-              )}
+              <span className="text-gray-500">{contactsList.length} contacts à scorer</span>
+              {contactsList.length > 0 && (() => {
+                const uniqueDomains = new Set(contactsList.map(c => c.domaine?.toLowerCase()).filter(Boolean)).size;
+                const costPerCall = 0.0013;
+                const estimated = uniqueDomains * costPerCall;
+                return (
+                  <span className="text-gray-400 ml-2">
+                    (~{uniqueDomains} appels IA, coût estimé : ${estimated.toFixed(3)})
+                  </span>
+                );
+              })()}
             </div>
           )}
           {contacts.isLoading && !scoring && progress.total === 0 && (
@@ -291,6 +298,45 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
           )}
         </div>
       </div>
+
+      {/* Custom scoring instructions */}
+      {!scoring && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <button
+            onClick={() => setShowPromptEditor(!showPromptEditor)}
+            className="w-full px-4 py-3 flex items-center justify-between text-sm hover:bg-gray-50"
+          >
+            <span className="font-medium text-gray-700">
+              Instructions de scoring
+              {customInstructions && <span className="ml-2 text-xs text-purple-500">(personnalisé)</span>}
+            </span>
+            <span className="text-xs text-gray-400">{showPromptEditor ? "Masquer" : "Personnaliser"}</span>
+          </button>
+          {showPromptEditor && (
+            <div className="px-4 pb-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                Le scoring évalue chaque contact sur <strong>Pertinence</strong> (1-5) et <strong>Impact social/environnemental</strong> (1-5).
+                Ajoute des instructions pour guider l'IA (ex: secteurs à privilégier, critères supplémentaires...).
+              </p>
+              <textarea
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="Ex: Privilégie les entreprises qui font du B2B, donne un score d'impact plus élevé aux entreprises dans l'éducation, sois plus strict sur la pertinence..."
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
+              />
+              {customInstructions && (
+                <button
+                  onClick={() => setCustomInstructions("")}
+                  className="text-xs text-gray-400 hover:text-red-500"
+                >
+                  Effacer les instructions
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Progress bar */}
       {progress.total > 0 && (

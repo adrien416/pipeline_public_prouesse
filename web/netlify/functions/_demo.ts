@@ -181,7 +181,9 @@ export const DEMO_TEMPLATE_CORPS = `Bonjour {Prenom},
 
 {Phrase}
 
-On a développé Levaia.fr, un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
+Chez Prouesse (prouesse.vc), on accompagne les dirigeants d'entreprises à impact dans leur développement et leurs opérations stratégiques.
+
+On a aussi créé Levaia (levaia.fr), un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
 
 Si tu veux en discuter, tu peux bloquer un créneau ici : https://meetings-eu1.hubspot.com/adrien-pannetier
 

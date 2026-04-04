@@ -959,12 +959,23 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
         </div>
       )}
 
-      {/* Phrase generation progress */}
+      {/* Phrase generation progress + cost */}
       {generatingPhrases && (
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 flex items-center gap-3">
           <Spinner className="h-4 w-4 text-purple-600" />
           <span className="text-sm text-purple-700">
             Génération des phrases personnalisées IA... ({phraseProgress.generated}/{phraseProgress.total})
+          </span>
+          <span className="text-xs text-purple-400 ml-auto">
+            ~${(phraseProgress.total * 0.0005).toFixed(3)}
+          </span>
+        </div>
+      )}
+      {!generatingPhrases && missingPhrases > 0 && contactsList.length > 0 && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3 text-sm text-purple-700 flex items-center justify-between">
+          <span>{missingPhrases} contacts sans phrase personnalisée IA</span>
+          <span className="text-xs text-purple-400">
+            Coût estimé : ~${(missingPhrases * 0.0005).toFixed(3)}
           </span>
         </div>
       )}

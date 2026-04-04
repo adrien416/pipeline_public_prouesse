@@ -15,6 +15,34 @@ import { v4 as uuid } from "uuid";
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
 
+async function sendCompletionNotification(
+  campaignName: string,
+  totalSent: number,
+  senderEmail: string,
+  brevoKey: string,
+): Promise<void> {
+  try {
+    await fetch(BREVO_API, {
+      method: "POST",
+      headers: { "api-key": brevoKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: { name: "Prouesse Pipeline", email: senderEmail },
+        to: [{ email: senderEmail, name: senderEmail }],
+        subject: `Campagne terminée : ${campaignName}`,
+        htmlContent: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;color:#1a1a1a;">
+<h2 style="margin:0 0 16px;">Campagne terminée</h2>
+<p><strong>${campaignName}</strong></p>
+<p>${totalSent} emails envoyés.</p>
+<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Voir les analytics →</a></p>
+<p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
+</body></html>`,
+      }),
+    });
+  } catch (err) {
+    console.error("Completion notification failed:", err);
+  }
+}
+
 function stripWhitespace(text: string): string {
   return text.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");
 }
@@ -112,6 +140,14 @@ export default async () => {
               ...campaign,
               status: "completed",
             }));
+          }
+          // Send completion notification
+          const brevoKey = process.env.BREVO_API_KEY;
+          const userInfo = usersMap.get(campaign.user_id);
+          const senderEmail = userInfo?.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+          if (brevoKey && !demoUserIds.has(campaign.user_id)) {
+            const sentCount = parseInt(campaign.sent || "0");
+            await sendCompletionNotification(campaign.nom || "Sans nom", sentCount, senderEmail, brevoKey);
           }
           console.log(`cron-send: campaign ${campaign.id} completed (no queued contacts)`);
           continue;

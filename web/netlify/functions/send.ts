@@ -16,6 +16,36 @@ import {
 
 const BREVO_API = "https://api.brevo.com/v3/smtp/email";
 
+/** Send a campaign completion notification email to the admin */
+async function sendCompletionNotification(
+  campaignName: string,
+  totalSent: number,
+  senderEmail: string,
+  senderName: string,
+  brevoKey: string,
+): Promise<void> {
+  try {
+    await fetch(BREVO_API, {
+      method: "POST",
+      headers: { "api-key": brevoKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: { name: "Prouesse Pipeline", email: senderEmail },
+        to: [{ email: senderEmail, name: senderName }],
+        subject: `Campagne terminée : ${campaignName}`,
+        htmlContent: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;color:#1a1a1a;">
+<h2 style="margin:0 0 16px;">Campagne terminée</h2>
+<p><strong>${campaignName}</strong></p>
+<p>${totalSent} emails envoyés.</p>
+<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Voir les analytics →</a></p>
+<p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
+</body></html>`,
+      }),
+    });
+  } catch (err) {
+    console.error("Completion notification failed:", err);
+  }
+}
+
 /** Strip all leading/trailing whitespace including BOM, NBSP, \r */
 function stripWhitespace(text: string): string {
   return text.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");
@@ -287,12 +317,27 @@ export default async (request: Request) => {
       }));
 
       const newSent = parseInt(campaign.sent || "0") + 1;
+      const remaining = queued.length - 1;
+      const isComplete = remaining === 0;
+
       await updateRow("Campagnes", campFound.rowIndex, toRow(campagneHeaders, {
         ...campaign,
         sent: String(newSent),
+        ...(isComplete ? { status: "completed" } : {}),
       }));
 
-      return json({ sent: 1, remaining: queued.length - 1 });
+      // Send notification when campaign completes
+      if (isComplete && brevoKey) {
+        await sendCompletionNotification(
+          campaign.nom || "Sans nom",
+          newSent,
+          senderEmail,
+          senderName,
+          brevoKey,
+        );
+      }
+
+      return json({ sent: 1, remaining });
     }
 
     return json({ sent: 0, remaining: queued.length, error: brevoData.message || "Erreur Brevo" });

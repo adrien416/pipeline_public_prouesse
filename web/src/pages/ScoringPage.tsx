@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchScoring, fetchContacts, updateContact, startBackgroundScoring, stopBackgroundScoring } from "../api/client";
+import { startBackgroundScoring, stopBackgroundScoring, fetchContacts, updateContact } from "../api/client";
 import { ScoreBadge, TotalScoreBadge } from "../components/ScoreBadge";
 import { Spinner } from "../components/Spinner";
 
@@ -113,7 +113,6 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState<Set<string>>(new Set());
-  const cancelRef = useRef(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
 

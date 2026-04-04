@@ -493,30 +493,66 @@ export default async (request: Request) => {
       await appendRow("Recherches", toRow(RECHERCHES_HEADERS, recherche));
     }
 
-    // ─── 5. Map results to contact objects ───
-    const contacts: Record<string, string>[] = results.map((r: any) => ({
-      id: uuidv4(),
-      nom: r.last_name ?? "",
-      prenom: r.first_name ?? "",
-      email: "",
-      entreprise: r.employment?.current?.company?.name ?? "",
-      titre: r.employment?.current?.title ?? "",
-      domaine: r.employment?.current?.company?.domain ?? "",
-      secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
-      linkedin: r.social_profiles?.linkedin?.url ?? "",
-      telephone: "",
-      statut: "nouveau",
-      enrichissement_status: "",
-      enrichissement_retry: "",
-      score_1: "", score_2: "", score_total: "", score_raison: "", score_feedback: "",
-      recherche_id: rechercheId,
-      campagne_id: "",
-      email_status: "", email_sent_at: "", phrase_perso: "",
-      source: "fullenrich",
-      date_creation: now,
-      date_modification: now,
-      user_id: auth.userId,
-    }));
+    // ─── 5. Deduplicate against existing contacts in Sheets ───
+    const existingContacts = await readAll("Contacts");
+    const existingLinkedins = new Set(
+      existingContacts.filter((c) => c.linkedin).map((c) => c.linkedin.toLowerCase())
+    );
+    const existingNames = new Set(
+      existingContacts.filter((c) => c.nom && c.prenom && c.entreprise).map((c) =>
+        `${c.prenom.toLowerCase()}|${c.nom.toLowerCase()}|${c.entreprise.toLowerCase()}`
+      )
+    );
+
+    // ─── 6. Map results to contact objects (skip duplicates) ───
+    const contacts: Record<string, string>[] = [];
+    let skippedDuplicates = 0;
+    for (const r of results as any[]) {
+      const linkedin = (r.social_profiles?.linkedin?.url ?? "").toLowerCase();
+      const prenom = r.first_name ?? "";
+      const nom = r.last_name ?? "";
+      const entreprise = r.employment?.current?.company?.name ?? "";
+      const nameKey = `${prenom.toLowerCase()}|${nom.toLowerCase()}|${entreprise.toLowerCase()}`;
+
+      // Skip if LinkedIn URL already exists
+      if (linkedin && existingLinkedins.has(linkedin)) {
+        skippedDuplicates++;
+        continue;
+      }
+      // Skip if same name+company already exists
+      if (prenom && nom && entreprise && existingNames.has(nameKey)) {
+        skippedDuplicates++;
+        continue;
+      }
+
+      contacts.push({
+        id: uuidv4(),
+        nom,
+        prenom,
+        email: "",
+        entreprise,
+        titre: r.employment?.current?.title ?? "",
+        domaine: r.employment?.current?.company?.domain ?? "",
+        secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
+        linkedin: r.social_profiles?.linkedin?.url ?? "",
+        telephone: "",
+        statut: "nouveau",
+        enrichissement_status: "",
+        enrichissement_retry: "",
+        score_1: "", score_2: "", score_total: "", score_raison: "", score_feedback: "",
+        recherche_id: rechercheId,
+        campagne_id: "",
+        email_status: "", email_sent_at: "", phrase_perso: "",
+        source: "fullenrich",
+        date_creation: now,
+        date_modification: now,
+        user_id: auth.userId,
+      });
+
+      // Track for this batch too
+      if (linkedin) existingLinkedins.add(linkedin);
+      if (prenom && nom && entreprise) existingNames.add(nameKey);
+    }
 
     // ─── 6. Save contacts to Google Sheets ───
     if (contacts.length > 0) {
@@ -533,7 +569,8 @@ export default async (request: Request) => {
       verification: {
         raw_count: totalRawCount,
         verified_count: results.length,
-        reasoning: verifyReasons.join(" | "),
+        skipped_duplicates: skippedDuplicates,
+        reasoning: verifyReasons.join(" | ") + (skippedDuplicates > 0 ? ` | ${skippedDuplicates} doublons ignorés (déjà en base)` : ""),
       },
       total: contacts.length,
       retried,

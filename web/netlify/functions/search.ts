@@ -86,6 +86,8 @@ IMPORTANT :
 - N'utilise PAS current_company_founded_year sauf demande explicite de l'utilisateur
 - Mets une taille d'entreprise large : 1-5000 employés par défaut
 - EXCLUS les associations, entités publiques, coopératives (SCOP, SCIC), fondations, ONG, mutuelles — on cherche UNIQUEMENT des entreprises privées
+- AJOUTE TOUJOURS ces industries en exclusion (exclude: true) dans current_company_industries :
+  "Non-profit Organization Management", "Government Administration", "Government Relations", "Public Policy", "Civic & Social Organization", "Political Organization", "International Affairs", "Military"
 - L'objectif est de retourner BEAUCOUP de résultats (50-100+). Mieux vaut trop de résultats que pas assez.
 
 Réponds UNIQUEMENT avec un JSON :
@@ -368,6 +370,26 @@ export default async (request: Request) => {
 
     // ─── 1. Claude + web search → generate Fullenrich filters ───
     const { filters, reasoning: aiReasoning, cost: aiCost } = await generateFiltersWithWebSearch(body.description);
+
+    // ─── Hardcode exclusions — always injected even if AI forgets ───
+    const EXCLUDED_INDUSTRIES = [
+      "Non-profit Organization Management",
+      "Government Administration",
+      "Government Relations",
+      "Public Policy",
+      "Civic & Social Organization",
+      "Political Organization",
+      "International Affairs",
+      "Military",
+    ];
+    const existingIndustries: any[] = (filters as any).current_company_industries ?? [];
+    const existingExclusions = new Set(
+      existingIndustries.filter((f: any) => f.exclude).map((f: any) => f.value)
+    );
+    const missingExclusions = EXCLUDED_INDUSTRIES
+      .filter((ind) => !existingExclusions.has(ind))
+      .map((ind) => ({ value: ind, exact_match: false, exclude: true }));
+    (filters as any).current_company_industries = [...existingIndustries, ...missingExclusions];
 
     // ─── 2. Search Fullenrich with filters (1 batch only to save time) ───
     const targetCount = body.limit ?? 100;

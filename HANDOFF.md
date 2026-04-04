@@ -6,7 +6,7 @@
 git checkout claude/rebuild-search-feature-dzpFK   # Branche active
 cd web
 npm install
-npm test            # 114 tests doivent passer
+npm test            # 120 tests doivent passer
 npx netlify dev     # Dev server local
 ```
 **Branche de production Netlify** : `claude/rebuild-search-feature-dzpFK` (configuree dans Netlify → Build & deploy → Production branch)
@@ -54,7 +54,7 @@ npx netlify dev     # Dev server local
 │   │   ├── credits.ts            # GET /api/credits — solde credits Fullenrich
 │   │   ├── login.ts              # POST /api/login — authentification
 │   │   └── webhook-brevo.ts      # POST /api/webhook-brevo — webhook Brevo pour tracking
-│   ├── tests/                    # Tests vitest (114 tests, 8 fichiers)
+│   ├── tests/                    # Tests vitest (120 tests, 8 fichiers)
 │   ├── netlify.toml              # Config Netlify
 │   ├── package.json              # Dependances npm
 │   └── vite.config.ts            # Config Vite
@@ -195,7 +195,7 @@ POST /api/search (single endpoint, ~15-25s)
 
 38. **Demo mise a jour** : Raisons de scoring adaptees aux nouveaux criteres (Pertinence + Impact), template email mis a jour.
 
-39. **Tests** : 114 tests (8 fichiers), dont 25 tests search couvrant : validation, succes, multi-contacts, filtrage titres, deduplication, 0 resultats, parsing JSON (code fences, multi-block), retry 429/529, erreurs API.
+39. **Tests** : 120 tests (8 fichiers), dont 25 tests search couvrant : validation, succes, multi-contacts, filtrage titres, deduplication, 0 resultats, parsing JSON (code fences, multi-block), retry 429/529, erreurs API.
 
 40. **Bouton "Chercher plus"** : Pagination Fullenrich via offset. Ajoute 100 contacts aux resultats existants.
 
@@ -257,7 +257,7 @@ git checkout claude/rebuild-search-feature-dzpFK
 cd web
 npm install
 npx netlify dev     # Dev server local
-npm test            # 114 tests vitest
+npm test            # 120 tests vitest
 ```
 
 ### Variables d'env requises pour le dev local

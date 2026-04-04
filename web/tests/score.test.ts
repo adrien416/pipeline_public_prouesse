@@ -304,6 +304,82 @@ describe("score handler — multiple contacts", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("passes custom_instructions to AI prompt", async () => {
+    const unscored = makeContact();
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
+    mockReadAll.mockResolvedValue([unscored]);
+
+    let promptContent = "";
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (!urlStr.includes("anthropic")) {
+        return new Response("<html></html>");
+      }
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const parsed = JSON.parse(bodyStr);
+      promptContent = parsed.messages[0].content;
+      return new Response(JSON.stringify({
+        content: [{ text: '{"pertinence": 5, "impact": 4, "raison": "Custom test"}' }],
+      }));
+    }) as typeof fetch;
+
+    await scoreHandler(makeRequest({
+      recherche_id: "r1",
+      custom_instructions: "Privilégie les entreprises B2B dans l'éducation",
+    }));
+
+    expect(promptContent).toContain("Privilégie les entreprises B2B dans l'éducation");
+    expect(promptContent).toContain("INSTRUCTIONS SUPPLÉMENTAIRES");
+  });
+
+  it("works without custom_instructions", async () => {
+    const unscored = makeContact();
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
+    mockReadAll.mockResolvedValue([unscored]);
+
+    let promptContent = "";
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (!urlStr.includes("anthropic")) return new Response("<html></html>");
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const parsed = JSON.parse(bodyStr);
+      promptContent = parsed.messages[0].content;
+      return new Response(JSON.stringify({
+        content: [{ text: '{"pertinence": 4, "impact": 3, "raison": "No custom"}' }],
+      }));
+    }) as typeof fetch;
+
+    await scoreHandler(makeRequest({ recherche_id: "r1" }));
+    expect(promptContent).not.toContain("INSTRUCTIONS SUPPLÉMENTAIRES");
+  });
+
+  it("includes global feedbacks from all searches in prompt", async () => {
+    const unscoredR1 = makeContact({ id: "c1", recherche_id: "r1" });
+    const feedbackR2 = makeContact({
+      id: "c2", recherche_id: "r2", score_total: "8", score_1: "4", score_2: "4",
+      score_feedback: "Trop généreux sur le score impact", entreprise: "OldCo", secteur: "Retail",
+    });
+    mockFindRowById.mockResolvedValue({ rowIndex: 2, data: { description: "test" } });
+    mockReadAll.mockResolvedValue([unscoredR1, feedbackR2]);
+
+    let promptContent = "";
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (!urlStr.includes("anthropic")) return new Response("<html></html>");
+      const bodyStr = typeof init?.body === "string" ? init.body : "";
+      const parsed = JSON.parse(bodyStr);
+      promptContent = parsed.messages[0].content;
+      return new Response(JSON.stringify({
+        content: [{ text: '{"pertinence": 3, "impact": 2, "raison": "Adjusted"}' }],
+      }));
+    }) as typeof fetch;
+
+    await scoreHandler(makeRequest({ recherche_id: "r1" }));
+    // Feedback from r2 should appear in prompt for r1
+    expect(promptContent).toContain("Trop généreux sur le score impact");
+    expect(promptContent).toContain("APPRENTISSAGE");
+  });
+
   it("filters contacts from other recherche_ids", async () => {
     const ours = makeContact({ id: "c1", recherche_id: "r1" });
     const other = makeContact({ id: "c2", recherche_id: "r2" });

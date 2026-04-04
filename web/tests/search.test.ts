@@ -595,6 +595,131 @@ describe("search handler — errors", () => {
   });
 });
 
+// ─── Fallback: broadened filters when few results ───
+
+describe("search handler — fallback broadened filters", () => {
+  it("retries with broader filters when first batch returns < 10 results", async () => {
+    let fullenrichCallCount = 0;
+    const manyResults = Array.from({ length: 15 }, (_, i) => ({
+      ...FULLENRICH_RESULT,
+      first_name: `Person${i}`,
+      last_name: `Last${i}`,
+      employment: {
+        current: {
+          title: "CEO",
+          company: {
+            name: `Company${i}`,
+            domain: `company${i}.fr`,
+            industry: { main_industry: "Tech" },
+          },
+        },
+      },
+      social_profiles: { linkedin: { url: `https://linkedin.com/in/person${i}` } },
+    }));
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          // Keep all contacts
+          const keepAll = Array.from({ length: 15 }, (_, i) => i + 1);
+          return makeVerifyResponse(keepAll);
+        }
+        return makeAIFilterResponse({
+          current_company_industries: [{ value: "Tech", exact_match: false, exclude: false }],
+          current_company_specialties: [{ value: "very niche thing", exact_match: false, exclude: false }],
+          current_company_headquarters: [{ value: "France", exact_match: false, exclude: false }],
+          current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }],
+        });
+      }
+      if (urlStr.includes("fullenrich")) {
+        fullenrichCallCount++;
+        if (fullenrichCallCount === 1) {
+          // First call: few results (< 10)
+          return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
+        }
+        // Broadened call: many results
+        return new Response(JSON.stringify({ results: manyResults }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test fallback" }));
+    const body = await res.json();
+    expect(fullenrichCallCount).toBe(2); // 1 initial + 1 broadened
+    expect(body.contacts.length).toBeGreaterThan(1);
+    expect(body.retried).toBe(true);
+  });
+
+  it("does NOT retry if first batch returns >= 10 results", async () => {
+    const tenResults = Array.from({ length: 10 }, (_, i) => ({
+      ...FULLENRICH_RESULT,
+      first_name: `P${i}`,
+      last_name: `L${i}`,
+      employment: {
+        current: {
+          title: "CEO",
+          company: { name: `Co${i}`, domain: `co${i}.fr`, industry: { main_industry: "Tech" } },
+        },
+      },
+      social_profiles: { linkedin: { url: `https://linkedin.com/in/p${i}` } },
+    }));
+
+    let fullenrichCallCount = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) {
+          return makeVerifyResponse(Array.from({ length: 10 }, (_, i) => i + 1));
+        }
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        fullenrichCallCount++;
+        return new Response(JSON.stringify({ results: tenResults }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test no fallback" }));
+    const body = await res.json();
+    expect(fullenrichCallCount).toBe(1); // No retry
+    expect(body.contacts.length).toBe(10);
+    expect(body.retried).toBe(false);
+  });
+});
+
+// ─── Hardcoded industry exclusions ───
+
+describe("search handler — hardcoded exclusions", () => {
+  it("injects excluded industries into filters", async () => {
+    let capturedBody: any = null;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        capturedBody = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    await searchHandler(makeRequest({ description: "test exclusions" }));
+    expect(capturedBody).not.toBeNull();
+    const industries = capturedBody.current_company_industries || [];
+    const excludedNames = industries.filter((i: any) => i.exclude === true).map((i: any) => i.value);
+    expect(excludedNames).toContain("Non-profit Organization Management");
+    expect(excludedNames).toContain("Government Administration");
+    expect(excludedNames).toContain("Military");
+  });
+});
+
 // ─── Demo mode ───
 
 // Demo mode test would require resetting the module mock mid-test,

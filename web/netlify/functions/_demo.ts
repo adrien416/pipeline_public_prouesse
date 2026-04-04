@@ -181,10 +181,11 @@ export const DEMO_TEMPLATE_CORPS = `Bonjour {Prenom},
 
 {Phrase}
 
-Chez Prouesse (prouesse.vc), on accompagne les dirigeants d'entreprises à impact dans leur développement et leurs opérations stratégiques.
+On a créé Levaia (levaia.fr) — tu rentres le nom de ton entreprise et tu obtiens une valorisation instantanée, gratuitement.
 
-On a aussi créé Levaia (levaia.fr), un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
+Chez Prouesse (prouesse.vc), on utilise ça comme point de départ pour accompagner les dirigeants à impact sur leurs prochaines étapes (levée, cession, croissance externe).
 
-Si tu veux en discuter, tu peux bloquer un créneau ici : https://meetings-eu1.hubspot.com/adrien-pannetier
+Curieux de voir ce que ça donne pour {Entreprise} ?
+https://meetings-eu1.hubspot.com/adrien-pannetier
 
 Adrien`;

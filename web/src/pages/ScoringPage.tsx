@@ -241,9 +241,12 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
           {progress.total > 0 && (
             <div className="text-sm">
               <span className="font-semibold">{progress.scored}/{progress.total}</span>
-              <span className="text-gray-500"> scores — </span>
+              <span className="text-gray-500"> scorés — </span>
               <span className="font-semibold text-green-600">{progress.qualified}</span>
-              <span className="text-gray-500">{" qualifies (>= 7)"}</span>
+              <span className="text-gray-500">{" qualifiés (>= 7)"}</span>
+              <span className="text-gray-400 ml-2">
+                (~${(progress.scored * 0.0013).toFixed(3)} dépensé)
+              </span>
             </div>
           )}
           {!scoring && !contacts.isLoading && !contacts.isError && progress.total === 0 && (

@@ -97,13 +97,13 @@ function buildFeedbackContext(contacts: Record<string, string>[]): string {
   );
   if (withFeedback.length === 0) return "";
 
-  const examples = withFeedback.slice(0, 10).map((c) => {
+  const examples = withFeedback.map((c) => {
     return `- ${c.entreprise} (${c.secteur}): score IA ${c.score_1}/${c.score_2}=${c.score_total}/10. Feedback utilisateur: "${c.score_feedback}"`;
   }).join("\n");
 
-  return `\n\nAPPRENTISSAGE — L'utilisateur a corrigé/commenté des scorings précédents. Adapte tes critères en conséquence :
+  return `\n\nAPPRENTISSAGE — L'utilisateur a corrigé/commenté des scorings précédents (${withFeedback.length} retours au total). Adapte tes critères en conséquence :
 ${examples}
-Tiens compte de ces retours pour affiner ton scoring.`;
+Tiens compte de TOUS ces retours pour affiner ton scoring.`;
 }
 
 async function scoreContact(
@@ -297,7 +297,7 @@ export default async (request: Request) => {
       };
     } else {
       const metaDesc = await fetchMetaDescription(contact.domaine);
-      scores = await scoreContact(contact, metaDesc, rechercheDescription, searchContacts);
+      scores = await scoreContact(contact, metaDesc, rechercheDescription, allContacts);
     }
 
     // Apply score to this contact AND all unscored contacts from the same company

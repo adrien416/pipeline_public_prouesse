@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { launchScoring, fetchContacts, updateContact } from "../api/client";
+import { launchScoring, fetchContacts, updateContact, startBackgroundScoring, stopBackgroundScoring } from "../api/client";
 import { ScoreBadge, TotalScoreBadge } from "../components/ScoreBadge";
 import { Spinner } from "../components/Spinner";
 
@@ -120,36 +120,44 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
+    // Auto-refresh every 15s while scoring is active
+    refetchInterval: scoring ? 15_000 : false,
   });
+
+  // Update progress when contacts data changes
+  useEffect(() => {
+    if (!contacts.data?.contacts) return;
+    const list = contacts.data.contacts;
+    const scoredCount = list.filter((c: Record<string, string>) => c.score_total !== "").length;
+    const qualifiedCount = list.filter((c: Record<string, string>) => Number(c.score_total) >= 7).length;
+    const total = list.length;
+    setProgress({ total, scored: scoredCount, qualified: qualifiedCount });
+    if (scoring && scoredCount === total && total > 0) {
+      setScoring(false);
+      setScoringComplete(true);
+    }
+  }, [contacts.data, scoring]);
 
   const runScoring = useCallback(async () => {
     setScoring(true);
     setScoringComplete(false);
     setError(null);
-    cancelRef.current = false;
     try {
-      let isDone = false;
-      while (!isDone && !cancelRef.current) {
-        const result = await launchScoring(rechercheId, customInstructions || undefined);
-        setProgress({ total: result.total, scored: result.scored, qualified: result.qualified });
-        if (result.contacts?.length) {
-          queryClient.setQueryData(["contacts", rechercheId], { contacts: result.contacts });
-        }
-        isDone = result.done;
-        if (!isDone && !cancelRef.current) {
-          await new Promise((r) => setTimeout(r, 13000));
-        }
-      }
-      if (!cancelRef.current) {
-        setScoringComplete(true);
-      }
-      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      await startBackgroundScoring(rechercheId, customInstructions || undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
-    } finally {
       setScoring(false);
     }
-  }, [rechercheId, queryClient, customInstructions]);
+  }, [rechercheId, customInstructions]);
+
+  const stopScoring = useCallback(async () => {
+    try {
+      await stopBackgroundScoring(rechercheId);
+    } catch (err) {
+      console.error("Stop scoring error:", err);
+    }
+    setScoring(false);
+  }, [rechercheId]);
 
   /** Save a feedback comment to the backend */
   async function saveFeedback(contactId: string, feedback: string) {
@@ -217,7 +225,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
         <div>
           <h2 className="text-xl font-bold text-gray-900">2. Scoring IA</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Pertinence sectorielle + Impact social/environnemental (seuil {">="} 7/10)
+            Pertinence + Impact (seuil {">="} 7/10) — le scoring tourne en arrière-plan
           </p>
         </div>
       </div>
@@ -269,10 +277,10 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
           )}
           {scoring ? (
             <button
-              onClick={() => { cancelRef.current = true; }}
+              onClick={stopScoring}
               className="bg-orange-500 text-white font-medium rounded-lg px-4 py-2 text-sm hover:bg-orange-600"
             >
-              Mettre en pause
+              Stopper le scoring
             </button>
           ) : (
             <button

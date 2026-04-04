@@ -83,6 +83,20 @@ export function launchScoring(recherche_id: string, custom_instructions?: string
   });
 }
 
+export function startBackgroundScoring(recherche_id: string, custom_instructions?: string) {
+  return request<{ ok: boolean; scoring_status: string }>("/score-start", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, custom_instructions }),
+  });
+}
+
+export function stopBackgroundScoring(recherche_id: string) {
+  return request<{ ok: boolean; scoring_status: string }>("/score-start", {
+    method: "POST",
+    body: JSON.stringify({ recherche_id, action: "stop" }),
+  });
+}
+
 // ─── Enrich ───
 export function getEnrichEstimate(recherche_id: string) {
   return request<{

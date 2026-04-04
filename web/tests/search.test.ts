@@ -25,7 +25,7 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "date_creation", "date_modification",
     "user_id",
   ],
-  RECHERCHES_HEADERS: ["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id"],
+  RECHERCHES_HEADERS: ["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id", "scoring_status", "scoring_instructions"],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
   getHeadersForWrite: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",

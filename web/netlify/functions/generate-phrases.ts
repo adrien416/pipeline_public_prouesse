@@ -20,17 +20,21 @@ async function generatePhrase(contact: Record<string, string>): Promise<string> 
         max_tokens: 200,
         messages: [{
           role: "user",
-          content: `Genere une phrase d'accroche personnalisee pour un email de prospection.
+          content: `Genere une phrase d'accroche personnalisee pour un email de prospection B2B.
+
+CONTEXTE : Prouesse accompagne les dirigeants d'entreprises a impact. On propose Levaia.fr, un outil de valorisation automatique et instantane de leur entreprise.
 
 Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
-Objectif : prospection B2B
 
 Regles STRICTES :
 - NE MENTIONNE JAMAIS le prenom ou le nom du contact (le mail commence deja par "Bonjour {Prenom}")
-- Commence directement par le contenu (ex: "J'ai vu que...", "Ton entreprise...", "En tant que...")
+- Commence directement par le contenu (ex: "En tant que...", "Ton entreprise...", "J'ai vu que...")
+- La phrase doit etre SPECIFIQUE au contact : mentionne son titre, son entreprise ou son secteur
 - 1-2 phrases max, ton professionnel mais humain, tutoiement
-- Pas de cliche, pas d'invention
+- Pas de cliche, pas de formules generiques, pas d'invention de faits
+- N'invente PAS de chiffres ou de faits sur l'entreprise
+- Le but est d'amener naturellement vers un echange sur la valorisation de son entreprise
 
 JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
         }],

@@ -67,13 +67,10 @@ const DEFAULT_TEMPLATE = `Bonjour {Prenom},
 
 {Phrase}
 
-Chez Prouesse, nous accompagnons les fondateurs comme toi à vendre leur entreprise ou à accéder à des investisseurs qualifiés (fonds, family offices, impact investors). Tu trouveras nos références sur notre site.
+On a développé Levaia.fr, un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
 
 Est-ce que tu serais dispo pour un échange de 15 min cette semaine ?
 
-Objectif : comprendre tes objectifs et évaluer le fit avec notre réseau.
-
-Bien à toi,
 Adrien`;
 
 const DAYS = [

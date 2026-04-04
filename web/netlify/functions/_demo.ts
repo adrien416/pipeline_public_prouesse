@@ -175,13 +175,13 @@ export function mockCredits(): { credits: number; used: number } {
   return { credits: 500, used: 47 };
 }
 
-export const DEMO_TEMPLATE_SUJET = "{Entreprise} — échange sur votre développement";
+export const DEMO_TEMPLATE_SUJET = "{Entreprise} — valorisation instantanée";
 
 export const DEMO_TEMPLATE_CORPS = `Bonjour {Prenom},
 
 {Phrase}
 
-Chez Prouesse, nous accompagnons les fondateurs comme toi à accéder à des investisseurs qualifiés (fonds, family offices, impact investors). Tu trouveras nos références sur notre site.
+On a développé Levaia.fr, un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
 
 Est-ce que tu serais dispo pour un échange de 15 min cette semaine ?
 

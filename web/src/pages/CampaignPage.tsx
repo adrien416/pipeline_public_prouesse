@@ -69,7 +69,7 @@ const DEFAULT_TEMPLATE = `Bonjour {Prenom},
 
 On a développé Levaia.fr, un outil qui te donne une valorisation automatique et instantanée de ton entreprise. C'est gratuit et ça prend 2 minutes.
 
-Est-ce que tu serais dispo pour un échange de 15 min cette semaine ?
+Si tu veux en discuter, tu peux bloquer un créneau ici : https://meetings-eu1.hubspot.com/adrien-pannetier
 
 Adrien`;
 

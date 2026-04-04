@@ -407,9 +407,9 @@ export default async (request: Request) => {
     );
     totalRawCount = batch.length;
 
-    // ─── Fallback: if too few results, broaden filters and retry ───
+    // ─── Fallback: if too few results AND enough time, broaden filters ───
     let retryNote = "";
-    if (batch.length < 10 && timeLeft() > 5000) {
+    if (batch.length < 10 && timeLeft() > 8000) {
       const broadFilters = { ...filters };
       delete (broadFilters as any).current_company_specialties;
       delete (broadFilters as any).current_company_founded_year;

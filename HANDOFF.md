@@ -143,16 +143,19 @@ POST /api/search (single endpoint, ~15-25s)
 
 ### Fonctionnalites recherche
 - **UI simplifiee** : 1 champ texte + 1 bouton "Rechercher"
+- **Bouton "Chercher plus"** : ajoute 100 contacts supplementaires (offset/pagination Fullenrich)
 - **Panel raisonnement IA** : affiche l'analyse IA, les filtres Fullenrich envoyes, les stats de verification (X bruts → Y verifies → Z finaux), le cout
 - **Recherches precedentes** : boutons "Voir" (charge contacts inline), "Scoring", "Enrichir"
 - **Exclusion manuelle** : checkbox par contact
 - **Tous les onglets accessibles** : plus de verrouillage sequentiel
+- **Fallback auto** : si Fullenrich retourne < 10 resultats, relance sans specialties/founded_year et headcount elargi
+- **Industries exclues en dur** : Non-profit, Government, Public Policy, Civic & Social, Political, Military (hardcode dans le code, meme si l'IA oublie)
 
 ### Pipeline complet (5 etapes)
-1. **Recherche** : Description libre → IA + web search → Fullenrich → contacts
-2. **Scoring IA** : Pertinence + Impact (Haiku). Reutilisation par domaine. Feedback apprentissage.
+1. **Recherche** : Description libre → IA + web search → Fullenrich → contacts. Bouton "Chercher plus" pour paginer.
+2. **Scoring IA** : Pertinence + Impact (Haiku). Instructions personnalisables avant lancement. Reutilisation par domaine. Feedback apprentissage global (TOUS les feedbacks de TOUTES les recherches). Estimation du cout affichee.
 3. **Enrichissement email** : Fullenrich bulk API
-4. **Campagne email** : Multi-campagne, noms personnalisables (click-to-edit), protection doublons domaine, phrases IA editables, reecriture template IA avec instructions utilisateur, envoi Brevo reel, plage horaire
+4. **Campagne email** : Multi-campagne, noms personnalisables (click-to-edit), protection doublons domaine, phrases IA editables dans la preview, reecriture template IA avec instructions utilisateur, estimation cout phrases IA, envoi Brevo reel, plage horaire
 5. **Analytics** : Dashboard multi-campagne, metriques, graphe quotidien
 
 ### Fonctionnalites transversales
@@ -193,6 +196,20 @@ POST /api/search (single endpoint, ~15-25s)
 38. **Demo mise a jour** : Raisons de scoring adaptees aux nouveaux criteres (Pertinence + Impact), template email mis a jour.
 
 39. **Tests** : 114 tests (8 fichiers), dont 25 tests search couvrant : validation, succes, multi-contacts, filtrage titres, deduplication, 0 resultats, parsing JSON (code fences, multi-block), retry 429/529, erreurs API.
+
+40. **Bouton "Chercher plus"** : Pagination Fullenrich via offset. Ajoute 100 contacts aux resultats existants.
+
+41. **Instructions de scoring personnalisables** : Champ texte editable avant de lancer le scoring. Les instructions sont passees au prompt IA en plus des criteres standards.
+
+42. **Apprentissage global** : Le scoring utilise TOUS les feedbacks de TOUTES les recherches (plus de limite de 10, plus de restriction a la recherche en cours).
+
+43. **Estimation cout** : Scoring affiche le nombre d'appels IA (domaines uniques) + cout estime. Campagne affiche le cout des phrases IA.
+
+44. **Filtres larges par defaut** : Prompt IA demande 2-5 industries LinkedIn larges, headcount 1-5000, pas de specialties sauf recherche concurrents. Fallback auto si < 10 resultats.
+
+45. **Exclusions hardcodees** : Industries Non-profit, Government, Public Policy, Civic & Social, Political, Military toujours exclues dans les filtres Fullenrich (code, pas juste prompt).
+
+46. **Dark theme** : Interface complete en fond noir (#0f1117), cards en gris fonce (#161822), logo Prouesse avec icone gradient bleu.
 
 **Fichiers supprimes** : `search-filters.ts`, `search-competitors.ts`, `_search-ai.ts` (integres dans search.ts)
 
@@ -262,9 +279,40 @@ Verifier que la recherche fonctionne : taper "startups dans l'agritech" → veri
 ## 8. Contraintes design & marque
 
 - **Marque** : Prouesse (pas Leveo, pas Lina Capital dans l'interface)
-- **Couleurs** : Bleu primaire (`blue-600`), vert pour validation (`green-600`), rouge pour erreurs, gris pour disabled
+- **Theme** : Dark mode — fond noir (#0f1117), cards gris fonce (#161822), texte clair
+- **Couleurs** : Bleu primaire (`blue-600`), vert pour validation (`green-600`), rouge pour erreurs
 - **Ton** : Professionnel, en francais, tutoiement dans les emails
-- **Header** : Logo "Prouesse" + "Pipeline" + credits Fullenrich + deconnexion
+- **Header** : Logo "P" gradient bleu + "Prouesse Pipeline" + credits Fullenrich + deconnexion
 - **Tabs** : 5 onglets numerotes, tous toujours accessibles
 - **Scoring** : Pertinence (1-5) + Impact social/environnemental (1-5) = total /10, seuil >= 7
-- **Exclusions recherche** : Pas d'associations, pas d'entites publiques, pas de cooperatives
+- **Exclusions recherche** : Pas d'associations, pas d'entites publiques, pas de cooperatives, pas de Non-profit, pas de Government
+
+## 9. Preferences utilisateur (Adrien)
+
+**Architecture** :
+- Garder les choses simples. Pas de pipeline multi-etapes complexe. 1 endpoint = 1 action.
+- Ne PAS splitter les appels frontend/backend sauf absolue necessite (ca plante sinon).
+- Preferer sauter des etapes optionnelles (verification IA) plutot que risquer un timeout.
+
+**Recherche** :
+- Filtres larges par defaut. Mieux vaut trop de resultats que pas assez.
+- Industries LinkedIn larges (pas de niches).
+- Pas de specialties sauf recherche de concurrents specifiques.
+- Toujours exclure : associations, ONG, entites publiques, cooperatives, filiales grands groupes.
+- Hardcoder les exclusions dans le code (ne pas faire confiance uniquement au prompt IA).
+
+**Scoring** :
+- L'utilisateur doit pouvoir personnaliser le prompt avant de lancer.
+- Afficher le cout estime avant de lancer.
+- Apprentissage global : utiliser TOUS les feedbacks de TOUTES les recherches.
+
+**Campagne** :
+- L'utilisateur doit pouvoir editer les phrases IA individuellement.
+- L'utilisateur doit pouvoir guider la reecriture du template avec des instructions.
+- Afficher le cout des phrases IA.
+- Boutons assez gros pour mobile (min 44px hauteur).
+
+**General** :
+- Toujours faire les tests (vitest) avant de push.
+- Ne pas casser ce qui marche deja.
+- Mode demo doit fonctionner sans appels API reels.

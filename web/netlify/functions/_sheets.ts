@@ -425,15 +425,6 @@ export const EMAILLOG_HEADERS = [
   "sent_at", "opened_at", "clicked_at", "replied_at",
 ];
 
-export const FONDS_HEADERS = [
-  "id", "nom", "domaine", "secteur", "taille", "pays", "source", "date_ajout",
-];
-
-export const SCORING_HEADERS = [
-  "id", "contact_id", "score", "grade", "raison",
-  "signaux_positifs", "signaux_negatifs", "signaux_intention", "date_scoring",
-];
-
 /**
  * Lit une plage brute de cellules (sans mapping objet).
  * Utile pour les diagnostics.

@@ -70,19 +70,6 @@ export function launchSearch(params: SearchParams) {
 }
 
 // ─── Score ───
-export function launchScoring(recherche_id: string, custom_instructions?: string) {
-  return request<{
-    total: number;
-    scored: number;
-    qualified: number;
-    done: boolean;
-    contacts: Array<Record<string, string>>;
-  }>("/score", {
-    method: "POST",
-    body: JSON.stringify({ recherche_id, custom_instructions }),
-  });
-}
-
 export function startBackgroundScoring(recherche_id: string, custom_instructions?: string) {
   return request<{ ok: boolean; scoring_status: string }>("/score-start", {
     method: "POST",

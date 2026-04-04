@@ -54,6 +54,10 @@ npx netlify dev     # Dev server local
 │   │   ├── credits.ts            # GET /api/credits — solde credits Fullenrich
 │   │   ├── login.ts              # POST /api/login — authentification
 │   │   └── webhook-brevo.ts      # POST /api/webhook-brevo — webhook Brevo pour tracking
+│   │   ├── score-start.ts        # POST /api/score-start — demarre/stoppe le scoring en arriere-plan
+│   │   ├── cron-score.ts         # Cron toutes les 2 min — score les contacts en arriere-plan
+│   │   ├── cron-enrich.ts        # Cron toutes les 1 min — poll Fullenrich pour les enrichissements
+│   │   ├── cron-send.ts          # Cron toutes les 5 min — envoi automatique des campagnes
 │   ├── tests/                    # Tests vitest (120 tests, 8 fichiers)
 │   ├── netlify.toml              # Config Netlify
 │   ├── package.json              # Dependances npm
@@ -211,7 +215,20 @@ POST /api/search (single endpoint, ~15-25s)
 
 46. **Dark theme** : Interface complete en fond noir (#0f1117), cards en gris fonce (#161822), logo Prouesse avec icone gradient bleu.
 
+47. **Scoring en arriere-plan (cron)** : `cron-score.ts` tourne toutes les 2 minutes, score 5-8 contacts par run avec budget temps 22s. Email notification quand termine. L'utilisateur peut fermer son navigateur.
+
+48. **Enrichissement en arriere-plan (cron)** : `cron-enrich.ts` tourne toutes les minutes, poll Fullenrich pour les resultats. Email notification quand termine. L'utilisateur peut fermer son navigateur.
+
+49. **Email template optimise** : Levaia.fr en hook, Prouesse en credibilite, question basse friction "Curieux de voir ce que ca donne pour {Entreprise} ?", lien HubSpot meeting.
+
+50. **Phrases IA coherentes avec le template** : Le prompt de generation de phrases connait le contexte du mail (Levaia/valorisation) et amene naturellement vers ce sujet. 3 exemples de bonnes phrases dans le prompt.
+
+51. **Bouton "Regenerer toutes les phrases IA"** : Dans CampaignPage, efface toutes les phrases et les regenere avec le nouveau prompt.
+
+52. **Nettoyage code mort** : Suppression de `launchScoring()` (remplace par background), `FONDS_HEADERS`, `SCORING_HEADERS`, `maxReachedStep` prop.
+
 **Fichiers supprimes** : `search-filters.ts`, `search-competitors.ts`, `_search-ai.ts` (integres dans search.ts)
+**Fichiers ajoutes** : `score-start.ts`, `cron-score.ts`, `cron-enrich.ts`, `_google-key.ts`
 
 ### Sessions precedentes (1-7)
 Voir historique git pour le detail. Points cles :

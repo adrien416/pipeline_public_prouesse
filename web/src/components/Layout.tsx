@@ -8,7 +8,6 @@ interface Props {
   children: ReactNode;
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
-  maxReachedStep?: number; // legacy, no longer used
 }
 
 const TABS: { id: Tab; label: string; step: string }[] = [

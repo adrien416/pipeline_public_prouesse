@@ -22,19 +22,25 @@ async function generatePhrase(contact: Record<string, string>): Promise<string> 
           role: "user",
           content: `Genere une phrase d'accroche personnalisee pour un email de prospection B2B.
 
-CONTEXTE : Prouesse accompagne les dirigeants d'entreprises a impact. On propose Levaia.fr, un outil de valorisation automatique et instantane de leur entreprise.
+CONTEXTE DU MAIL : L'email parle ensuite de Levaia.fr (valorisation automatique d'entreprise) et de Prouesse (accompagnement des dirigeants a impact : levee, cession, croissance externe). La phrase d'accroche doit AMENER NATURELLEMENT vers ces sujets.
 
 Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
 
 Regles STRICTES :
-- NE MENTIONNE JAMAIS le prenom ou le nom du contact (le mail commence deja par "Bonjour {Prenom}")
-- Commence directement par le contenu (ex: "En tant que...", "Ton entreprise...", "J'ai vu que...")
+- NE MENTIONNE JAMAIS le prenom ou le nom du contact
+- NE MENTIONNE PAS Levaia ni Prouesse (c'est dans la suite du mail)
+- Commence directement par le contenu (ex: "En tant que...", "Ton entreprise...", "Dans un secteur comme...")
 - La phrase doit etre SPECIFIQUE au contact : mentionne son titre, son entreprise ou son secteur
+- Elle doit creer un lien logique vers le sujet de la valorisation d'entreprise ou du developpement strategique
 - 1-2 phrases max, ton professionnel mais humain, tutoiement
 - Pas de cliche, pas de formules generiques, pas d'invention de faits
 - N'invente PAS de chiffres ou de faits sur l'entreprise
-- Le but est d'amener naturellement vers un echange sur la valorisation de son entreprise
+
+Exemples de bonnes phrases :
+- "En tant que fondateur dans les energies renouvelables, tu dois souvent te demander ou en est la valeur de ce que tu as construit."
+- "Le secteur de l'edtech bouge vite en ce moment, et c'est souvent dans ces phases que les dirigeants commencent a structurer leur vision long terme."
+- "Diriger une entreprise dans la mobilite durable, c'est passionnant — mais c'est aussi le genre de secteur ou il faut savoir ou on en est pour prendre les bonnes decisions."
 
 JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
         }],

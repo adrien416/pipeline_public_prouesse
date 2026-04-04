@@ -77,6 +77,25 @@ async function handlePost(request: Request, user: UserContext) {
 async function handlePut(request: Request, user: UserContext) {
   const body = await request.json();
 
+  // Bulk reset phrases for a recherche
+  if (body.reset_phrases && body.recherche_id) {
+    const allContacts = await readAll("Contacts");
+    const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
+    const updates: Array<{ rowIndex: number; values: string[] }> = [];
+
+    for (const c of allContacts) {
+      if (c.recherche_id !== body.recherche_id || !c.phrase_perso || !c._rowIndex) continue;
+      if (user.role !== "admin" && c.user_id && c.user_id !== user.userId) continue;
+      updates.push({
+        rowIndex: Number(c._rowIndex),
+        values: toRow(headers, { ...c, phrase_perso: "", date_modification: new Date().toISOString() }),
+      });
+    }
+
+    if (updates.length > 0) await batchUpdateRows("Contacts", updates);
+    return json({ reset: updates.length });
+  }
+
   // Bulk exclude contacts
   if (body.exclude_ids && Array.isArray(body.exclude_ids)) {
     const allContacts = await readAll("Contacts");

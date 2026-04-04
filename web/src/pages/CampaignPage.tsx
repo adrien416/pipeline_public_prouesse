@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContacts, createCampaign, updateCampaign, updateContact, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches } from "../api/client";
+import { fetchContacts, createCampaign, updateCampaign, updateContact, fetchCampaign, fetchCampaigns, triggerSend, generatePhrases, sendTestEmail, purgeAllCampaigns, deleteCampaign, rewriteTemplate, fetchRecherches, resetPhrases } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function useDebouncedSave(campaignId: string | null, field: string, value: string, delay = 1500) {
@@ -977,6 +977,24 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
           <span className="text-xs text-purple-400">
             Coût estimé : ~${(missingPhrases * 0.0005).toFixed(3)}
           </span>
+        </div>
+      )}
+      {!generatingPhrases && missingPhrases === 0 && contactsList.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={async () => {
+              if (!confirm("Effacer toutes les phrases IA et les regénérer ?")) return;
+              try {
+                await resetPhrases(rechercheId);
+                qc.invalidateQueries({ queryKey: ["contacts", rechercheId] });
+              } catch (err) {
+                console.error("Reset phrases error:", err);
+              }
+            }}
+            className="text-xs text-purple-500 hover:text-purple-700 px-2 py-1"
+          >
+            Regénérer toutes les phrases IA
+          </button>
         </div>
       )}
 

@@ -126,6 +126,13 @@ export function launchEnrichment(recherche_id: string) {
   });
 }
 
+export function resetPhrases(recherche_id: string) {
+  return request<{ reset: number }>("/contacts", {
+    method: "PUT",
+    body: JSON.stringify({ reset_phrases: true, recherche_id }),
+  });
+}
+
 export function updateContact(id: string, updates: Record<string, string>) {
   return request<{ contact: Record<string, string> }>("/contacts", {
     method: "PUT",

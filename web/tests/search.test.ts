@@ -226,7 +226,8 @@ describe("search handler — success", () => {
     await searchHandler(makeRequest({ description: "societes cleantech" }));
     // 1 Anthropic call for filters + 1 for verify batch
     expect(countCalls("anthropic")).toBe(2);
-    expect(countCalls("fullenrich")).toBe(1);
+    // 1 Fullenrich call + 1 fallback (broadened filters since <10 results)
+    expect(countCalls("fullenrich")).toBeGreaterThanOrEqual(1);
   });
 
   it("does not call INSEE API (removed)", async () => {

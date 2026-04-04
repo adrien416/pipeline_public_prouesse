@@ -81,10 +81,12 @@ Les filtres Fullenrich disponibles sont :
 IMPORTANT :
 - Mets TOUJOURS current_company_headquarters sur "France"
 - Mets TOUJOURS des titres de dirigeants (CEO, Founder, DG, Gérant, Président)
-- Choisis 1 à 3 industries LinkedIn pertinentes
-- Ajoute des specialties si utile pour préciser le secteur
-- Mets une taille d'entreprise raisonnable (10-500 employés par défaut)
+- Choisis 2 à 5 industries LinkedIn pertinentes — PRIVILÉGIE LES INDUSTRIES LARGES (ex: "Health Care" plutôt que "Medical Devices")
+- current_company_specialties : utilise-les UNIQUEMENT si la recherche mentionne un concurrent spécifique ou une niche très précise (ex: "concurrents de Chance.co" → specialty "coaching", "insertion professionnelle"). Pour une recherche sectorielle large (ex: "startups à impact social"), NE METS PAS de specialties.
+- N'utilise PAS current_company_founded_year sauf demande explicite de l'utilisateur
+- Mets une taille d'entreprise large : 1-5000 employés par défaut
 - EXCLUS les associations, entités publiques, coopératives (SCOP, SCIC), fondations, ONG, mutuelles — on cherche UNIQUEMENT des entreprises privées
+- L'objectif est de retourner BEAUCOUP de résultats (50-100+). Mieux vaut trop de résultats que pas assez.
 
 Réponds UNIQUEMENT avec un JSON :
 {
@@ -377,11 +379,30 @@ export default async (request: Request) => {
     let totalRawCount = 0;
     let verifyReasons: string[] = [];
 
-    const batch = await searchFullenrich(
+    let batch = await searchFullenrich(
       { ...filters, offset: fullenrichOffset },
       batchSize,
     );
     totalRawCount = batch.length;
+
+    // ─── Fallback: if too few results, broaden filters and retry ───
+    let retryNote = "";
+    if (batch.length < 10 && timeLeft() > 5000) {
+      const broadFilters = { ...filters };
+      delete (broadFilters as any).current_company_specialties;
+      delete (broadFilters as any).current_company_founded_year;
+      // Also widen headcount
+      (broadFilters as any).current_company_headcounts = [{ min: 1, max: 10000, exclude: false }];
+      const broadBatch = await searchFullenrich(
+        { ...broadFilters, offset: fullenrichOffset },
+        batchSize,
+      );
+      if (broadBatch.length > batch.length) {
+        batch = broadBatch;
+        totalRawCount = broadBatch.length;
+        retryNote = `Filtres élargis (specialties/taille retirés) : ${batch.length} résultats`;
+      }
+    }
 
     const tagged = batch.map((r: any) => ({ ...r, _source: "fullenrich" }));
     const titleFiltered = tagged.filter((r: any) => !EXCLUDED_TITLES.test(r.employment?.current?.title ?? ""));
@@ -394,7 +415,8 @@ export default async (request: Request) => {
 
     // ─── 3. Verify batch with AI (only if time allows) ───
     let results: unknown[];
-    const retried = false;
+    const retried = retryNote !== "";
+    if (retryNote) verifyReasons.push(retryNote);
 
     if (uniqueContacts.length > 0 && timeLeft() > 8000) {
       const contactsForVerify = uniqueContacts.map((r: any) => ({

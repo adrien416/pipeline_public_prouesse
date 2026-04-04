@@ -252,14 +252,14 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       {/* Results */}
       {contacts.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              <span className="font-semibold">{activeContacts.length}</span> contacts trouvés
-              {excluded.size > 0 && (
-                <span className="text-orange-600 ml-2">({excluded.size} exclus)</span>
-              )}
-            </div>
-            <div className="flex gap-2">
+          <div className="px-4 py-3 border-b bg-gray-50 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                <span className="font-semibold">{activeContacts.length}</span> contacts trouvés
+                {excluded.size > 0 && (
+                  <span className="text-orange-600 ml-2">({excluded.size} exclus)</span>
+                )}
+              </div>
               {excluded.size > 0 && (
                 <button
                   onClick={handleExclude}
@@ -268,18 +268,20 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                   Confirmer l'exclusion ({excluded.size})
                 </button>
               )}
+            </div>
+            <div className="flex gap-2">
               <button
                 onClick={handleFindMore}
                 disabled={findingMore || search.isPending}
-                className="border border-blue-500 text-blue-500 font-medium rounded-lg px-3 py-1.5 text-sm hover:bg-blue-500/10 disabled:opacity-50 flex items-center gap-1.5"
+                className="flex-1 border border-blue-500 text-blue-500 font-medium rounded-lg px-3 py-2.5 text-sm hover:bg-blue-500/10 disabled:opacity-50 flex items-center justify-center gap-1.5 min-h-[44px]"
               >
                 {findingMore && <Spinner className="h-3.5 w-3.5" />}
-                Chercher plus
+                + Chercher plus
               </button>
               <button
                 onClick={handleComplete}
                 disabled={activeContacts.length === 0}
-                className="bg-green-600 text-white font-medium rounded-lg px-4 py-1.5 text-sm hover:bg-green-700 disabled:opacity-50"
+                className="flex-1 bg-green-600 text-white font-medium rounded-lg px-4 py-2.5 text-sm hover:bg-green-700 disabled:opacity-50 min-h-[44px]"
               >
                 Passer au Scoring →
               </button>

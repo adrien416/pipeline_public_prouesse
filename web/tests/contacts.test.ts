@@ -320,6 +320,73 @@ describe("PUT /api/contacts — single update", () => {
   });
 });
 
+// ─── PUT /api/contacts (reset_phrases) ───
+
+describe("PUT /api/contacts — reset_phrases", () => {
+  it("clears phrase_perso for all contacts in a recherche", async () => {
+    const contacts = [
+      makeContact({ id: "c1", recherche_id: "r1", phrase_perso: "Hello Jean", _rowIndex: "2" }),
+      makeContact({ id: "c2", recherche_id: "r1", phrase_perso: "Bonjour Marie", _rowIndex: "3" }),
+      makeContact({ id: "c3", recherche_id: "r2", phrase_perso: "Other recherche", _rowIndex: "4" }),
+    ];
+    mockReadAll.mockResolvedValue(contacts);
+
+    const req = new Request("http://localhost/api/contacts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reset_phrases: true, recherche_id: "r1" }),
+    });
+
+    const res = await contactsHandler(req, fakeContext());
+    const body = await res.json();
+
+    expect(body.reset).toBe(2);
+    expect(mockBatchUpdateRows).toHaveBeenCalledOnce();
+    const updates = mockBatchUpdateRows.mock.calls[0][1];
+    expect(updates).toHaveLength(2);
+    expect(updates[0].rowIndex).toBe(2);
+    expect(updates[1].rowIndex).toBe(3);
+  });
+
+  it("skips contacts without phrase_perso", async () => {
+    const contacts = [
+      makeContact({ id: "c1", recherche_id: "r1", phrase_perso: "Has phrase", _rowIndex: "2" }),
+      makeContact({ id: "c2", recherche_id: "r1", phrase_perso: "", _rowIndex: "3" }),
+    ];
+    mockReadAll.mockResolvedValue(contacts);
+
+    const req = new Request("http://localhost/api/contacts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reset_phrases: true, recherche_id: "r1" }),
+    });
+
+    const res = await contactsHandler(req, fakeContext());
+    const body = await res.json();
+
+    expect(body.reset).toBe(1);
+  });
+
+  it("returns reset=0 when no contacts have phrase_perso", async () => {
+    const contacts = [
+      makeContact({ id: "c1", recherche_id: "r1", phrase_perso: "", _rowIndex: "2" }),
+    ];
+    mockReadAll.mockResolvedValue(contacts);
+
+    const req = new Request("http://localhost/api/contacts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reset_phrases: true, recherche_id: "r1" }),
+    });
+
+    const res = await contactsHandler(req, fakeContext());
+    const body = await res.json();
+
+    expect(body.reset).toBe(0);
+    expect(mockBatchUpdateRows).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Unsupported method ───
 
 describe("unsupported methods", () => {

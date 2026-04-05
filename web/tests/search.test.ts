@@ -7,11 +7,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ─── Mock _sheets ───
 const mockAppendRow = vi.fn();
 const mockAppendRows = vi.fn();
+const mockReadAll = vi.fn();
 
 vi.mock("../netlify/functions/_sheets.js", () => ({
   appendRow: (...args: unknown[]) => mockAppendRow(...args),
   appendRows: (...args: unknown[]) => mockAppendRows(...args),
-  readAll: vi.fn().mockResolvedValue([]),
+  readAll: (...args: unknown[]) => mockReadAll(...args),
   findRowById: vi.fn().mockResolvedValue(null),
   updateRow: vi.fn().mockResolvedValue(undefined),
   CONTACTS_HEADERS: [
@@ -155,6 +156,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAppendRow.mockResolvedValue(undefined);
   mockAppendRows.mockResolvedValue(undefined);
+  mockReadAll.mockResolvedValue([]);
   process.env.ANTHROPIC_API_KEY = "test-key";
   process.env.FULLENRICH_API_KEY = "test-key";
   setupDefaultMocks();
@@ -717,6 +719,128 @@ describe("search handler — hardcoded exclusions", () => {
     expect(excludedNames).toContain("Non-profit Organization Management");
     expect(excludedNames).toContain("Government Administration");
     expect(excludedNames).toContain("Military");
+  });
+});
+
+// ─── Deduplication against existing contacts in Sheets ───
+
+describe("search handler — deduplication against existing contacts", () => {
+  it("skips contacts whose LinkedIn URL already exists in Sheets", async () => {
+    // Existing contact in Sheets has same LinkedIn as FULLENRICH_RESULT
+    mockReadAll.mockResolvedValue([
+      {
+        id: "existing-1",
+        nom: "Curie",
+        prenom: "Marie",
+        email: "marie@radium.fr",
+        entreprise: "RadiumCo",
+        titre: "CEO",
+        linkedin: "https://linkedin.com/in/marie",
+        _rowIndex: "2",
+      },
+    ]);
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1, 2]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT, FULLENRICH_RESULT_2] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test dedup linkedin" }));
+    const body = await res.json();
+
+    // Marie Curie should be skipped (LinkedIn match), only Einstein remains
+    expect(body.contacts.every((c: any) => c.nom !== "Curie")).toBe(true);
+    expect(body.contacts.some((c: any) => c.nom === "Einstein")).toBe(true);
+  });
+
+  it("skips contacts whose name+company combo already exists in Sheets", async () => {
+    // Existing contact has same prenom+nom+entreprise as FULLENRICH_RESULT_2 but no LinkedIn
+    mockReadAll.mockResolvedValue([
+      {
+        id: "existing-2",
+        nom: "Einstein",
+        prenom: "Albert",
+        email: "",
+        entreprise: "PhysicsCorp",
+        titre: "Fondateur",
+        linkedin: "",
+        _rowIndex: "3",
+      },
+    ]);
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1, 2]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT, FULLENRICH_RESULT_2] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test dedup name" }));
+    const body = await res.json();
+
+    // Einstein should be skipped (name+company match), only Curie remains
+    expect(body.contacts.every((c: any) => c.nom !== "Einstein")).toBe(true);
+    expect(body.contacts.some((c: any) => c.nom === "Curie")).toBe(true);
+  });
+
+  it("returns skipped_duplicates count in verification response", async () => {
+    // Both existing contacts match the Fullenrich results
+    mockReadAll.mockResolvedValue([
+      {
+        id: "existing-1",
+        nom: "Curie",
+        prenom: "Marie",
+        email: "",
+        entreprise: "RadiumCo",
+        titre: "CEO",
+        linkedin: "https://linkedin.com/in/marie",
+        _rowIndex: "2",
+      },
+      {
+        id: "existing-2",
+        nom: "Einstein",
+        prenom: "Albert",
+        email: "",
+        entreprise: "PhysicsCorp",
+        titre: "Fondateur",
+        linkedin: "",
+        _rowIndex: "3",
+      },
+    ]);
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1, 2]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT, FULLENRICH_RESULT_2] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test dedup count" }));
+    const body = await res.json();
+
+    expect(body.verification.skipped_duplicates).toBe(2);
+    expect(body.contacts).toHaveLength(0);
+    expect(body.total).toBe(0);
   });
 });
 

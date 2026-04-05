@@ -14,6 +14,7 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
   readRawRange: vi.fn().mockResolvedValue([]),
   findRowById: (...args: unknown[]) => mockFindRowById(...args),
   batchUpdateRows: (...args: unknown[]) => mockBatchUpdateRows(...args),
+  updateRow: vi.fn().mockResolvedValue(undefined),
   CONTACTS_HEADERS: [
     "id", "nom", "prenom", "email", "entreprise", "titre",
     "domaine", "secteur", "linkedin", "telephone",
@@ -25,6 +26,7 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
     "date_creation", "date_modification",
     "user_id",
   ],
+  RECHERCHES_HEADERS: ["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id", "scoring_status", "scoring_instructions"],
   toRow: (headers: string[], obj: Record<string, string>) => headers.map((h) => obj[h] ?? ""),
   getHeadersForWrite: vi.fn().mockResolvedValue([
     "id", "nom", "prenom", "email", "entreprise", "titre",
@@ -52,6 +54,7 @@ vi.mock("../netlify/functions/_auth.js", () => ({
 }));
 
 import scoreHandler from "../netlify/functions/score.js";
+import scoreStartHandler from "../netlify/functions/score-start.js";
 
 let _nextRowIndex = 2;
 function makeContact(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
@@ -392,5 +395,83 @@ describe("score handler — multiple contacts", () => {
     expect(body.total).toBe(1);
     expect(body.contacts).toHaveLength(1);
     expect(body.contacts[0].id).toBe("c1");
+  });
+});
+
+// ─── Score-start endpoint ───
+
+describe("score-start handler", () => {
+  function makeScoreStartRequest(body: object, method = "POST"): Request {
+    return new Request("http://localhost/api/score-start", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("rejects non-POST requests", async () => {
+    const req = new Request("http://localhost/api/score-start", { method: "GET" });
+    const res = await scoreStartHandler(req);
+    expect(res.status).toBe(405);
+  });
+
+  it("requires recherche_id", async () => {
+    const res = await scoreStartHandler(makeScoreStartRequest({}));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("recherche_id");
+  });
+
+  it("returns 404 for unknown recherche_id", async () => {
+    mockFindRowById.mockResolvedValue(null);
+    const res = await scoreStartHandler(makeScoreStartRequest({ recherche_id: "unknown" }));
+    expect(res.status).toBe(404);
+  });
+
+  it("starts background scoring (sets scoring_status to active)", async () => {
+    mockFindRowById.mockResolvedValue({
+      rowIndex: 2,
+      data: { id: "r1", description: "test", scoring_status: "", scoring_instructions: "" },
+    });
+
+    const res = await scoreStartHandler(makeScoreStartRequest({ recherche_id: "r1" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.scoring_status).toBe("active");
+  });
+
+  it("saves custom_instructions when starting", async () => {
+    mockFindRowById.mockResolvedValue({
+      rowIndex: 2,
+      data: { id: "r1", description: "test", scoring_status: "", scoring_instructions: "" },
+    });
+
+    const res = await scoreStartHandler(makeScoreStartRequest({
+      recherche_id: "r1",
+      custom_instructions: "Focus on B2B SaaS",
+    }));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.scoring_status).toBe("active");
+  });
+
+  it("stops background scoring (sets scoring_status to stopped)", async () => {
+    mockFindRowById.mockResolvedValue({
+      rowIndex: 2,
+      data: { id: "r1", description: "test", scoring_status: "active", scoring_instructions: "" },
+    });
+
+    const res = await scoreStartHandler(makeScoreStartRequest({
+      recherche_id: "r1",
+      action: "stop",
+    }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.scoring_status).toBe("stopped");
   });
 });

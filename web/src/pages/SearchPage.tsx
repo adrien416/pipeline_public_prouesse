@@ -39,6 +39,8 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   const [searchStep, setSearchStep] = useState<string | null>(null);
   const [loadedRecherche, setLoadedRecherche] = useState<Record<string, string> | null>(null);
   const [loadedContacts, setLoadedContacts] = useState<Array<Record<string, string>> | null>(null);
+  const [duplicateContacts, setDuplicateContacts] = useState<Array<Record<string, string>>>([]);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [debugInfo, setDebugInfo] = useState<SearchDebugInfo | null>(null);
   const [showDebug, setShowDebug] = useState(true);
   const [findingMore, setFindingMore] = useState(false);
@@ -116,7 +118,9 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       if (data.generate_only) return; // handled separately
       setLoadedRecherche(data.recherche);
       setLoadedContacts(data.contacts);
+      setDuplicateContacts(data.duplicates ?? []);
       setExcluded(new Set());
+      setShowDuplicates(false);
       setPreviewMode(false);
       setDebugInfo({
         ai_reasoning: data.ai_reasoning,
@@ -177,6 +181,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         offset: currentCount,
       });
       setLoadedContacts((prev) => [...(prev ?? []), ...result.contacts]);
+      setDuplicateContacts((prev) => [...prev, ...(result.duplicates ?? [])]);
       setDebugInfo({
         ai_reasoning: result.ai_reasoning,
         filters: result.filters,
@@ -566,11 +571,44 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
         </div>
       )}
 
-      {/* Duplicates banner */}
-      {debugInfo?.verification?.skipped_duplicates && debugInfo.verification.skipped_duplicates > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
-          <span className="font-semibold">{debugInfo.verification.skipped_duplicates} doublons ignorés</span>
-          <span className="text-amber-500">— contacts déjà présents en base</span>
+      {/* Duplicates banner with toggle */}
+      {duplicateContacts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowDuplicates(!showDuplicates)}
+            className="w-full px-4 py-3 text-sm text-amber-700 flex items-center justify-between"
+          >
+            <div>
+              <span className="font-semibold">{duplicateContacts.length} doublons ignorés</span>
+              <span className="text-amber-500 ml-1">— déjà en base</span>
+            </div>
+            <span className="text-xs text-amber-400">{showDuplicates ? "Masquer" : "Afficher"}</span>
+          </button>
+          {showDuplicates && (
+            <div className="px-4 pb-3 space-y-2">
+              <p className="text-xs text-amber-500">Clique sur "Ajouter" pour réintégrer un contact dans la recherche.</p>
+              {duplicateContacts.map((c) => (
+                <div key={c.id} className="flex items-center justify-between text-sm py-1.5 border-t border-amber-100">
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-gray-700">{c.prenom} {c.nom}</span>
+                    <span className="text-gray-500 ml-2 text-xs">{c.entreprise}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const restored = { ...c, statut: "nouveau" };
+                      setDuplicateContacts((prev) => prev.filter((d) => d.id !== c.id));
+                      setLoadedContacts((prev) => [...(prev ?? []), restored]);
+                    }}
+                    className="text-xs font-medium text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded ml-2 shrink-0"
+                  >
+                    Ajouter
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -675,9 +675,9 @@ export default async (request: Request) => {
       )
     );
 
-    // ─── 6. Map results to contact objects (skip duplicates) ───
+    // ─── 6. Map results to contact objects (mark duplicates but keep them) ───
     const contacts: Record<string, string>[] = [];
-    let skippedDuplicates = 0;
+    const duplicateContacts: Record<string, string>[] = [];
     for (const r of results as any[]) {
       const linkedin = (r.social_profiles?.linkedin?.url ?? "").toLowerCase();
       const prenom = r.first_name ?? "";
@@ -685,18 +685,11 @@ export default async (request: Request) => {
       const entreprise = r.employment?.current?.company?.name ?? "";
       const nameKey = `${prenom.toLowerCase()}|${nom.toLowerCase()}|${entreprise.toLowerCase()}`;
 
-      // Skip if LinkedIn URL already exists
-      if (linkedin && existingLinkedins.has(linkedin)) {
-        skippedDuplicates++;
-        continue;
-      }
-      // Skip if same name+company already exists
-      if (prenom && nom && entreprise && existingNames.has(nameKey)) {
-        skippedDuplicates++;
-        continue;
-      }
+      const isDuplicate =
+        (linkedin && existingLinkedins.has(linkedin)) ||
+        (prenom && nom && entreprise && existingNames.has(nameKey));
 
-      contacts.push({
+      const contact: Record<string, string> = {
         id: uuidv4(),
         nom,
         prenom,
@@ -707,7 +700,7 @@ export default async (request: Request) => {
         secteur: r.employment?.current?.company?.industry?.main_industry ?? "",
         linkedin: r.social_profiles?.linkedin?.url ?? "",
         telephone: "",
-        statut: "nouveau",
+        statut: isDuplicate ? "doublon" : "nouveau",
         enrichissement_status: "",
         enrichissement_retry: "",
         score_1: "", score_2: "", score_total: "", score_raison: "", score_feedback: "",
@@ -718,14 +711,19 @@ export default async (request: Request) => {
         date_creation: now,
         date_modification: now,
         user_id: auth.userId,
-      });
+      };
 
-      // Track for this batch too
-      if (linkedin) existingLinkedins.add(linkedin);
-      if (prenom && nom && entreprise) existingNames.add(nameKey);
+      if (isDuplicate) {
+        duplicateContacts.push(contact);
+      } else {
+        contacts.push(contact);
+        // Track for this batch too
+        if (linkedin) existingLinkedins.add(linkedin);
+        if (prenom && nom && entreprise) existingNames.add(nameKey);
+      }
     }
 
-    // ─── 6. Save contacts to Google Sheets ───
+    // ─── 7. Save only NEW contacts to Google Sheets (not duplicates) ───
     if (contacts.length > 0) {
       const headers = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
       await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
@@ -736,14 +734,15 @@ export default async (request: Request) => {
     return json({
       recherche: { id: rechercheId, description: body.description, nb_resultats: String(contacts.length) },
       contacts,
+      duplicates: duplicateContacts,
       filters,
       ai_reasoning: aiReasoning,
       ai_cost: totalCost,
       verification: {
         raw_count: totalRawCount,
         verified_count: verifiedCount,
-        skipped_duplicates: skippedDuplicates,
-        reasoning: verifyReasons.join(" | ") + (skippedDuplicates > 0 ? ` | ${skippedDuplicates} doublons ignorés (déjà en base)` : ""),
+        skipped_duplicates: duplicateContacts.length,
+        reasoning: verifyReasons.join(" | ") + (duplicateContacts.length > 0 ? ` | ${duplicateContacts.length} doublons ignorés (déjà en base)` : ""),
       },
       debug: {
         mode,

@@ -77,6 +77,7 @@ export interface SearchDebug {
 export function launchSearch(params: SearchParams) {
   return request<{
     contacts: Array<Record<string, string>>;
+    duplicates?: Array<Record<string, string>>;
     recherche: Record<string, string>;
     filters: Record<string, unknown>;
     ai_reasoning?: string;

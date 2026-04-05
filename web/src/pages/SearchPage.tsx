@@ -225,6 +225,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       const result = await fetchContacts(rechercheId);
       setLoadedContacts(result.contacts);
       setLoadedRecherche({ id: rechercheId, description: desc || "" });
+      if (desc) setDescription(desc);
       setExcluded(new Set());
     } catch (err) {
       console.error("Load previous search error:", err);

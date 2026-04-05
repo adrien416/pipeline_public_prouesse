@@ -83,6 +83,12 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
   // ─── Search flow ───
   const search = useMutation({
     mutationFn: async (desc: string) => {
+      // Clear previous results immediately
+      setLoadedContacts(null);
+      setLoadedRecherche(null);
+      setDuplicateContacts([]);
+      setShowDuplicates(false);
+
       // If preview mode with edited filters, use them
       if (previewMode && previewFilters) {
         setSearchStep("Recherche avec filtres édités...");
@@ -460,7 +466,9 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       {/* Error */}
       {(search.isError || previewError) && !previewMode && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          Erreur: {search.error instanceof Error ? search.error.message : previewError || "Erreur de recherche"}
+          Erreur: {search.error instanceof Error
+            ? (search.error.message === "Load failed" ? "Timeout — la recherche a pris trop de temps. Réessaie ou utilise le mode Volume." : search.error.message)
+            : previewError || "Erreur de recherche"}
         </div>
       )}
 

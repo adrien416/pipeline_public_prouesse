@@ -44,13 +44,34 @@ export function fetchCredits() {
 }
 
 // ─── Search ───
+export interface AdvancedFilters {
+  headcount_preset?: string;
+  location?: string;
+  include_keywords?: string[];
+  exclude_keywords?: string[];
+  exclude_actors?: string[];
+}
+
 export interface SearchParams {
   description: string;
   limit?: number;
-  // "Find more" mode
   append?: boolean;
   recherche_id?: string;
   offset?: number;
+  search_mode?: "volume" | "precision";
+  advanced_filters?: AdvancedFilters;
+  pre_filters?: Record<string, unknown>;
+  filters_source?: "ai_generated" | "user_edited";
+  generate_only?: boolean;
+}
+
+export interface SearchDebug {
+  mode: string;
+  advanced_filters_applied: AdvancedFilters | null;
+  filters_source: string;
+  pipeline: { raw: number; title_filtered: number; deduped: number; verified: number; final: number };
+  timings: { generate_filters_ms: number; fullenrich_call_ms: number; verify_ms: number; rerank_ms: number; save_ms: number };
+  rerank_top5?: Array<{ entreprise: string; score_rank: number; reasons: string[] }>;
 }
 
 export function launchSearch(params: SearchParams) {
@@ -60,9 +81,11 @@ export function launchSearch(params: SearchParams) {
     filters: Record<string, unknown>;
     ai_reasoning?: string;
     ai_cost?: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
-    verification?: { raw_count: number; verified_count: number; reasoning: string; cost_cap_reached: boolean };
+    verification?: { raw_count: number; verified_count: number; skipped_duplicates?: number; reasoning: string };
+    debug?: SearchDebug;
     total: number;
     retried?: boolean;
+    generate_only?: boolean;
   }>("/search", {
     method: "POST",
     body: JSON.stringify(params),

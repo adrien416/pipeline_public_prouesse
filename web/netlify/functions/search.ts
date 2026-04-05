@@ -14,13 +14,119 @@ import {
   toRow,
 } from "./_sheets.js";
 
+interface AdvancedFilters {
+  headcount_preset?: string;
+  location?: string;
+  include_keywords?: string[];
+  exclude_keywords?: string[];
+  exclude_actors?: string[];
+}
+
 interface SearchBody {
   description: string;
   limit?: number;
-  // "Find more" mode
   append?: boolean;
   recherche_id?: string;
   offset?: number;
+  search_mode?: "volume" | "precision";
+  advanced_filters?: AdvancedFilters;
+  pre_filters?: Record<string, unknown>;
+  filters_source?: "ai_generated" | "user_edited";
+  generate_only?: boolean;
+}
+
+// ─── Reranking ───
+
+interface RankResult {
+  contact: any;
+  score: number;
+  reasons: string[];
+}
+
+function rerankContacts(contacts: any[], mode: "volume" | "precision"): RankResult[] {
+  return contacts.map((c) => {
+    let score = 50;
+    const reasons: string[] = [];
+    const title = (c.employment?.current?.title ?? "").toLowerCase();
+
+    if (/\b(ceo|founder|fondateur|président|gérant|directeur général|co-?founder)\b/i.test(title)) {
+      score += 20;
+      reasons.push("Titre dirigeant fort");
+    } else if (/\b(cto|directeur|director|vp|vice)\b/i.test(title)) {
+      score += 10;
+      reasons.push("Titre décideur");
+    } else {
+      score -= 10;
+      reasons.push("Titre non-dirigeant");
+    }
+
+    if (c.employment?.current?.company?.domain) { score += 5; reasons.push("Domaine vérifié"); }
+    if (c.social_profiles?.linkedin?.url) { score += 5; }
+
+    if (mode === "precision" && !/\b(ceo|founder|fondateur|président|gérant|co-?founder)\b/i.test(title)) {
+      score -= 15;
+      reasons.push("Mode précision: titre non-fondateur");
+    }
+
+    const companyName = (c.employment?.current?.company?.name ?? "").toLowerCase();
+    const industry = (c.employment?.current?.company?.industry?.main_industry ?? "").toLowerCase();
+    if (/consult|conseil|agency|agence|ssii|esn/i.test(industry) || /consult|conseil|agency|agence|ssii|esn/i.test(companyName)) {
+      score -= 20;
+      reasons.push("Signal consulting/ESN");
+    }
+
+    return { contact: c, score: Math.max(0, Math.min(100, score)), reasons };
+  }).sort((a, b) => b.score - a.score);
+}
+
+// ─── Advanced filters merge ───
+
+function mergeAdvancedFilters(filters: any, advanced?: AdvancedFilters): any {
+  if (!advanced) return filters;
+  const merged = { ...filters };
+
+  if (advanced.headcount_preset) {
+    const presets: Record<string, [number, number]> = {
+      "1-10": [1, 10], "11-50": [11, 50], "51-200": [51, 200],
+      "201-1000": [201, 1000], "1000+": [1000, 100000],
+    };
+    const range = presets[advanced.headcount_preset];
+    if (range) merged.current_company_headcounts = [{ min: range[0], max: range[1], exclude: false }];
+  }
+
+  if (advanced.location) {
+    merged.current_company_headquarters = [{ value: advanced.location, exact_match: false, exclude: false }];
+  }
+
+  if (advanced.include_keywords?.length) {
+    const existing = merged.current_company_specialties ?? [];
+    merged.current_company_specialties = [...existing, ...advanced.include_keywords.map((k) => ({ value: k, exact_match: false, exclude: false }))];
+  }
+
+  if (advanced.exclude_keywords?.length) {
+    const existing = merged.current_company_specialties ?? [];
+    merged.current_company_specialties = [...existing, ...advanced.exclude_keywords.map((k) => ({ value: k, exact_match: false, exclude: true }))];
+  }
+
+  if (advanced.exclude_actors?.length) {
+    const industries = merged.current_company_industries ?? [];
+    const actorMap: Record<string, string[]> = {
+      conseil: ["Management Consulting", "Business Consulting and Services"],
+      esn: ["IT Services and IT Consulting", "Information Technology & Services"],
+      public: ["Government Administration", "Public Policy"],
+      filiales: [],
+    };
+    for (const actor of advanced.exclude_actors) {
+      for (const ind of actorMap[actor] ?? []) {
+        if (!industries.some((i: any) => i.value === ind && i.exclude)) {
+          industries.push({ value: ind, exact_match: false, exclude: true });
+        }
+      }
+    }
+    merged.current_company_industries = industries;
+  }
+
+  return merged;
 }
 
 // ─── Fullenrich API ───
@@ -55,13 +161,39 @@ interface AIFiltersResult {
   cost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
 }
 
-async function generateFiltersWithWebSearch(description: string): Promise<AIFiltersResult> {
+async function generateFiltersWithWebSearch(
+  description: string,
+  mode: "volume" | "precision" = "volume",
+  advancedFilters?: AdvancedFilters,
+): Promise<AIFiltersResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie");
+
+  const modeInstructions = mode === "precision"
+    ? `MODE PRÉCISION — L'objectif est la PERTINENCE, pas le volume.
+- Choisis 2-3 industries LinkedIn très ciblées
+- Utilise des specialties si utile pour préciser le secteur
+- Titres strictement dirigeants : CEO, Founder, Fondateur, Président, Gérant, DG uniquement (PAS CTO, VP, Director)
+- Headcount resserré : 10-500 par défaut
+- Mieux vaut peu de résultats très pertinents que beaucoup de bruit`
+    : `MODE VOLUME — L'objectif est de retourner BEAUCOUP de résultats (50-100+).
+- Choisis 2-5 industries LinkedIn larges (ex: "Health Care" plutôt que "Medical Devices")
+- N'utilise PAS de specialties sauf recherche de concurrents spécifiques
+- Mets une taille d'entreprise large : 1-5000 employés par défaut
+- Mieux vaut trop de résultats que pas assez`;
+
+  const advancedBlock = advancedFilters ? `
+CONTRAINTES UTILISATEUR (prioritaires) :
+${advancedFilters.location ? `- Zone : ${advancedFilters.location}` : ""}
+${advancedFilters.headcount_preset ? `- Taille entreprise : ${advancedFilters.headcount_preset} employés` : ""}
+${advancedFilters.include_keywords?.length ? `- Mots-clés à inclure : ${advancedFilters.include_keywords.join(", ")}` : ""}
+${advancedFilters.exclude_keywords?.length ? `- Mots-clés à exclure : ${advancedFilters.exclude_keywords.join(", ")}` : ""}
+${advancedFilters.exclude_actors?.length ? `- Exclure : ${advancedFilters.exclude_actors.join(", ")}` : ""}` : "";
 
   const prompt = `Tu es un expert en prospection B2B. L'utilisateur cherche des entreprises à contacter.
 
 Description de l'utilisateur : "${description}"
+${advancedBlock}
 
 ÉTAPE 1 : Fais une ou deux recherches web pour comprendre cette industrie/ce secteur et identifier les acteurs principaux.
 
@@ -78,17 +210,14 @@ Les filtres Fullenrich disponibles sont :
 - current_company_specialties: [{ value: "mot clé spécialité", exact_match: false, exclude: false }]
 - current_company_founded_year: { min: 2000, max: 2025 }
 
-IMPORTANT :
-- Mets TOUJOURS current_company_headquarters sur "France"
-- Mets TOUJOURS des titres de dirigeants (CEO, Founder, DG, Gérant, Président)
-- Choisis 2 à 5 industries LinkedIn pertinentes — PRIVILÉGIE LES INDUSTRIES LARGES (ex: "Health Care" plutôt que "Medical Devices")
-- current_company_specialties : utilise-les UNIQUEMENT si la recherche mentionne un concurrent spécifique ou une niche très précise (ex: "concurrents de Chance.co" → specialty "coaching", "insertion professionnelle"). Pour une recherche sectorielle large (ex: "startups à impact social"), NE METS PAS de specialties.
-- N'utilise PAS current_company_founded_year sauf demande explicite de l'utilisateur
-- Mets une taille d'entreprise large : 1-5000 employés par défaut
+${modeInstructions}
+
+RÈGLES OBLIGATOIRES :
+- Mets TOUJOURS current_company_headquarters sur "${advancedFilters?.location || "France"}"
+- Mets TOUJOURS des titres de dirigeants
 - EXCLUS les associations, entités publiques, coopératives (SCOP, SCIC), fondations, ONG, mutuelles — on cherche UNIQUEMENT des entreprises privées
 - AJOUTE TOUJOURS ces industries en exclusion (exclude: true) dans current_company_industries :
   "Non-profit Organization Management", "Government Administration", "Government Relations", "Public Policy", "Civic & Social Organization", "Political Organization", "International Affairs", "Military"
-- L'objectif est de retourner BEAUCOUP de résultats (50-100+). Mieux vaut trop de résultats que pas assez.
 
 Réponds UNIQUEMENT avec un JSON :
 {
@@ -367,9 +496,27 @@ export default async (request: Request) => {
     const startTime = Date.now();
     const TIME_BUDGET_MS = 22_000;
     function timeLeft(): number { return TIME_BUDGET_MS - (Date.now() - startTime); }
+    const mode = body.search_mode ?? "volume";
 
-    // ─── 1. Claude + web search → generate Fullenrich filters ───
-    const { filters, reasoning: aiReasoning, cost: aiCost } = await generateFiltersWithWebSearch(body.description);
+    // ─── 1. Generate or use provided filters ───
+    let filters: Record<string, unknown>;
+    let aiReasoning: string;
+    let aiCost: { input_tokens: number; output_tokens: number; web_searches: number; estimated_usd: number };
+    let filtersSource = body.filters_source ?? "ai_generated";
+
+    if (body.pre_filters && body.filters_source === "user_edited") {
+      // User-edited filters — skip AI
+      filters = body.pre_filters;
+      aiReasoning = "Filtres édités manuellement par l'utilisateur";
+      aiCost = { input_tokens: 0, output_tokens: 0, web_searches: 0, estimated_usd: 0 };
+      filtersSource = "user_edited";
+    } else {
+      const result = await generateFiltersWithWebSearch(body.description, mode, body.advanced_filters);
+      filters = result.filters;
+      aiReasoning = result.reasoning;
+      aiCost = result.cost;
+    }
+    const tGenerateFilters = Date.now();
 
     // ─── Hardcode exclusions — always injected even if AI forgets ───
     const EXCLUDED_INDUSTRIES = [
@@ -391,6 +538,20 @@ export default async (request: Request) => {
       .map((ind) => ({ value: ind, exact_match: false, exclude: true }));
     (filters as any).current_company_industries = [...existingIndustries, ...missingExclusions];
 
+    // ─── Merge advanced filters (user constraints override AI) ───
+    const mergedFilters = mergeAdvancedFilters(filters, body.advanced_filters);
+    Object.assign(filters, mergedFilters);
+
+    // ─── generate_only: return filters without searching ───
+    if (body.generate_only) {
+      return json({
+        filters,
+        ai_reasoning: aiReasoning,
+        ai_cost: aiCost,
+        generate_only: true,
+      });
+    }
+
     // ─── 2. Search Fullenrich with filters (1 batch only to save time) ───
     const targetCount = body.limit ?? 100;
     const batchSize = Math.min(targetCount, 100);
@@ -406,10 +567,11 @@ export default async (request: Request) => {
       batchSize,
     );
     totalRawCount = batch.length;
+    const tFullenrich = Date.now();
 
-    // ─── Fallback: if too few results AND enough time, broaden filters ───
+    // ─── Fallback: if too few results AND enough time (volume mode only) ───
     let retryNote = "";
-    if (batch.length < 10 && timeLeft() > 8000) {
+    if (mode === "volume" && batch.length < 10 && timeLeft() > 8000) {
       const broadFilters = { ...filters };
       delete (broadFilters as any).current_company_specialties;
       delete (broadFilters as any).current_company_founded_year;
@@ -435,12 +597,14 @@ export default async (request: Request) => {
       return true;
     });
 
-    // ─── 3. Verify batch with AI (only if time allows) ───
+    // ─── 3. Verify batch with AI (only if time allows; always try in precision mode) ───
     let results: unknown[];
+    let verifiedCount = 0;
     const retried = retryNote !== "";
     if (retryNote) verifyReasons.push(retryNote);
 
-    if (uniqueContacts.length > 0 && timeLeft() > 8000) {
+    const verifyThreshold = mode === "precision" ? 5000 : 8000;
+    if (uniqueContacts.length > 0 && timeLeft() > verifyThreshold) {
       const contactsForVerify = uniqueContacts.map((r: any) => ({
         entreprise: r.employment?.current?.company?.name ?? "",
         titre: r.employment?.current?.title ?? "",
@@ -449,18 +613,25 @@ export default async (request: Request) => {
       }));
       const { keepIndices, reasoning, cost } = await verifyBatch(body.description, aiReasoning, contactsForVerify);
       results = keepIndices.map((idx) => uniqueContacts[idx]);
+      verifiedCount = results.length;
       if (reasoning) verifyReasons.push(reasoning);
       totalCost.input_tokens += cost.input_tokens;
       totalCost.output_tokens += cost.output_tokens;
       totalCost.web_searches += cost.web_searches;
       totalCost.estimated_usd += cost.estimated_usd;
     } else {
-      // Skip verification to save time — keep all title-filtered contacts
       results = uniqueContacts;
-      if (uniqueContacts.length > 0 && timeLeft() <= 8000) {
+      verifiedCount = uniqueContacts.length;
+      if (uniqueContacts.length > 0 && timeLeft() <= verifyThreshold) {
         verifyReasons.push("Vérification IA ignorée (budget temps)");
       }
     }
+    const tVerify = Date.now();
+
+    // ─── 4. Rerank results ───
+    const rankedResults = rerankContacts(results as any[], mode);
+    results = rankedResults.map((r) => r.contact);
+    const tRerank = Date.now();
 
     results = results.slice(0, targetCount);
 
@@ -560,6 +731,8 @@ export default async (request: Request) => {
       await appendRows("Contacts", contacts.map((c) => toRow(headers, c)));
     }
 
+    const tSave = Date.now();
+
     return json({
       recherche: { id: rechercheId, description: body.description, nb_resultats: String(contacts.length) },
       contacts,
@@ -568,9 +741,33 @@ export default async (request: Request) => {
       ai_cost: totalCost,
       verification: {
         raw_count: totalRawCount,
-        verified_count: results.length,
+        verified_count: verifiedCount,
         skipped_duplicates: skippedDuplicates,
         reasoning: verifyReasons.join(" | ") + (skippedDuplicates > 0 ? ` | ${skippedDuplicates} doublons ignorés (déjà en base)` : ""),
+      },
+      debug: {
+        mode,
+        advanced_filters_applied: body.advanced_filters ?? null,
+        filters_source: filtersSource,
+        pipeline: {
+          raw: totalRawCount,
+          title_filtered: titleFiltered.length,
+          deduped: uniqueContacts.length,
+          verified: verifiedCount,
+          final: contacts.length,
+        },
+        timings: {
+          generate_filters_ms: tGenerateFilters - startTime,
+          fullenrich_call_ms: tFullenrich - tGenerateFilters,
+          verify_ms: tVerify - tFullenrich,
+          rerank_ms: tRerank - tVerify,
+          save_ms: tSave - tRerank,
+        },
+        rerank_top5: rankedResults.slice(0, 5).map((r) => ({
+          entreprise: r.contact.employment?.current?.company?.name ?? "",
+          score_rank: r.score,
+          reasons: r.reasons,
+        })),
       },
       total: contacts.length,
       retried,

@@ -844,8 +844,195 @@ describe("search handler — deduplication against existing contacts", () => {
   });
 });
 
-// ─── Demo mode ───
+// ─── Mode Volume vs Precision ───
 
-// Demo mode test would require resetting the module mock mid-test,
-// which is complex with vitest. The demo logic is tested via manual QA.
-// The critical path (admin/user search) is well covered above.
+describe("search handler — mode volume vs precision", () => {
+  it("defaults to volume mode when search_mode not provided", async () => {
+    const res = await searchHandler(makeRequest({ description: "test" }));
+    const body = await res.json();
+    expect(body.debug?.mode).toBe("volume");
+  });
+
+  it("uses precision mode when specified", async () => {
+    const res = await searchHandler(makeRequest({ description: "test", search_mode: "precision" }));
+    const body = await res.json();
+    expect(body.debug?.mode).toBe("precision");
+  });
+
+  it("does NOT fallback with broadened filters in precision mode", async () => {
+    let fullenrichCallCount = 0;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        fullenrichCallCount++;
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] })); // < 10 results
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    await searchHandler(makeRequest({ description: "test precision", search_mode: "precision" }));
+    expect(fullenrichCallCount).toBe(1); // No fallback retry in precision mode
+  });
+});
+
+// ─── generate_only mode ───
+
+describe("search handler — generate_only", () => {
+  it("returns filters without searching Fullenrich", async () => {
+    const res = await searchHandler(makeRequest({ description: "test generate", generate_only: true }));
+    const body = await res.json();
+    expect(body.generate_only).toBe(true);
+    expect(body.filters).toBeDefined();
+    expect(body.ai_reasoning).toBeDefined();
+    expect(body.contacts).toBeUndefined();
+    expect(countCalls("fullenrich")).toBe(0);
+  });
+
+  it("does not save to Sheets in generate_only mode", async () => {
+    await searchHandler(makeRequest({ description: "test generate", generate_only: true }));
+    expect(mockAppendRow).not.toHaveBeenCalled();
+    expect(mockAppendRows).not.toHaveBeenCalled();
+  });
+});
+
+// ─── User-edited filters (pre_filters) ───
+
+describe("search handler — pre_filters (user-edited)", () => {
+  it("skips AI generation when pre_filters provided", async () => {
+    const res = await searchHandler(makeRequest({
+      description: "test",
+      pre_filters: {
+        current_company_industries: [{ value: "Tech", exact_match: false, exclude: false }],
+        current_company_headquarters: [{ value: "France", exact_match: false, exclude: false }],
+        current_position_titles: [{ value: "CEO", exact_match: false, exclude: false }],
+      },
+      filters_source: "user_edited",
+    }));
+    const body = await res.json();
+    expect(body.debug?.filters_source).toBe("user_edited");
+    // AI filter cost should be 0; verify batch may still cost
+    expect(body.ai_reasoning).toContain("manuellement");
+  });
+});
+
+// ─── Advanced filters ───
+
+describe("search handler — advanced_filters", () => {
+  it("passes advanced_filters to backend and merges them", async () => {
+    let capturedBody: any = null;
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        capturedBody = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+        return new Response(JSON.stringify({ results: [FULLENRICH_RESULT] }));
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({
+      description: "test advanced",
+      advanced_filters: {
+        headcount_preset: "51-200",
+        include_keywords: ["SaaS", "cloud"],
+        exclude_actors: ["conseil"],
+      },
+    }));
+    const body = await res.json();
+    expect(body.debug?.advanced_filters_applied).toBeDefined();
+    expect(body.debug?.advanced_filters_applied?.headcount_preset).toBe("51-200");
+    // Fullenrich should have been called with filters
+    expect(capturedBody).not.toBeNull();
+  });
+});
+
+// ─── Reranking ───
+
+describe("search handler — reranking", () => {
+  it("returns rerank_top5 in debug response", async () => {
+    const res = await searchHandler(makeRequest({ description: "test rerank" }));
+    const body = await res.json();
+    expect(body.debug?.rerank_top5).toBeDefined();
+    expect(body.debug?.rerank_top5.length).toBeGreaterThan(0);
+    expect(body.debug?.rerank_top5[0]).toHaveProperty("score_rank");
+    expect(body.debug?.rerank_top5[0]).toHaveProperty("reasons");
+    expect(body.debug?.rerank_top5[0]).toHaveProperty("entreprise");
+  });
+
+  it("ranks CEO higher than other titles", async () => {
+    const ceo = { ...FULLENRICH_RESULT, first_name: "A", last_name: "CEO", employment: { current: { title: "CEO", company: { name: "Co1", domain: "co1.fr", industry: { main_industry: "Tech" } } } }, social_profiles: { linkedin: { url: "https://li/1" } } };
+    const vp = { ...FULLENRICH_RESULT, first_name: "B", last_name: "VP", employment: { current: { title: "VP Marketing", company: { name: "Co2", domain: "co2.fr", industry: { main_industry: "Tech" } } } }, social_profiles: { linkedin: { url: "https://li/2" } } };
+
+    globalThis.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("anthropic")) {
+        const bodyStr = typeof init?.body === "string" ? init.body : "";
+        if (bodyStr.includes("GARDE si")) return makeVerifyResponse([1, 2]);
+        return makeAIFilterResponse();
+      }
+      if (urlStr.includes("fullenrich")) {
+        return new Response(JSON.stringify({ results: [vp, ceo] })); // VP first in raw
+      }
+      return new Response("Not found", { status: 404 });
+    }) as typeof fetch;
+
+    const res = await searchHandler(makeRequest({ description: "test rank" }));
+    const body = await res.json();
+    // CEO should be ranked first despite being second in raw results
+    expect(body.contacts[0].nom).toBe("CEO");
+    expect(body.contacts[1].nom).toBe("VP");
+  });
+});
+
+// ─── Debug/timings ───
+
+describe("search handler — debug response", () => {
+  it("includes timings in debug response", async () => {
+    const res = await searchHandler(makeRequest({ description: "test debug" }));
+    const body = await res.json();
+    expect(body.debug?.timings).toBeDefined();
+    expect(body.debug?.timings.generate_filters_ms).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.timings.fullenrich_call_ms).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.timings.verify_ms).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.timings.rerank_ms).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.timings.save_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("includes pipeline counts in debug response", async () => {
+    const res = await searchHandler(makeRequest({ description: "test pipeline" }));
+    const body = await res.json();
+    expect(body.debug?.pipeline).toBeDefined();
+    expect(body.debug?.pipeline.raw).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.pipeline.title_filtered).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.pipeline.deduped).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.pipeline.verified).toBeGreaterThanOrEqual(0);
+    expect(body.debug?.pipeline.final).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ─── Non-regression: simple search without new features ───
+
+describe("search handler — non-regression", () => {
+  it("works exactly as before when no new fields provided", async () => {
+    const res = await searchHandler(makeRequest({ description: "societes cleantech" }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.contacts).toBeDefined();
+    expect(body.recherche).toBeDefined();
+    expect(body.filters).toBeDefined();
+    expect(body.ai_reasoning).toBeDefined();
+    expect(body.total).toBeGreaterThanOrEqual(0);
+    // Debug should be present with volume mode default
+    expect(body.debug?.mode).toBe("volume");
+    expect(body.debug?.filters_source).toBe("ai_generated");
+  });
+});

@@ -6,7 +6,7 @@
 git checkout claude/rebuild-search-feature-dzpFK   # Branche active
 cd web
 npm install
-npm test            # 120 tests doivent passer
+npm test            # 144 tests doivent passer
 npx netlify dev     # Dev server local
 ```
 **Branche de production Netlify** : `claude/rebuild-search-feature-dzpFK` (configuree dans Netlify → Build & deploy → Production branch)
@@ -58,7 +58,7 @@ npx netlify dev     # Dev server local
 │   │   ├── cron-score.ts         # Cron toutes les 2 min — score les contacts en arriere-plan
 │   │   ├── cron-enrich.ts        # Cron toutes les 1 min — poll Fullenrich pour les enrichissements
 │   │   ├── cron-send.ts          # Cron toutes les 5 min — envoi automatique des campagnes
-│   ├── tests/                    # Tests vitest (120 tests, 8 fichiers)
+│   ├── tests/                    # Tests vitest (144 tests, 8 fichiers)
 │   ├── netlify.toml              # Config Netlify
 │   ├── package.json              # Dependances npm
 │   └── vite.config.ts            # Config Vite
@@ -199,7 +199,7 @@ POST /api/search (single endpoint, ~15-25s)
 
 38. **Demo mise a jour** : Raisons de scoring adaptees aux nouveaux criteres (Pertinence + Impact), template email mis a jour.
 
-39. **Tests** : 120 tests (8 fichiers), dont 25 tests search couvrant : validation, succes, multi-contacts, filtrage titres, deduplication, 0 resultats, parsing JSON (code fences, multi-block), retry 429/529, erreurs API.
+39. **Tests** : 144 tests (8 fichiers), dont 25 tests search couvrant : validation, succes, multi-contacts, filtrage titres, deduplication, 0 resultats, parsing JSON (code fences, multi-block), retry 429/529, erreurs API.
 
 40. **Bouton "Chercher plus"** : Pagination Fullenrich via offset. Ajoute 100 contacts aux resultats existants.
 
@@ -226,6 +226,20 @@ POST /api/search (single endpoint, ~15-25s)
 51. **Bouton "Regenerer toutes les phrases IA"** : Dans CampaignPage, efface toutes les phrases et les regenere avec le nouveau prompt.
 
 52. **Nettoyage code mort** : Suppression de `launchScoring()` (remplace par background), `FONDS_HEADERS`, `SCORING_HEADERS`, `maxReachedStep` prop.
+
+### Session 9 (2026-04-05) — Qualite de recherche avancee
+
+53. **Mode Volume/Precision** : Selecteur dans la recherche. Volume = filtres larges, fallback autorise, max de resultats. Precision = industries ciblees, titres stricts (CEO/Founder uniquement), headcount resserre, pas de fallback, verification IA favorisee.
+
+54. **Filtres avances optionnels** : Bloc repliable dans la recherche avec : taille entreprise (presets), zone geographique, mots-cles a inclure/exclure (chips), exclusion types acteurs (conseil, ESN, public, filiales). Fusionnes avec les filtres IA + exclusions hardcodees.
+
+55. **Previsualisation et edition filtres IA** : Bouton "Previsualiser les filtres" genere les filtres sans lancer la recherche (generate_only). L'utilisateur peut editer le JSON, puis "Lancer avec ces filtres" ou "Regenerer IA". Source tracee (ai_generated vs user_edited).
+
+56. **Reranking post-recherche** : Score explicable 0-100 pour chaque contact. Bonus titre dirigeant (+20 CEO/Founder, +10 CTO/VP), bonus domaine verifie (+5), malus consulting/ESN (-20), malus titre non-fondateur en mode precision (-15). Tri final par score. Top 5 affiche dans le debug.
+
+57. **Debug enrichi** : Panel debug affiche : mode utilise, source filtres, pipeline complet (raw → title_filtered → deduped → verified → final), timings par etape (ms), reranking top 5, filtres avances appliques.
+
+58. **Tests** : 144 tests (8 fichiers). 12 nouveaux tests couvrant : mode volume/precision, generate_only, pre_filters user_edited, advanced_filters merge, reranking (CEO > VP), debug/timings/pipeline, non-regression flux simple.
 
 **Fichiers supprimes** : `search-filters.ts`, `search-competitors.ts`, `_search-ai.ts` (integres dans search.ts)
 **Fichiers ajoutes** : `score-start.ts`, `cron-score.ts`, `cron-enrich.ts`, `_google-key.ts`
@@ -274,7 +288,7 @@ git checkout claude/rebuild-search-feature-dzpFK
 cd web
 npm install
 npx netlify dev     # Dev server local
-npm test            # 120 tests vitest
+npm test            # 144 tests vitest
 ```
 
 ### Variables d'env requises pour le dev local

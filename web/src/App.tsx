@@ -19,15 +19,6 @@ const queryClient = new QueryClient({
   },
 });
 
-/** Maps each tab to its 0-based step index. */
-const TAB_INDEX: Record<Tab, number> = {
-  search: 0,
-  scoring: 1,
-  enrich: 2,
-  campaign: 3,
-  analytics: 4,
-};
-
 function loadSavedState() {
   try {
     const saved = localStorage.getItem("prouesse_session");
@@ -43,19 +34,15 @@ function AppContent() {
   const [tab, setTab] = useState<Tab>(saved?.tab || "search");
   const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
   const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
-  const [maxReachedStep, setMaxReachedStep] = useState<number>(saved?.maxReachedStep || 0);
 
   // Persist state to localStorage
   useEffect(() => {
     localStorage.setItem("prouesse_session", JSON.stringify({
-      tab, rechercheId, campaignId, maxReachedStep,
+      tab, rechercheId, campaignId,
     }));
-  }, [tab, rechercheId, campaignId, maxReachedStep]);
+  }, [tab, rechercheId, campaignId]);
 
-  /** Advance to a tab AND unlock it (and all previous tabs). */
   function goTo(target: Tab) {
-    const idx = TAB_INDEX[target];
-    setMaxReachedStep((prev) => Math.max(prev, idx));
     setTab(target);
   }
 
@@ -63,10 +50,7 @@ function AppContent() {
   function loadRecherche(id: string, targetTab?: Tab) {
     setRechercheId(id);
     setCampaignId(null);
-    setMaxReachedStep((prev) => Math.max(prev, 2)); // Unlock up to enrich
     if (targetTab) {
-      const idx = TAB_INDEX[targetTab];
-      setMaxReachedStep((prev) => Math.max(prev, idx));
       setTab(targetTab);
     }
   }
@@ -82,7 +66,7 @@ function AppContent() {
   if (!authenticated) return <LoginPage />;
 
   return (
-    <Layout activeTab={tab} onTabChange={setTab} maxReachedStep={maxReachedStep}>
+    <Layout activeTab={tab} onTabChange={setTab}>
       {tab === "search" && (
         <SearchPage
           onComplete={(id) => {

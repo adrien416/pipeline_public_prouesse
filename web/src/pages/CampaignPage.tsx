@@ -131,7 +131,7 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
     queryFn: () => fetchContacts(rechercheId),
-    select: (data) => data.contacts.filter((c) => c.email && parseInt(c.score_total) >= 7),
+    select: (data) => data.contacts.filter((c) => c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)),
   });
 
   const existingCampaigns = useQuery({

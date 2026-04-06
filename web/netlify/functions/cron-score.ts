@@ -81,7 +81,8 @@ export default async () => {
             scoring_status: "completed",
           }));
         }
-        const qualified = searchContacts.filter((c) => Number(c.score_total) >= 7).length;
+        const isPertOnly = recherche.scoring_mode === "pertinence_only";
+        const qualified = searchContacts.filter((c) => isPertOnly ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7).length;
         if (brevoKey) {
           await sendScoringNotification(
             recherche.description,
@@ -162,6 +163,27 @@ export default async () => {
             } catch { /* ignore */ }
           }
 
+          const isPertinenceOnly = recherche.scoring_mode === "pertinence_only";
+          const scoringCriteria = isPertinenceOnly
+            ? `Évalue sur 1 critère :
+1. PERTINENCE (1-5) : correspondance avec le secteur recherché
+   1=aucun rapport, 2=indirect, 3=modérée, 4=bonne correspondance, 5=parfaite
+
+IMPORTANT : exclure si : association, coopérative, organisme public, ONG, filiale grand groupe, cabinet M&A.
+
+JSON uniquement :
+{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`
+            : `Évalue sur 2 critères :
+1. PERTINENCE (1-5) : correspondance avec le secteur recherché
+   1=aucun rapport, 3=modérée, 5=parfaite
+2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable
+   1=aucun, 3=modéré (éducation, santé), 5=transformateur (dépollution, reforestation)
+
+IMPORTANT : score total <= 3 si : association, coopérative, organisme public, ONG, filiale grand groupe, cabinet M&A.
+
+JSON uniquement :
+{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
+
           const prompt = `Tu es un analyste B2B spécialisé en qualification de prospects.
 
 Contexte de la recherche : "${recherche.description}"
@@ -172,16 +194,7 @@ Description du site : ${metaDesc || "Non disponible"}
 
 Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise. Si tu ne connais pas l'entreprise, score neutre (2-3/5) avec raison "Entreprise inconnue, score estimé".
 
-Évalue sur 2 critères :
-1. PERTINENCE (1-5) : correspondance avec le secteur recherché
-   1=aucun rapport, 3=modérée, 5=parfaite
-2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable
-   1=aucun, 3=modéré (éducation, santé), 5=transformateur (dépollution, reforestation)
-
-IMPORTANT : score total <= 3 si : association, coopérative, organisme public, ONG, filiale grand groupe, cabinet M&A.
-
-JSON uniquement :
-{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}${feedbackBlock}${customBlock}`;
+${scoringCriteria}${feedbackBlock}${customBlock}`;
 
           let result: any;
           for (let attempt = 0; attempt < 3; attempt++) {

@@ -115,6 +115,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
+  const [includeImpact, setIncludeImpact] = useState(true);
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -128,7 +129,9 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
     if (!contacts.data?.contacts) return;
     const list = contacts.data.contacts;
     const scoredCount = list.filter((c: Record<string, string>) => c.score_total !== "").length;
-    const qualifiedCount = list.filter((c: Record<string, string>) => Number(c.score_total) >= 7).length;
+    const qualifiedCount = includeImpact
+      ? list.filter((c: Record<string, string>) => Number(c.score_total) >= 7).length
+      : list.filter((c: Record<string, string>) => Number(c.score_1) >= 4).length;
     const total = list.length;
     setProgress({ total, scored: scoredCount, qualified: qualifiedCount });
     if (scoring && scoredCount === total && total > 0) {
@@ -142,12 +145,16 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
     setScoringComplete(false);
     setError(null);
     try {
-      await startBackgroundScoring(rechercheId, customInstructions || undefined);
+      await startBackgroundScoring(
+        rechercheId,
+        customInstructions || undefined,
+        includeImpact ? "impact" : "pertinence_only",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
       setScoring(false);
     }
-  }, [rechercheId, customInstructions]);
+  }, [rechercheId, customInstructions, includeImpact]);
 
   const stopScoring = useCallback(async () => {
     try {
@@ -212,9 +219,9 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   }
 
   const contactsList = contacts.data?.contacts || [];
-  const qualifiedCount = contactsList.filter(
-    (c) => parseInt(c.score_total) >= 7
-  ).length;
+  const qualifiedCount = includeImpact
+    ? contactsList.filter((c) => parseInt(c.score_total) >= 7).length
+    : contactsList.filter((c) => parseInt(c.score_1) >= 4).length;
 
   const hasAnyScored = contactsList.some((c) => Number(c.score_total) > 0);
 
@@ -224,7 +231,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
         <div>
           <h2 className="text-xl font-bold text-gray-900">2. Scoring IA</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Pertinence + Impact (seuil {">="} 7/10) — le scoring tourne en arrière-plan
+            {includeImpact ? "Pertinence + Impact (seuil >= 7/10)" : "Pertinence seule (seuil >= 4/5)"} — scoring en arrière-plan
           </p>
         </div>
       </div>
@@ -343,6 +350,31 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                   Effacer les instructions
                 </button>
               )}
+
+              {/* Impact toggle */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <div>
+                  <span className="text-sm text-gray-700">Inclure le critère Impact</span>
+                  <p className="text-xs text-gray-400">
+                    {includeImpact
+                      ? "Pertinence + Impact = total /10, seuil >= 7"
+                      : "Pertinence seule /5, seuil >= 4"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIncludeImpact(!includeImpact)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    includeImpact ? "bg-blue-600" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      includeImpact ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -399,7 +431,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                   <tr
                     key={c.id}
                     className={`border-t border-gray-100 ${
-                      scored && total < 7 ? "opacity-40" : ""
+                      scored && (includeImpact ? total < 7 : s1 < 4) ? "opacity-40" : ""
                     } ${isSaving ? "bg-blue-50/50" : ""}`}
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">

@@ -408,7 +408,7 @@ export const CONTACTS_HEADERS = [
 
 export const RECHERCHES_HEADERS = [
   "id", "description", "mode", "filtres_json", "nb_resultats", "date",
-  "user_id", "scoring_status", "scoring_instructions",
+  "user_id", "scoring_status", "scoring_instructions", "scoring_mode",
 ];
 
 export const CAMPAGNES_HEADERS = [

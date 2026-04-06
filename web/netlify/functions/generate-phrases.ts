@@ -71,7 +71,7 @@ export default async (request: Request) => {
     const allContacts = await readAll("Contacts");
     const sheetHeaders = await getHeadersForWrite("Contacts", CONTACTS_HEADERS);
     const qualified = allContacts.filter(
-      (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+      (c) => c.recherche_id === recherche_id && c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
     );
 
     // Demo mode: assign mock phrases
@@ -95,7 +95,7 @@ export default async (request: Request) => {
       if (updates.length > 0) await batchUpdateRows("Contacts", updates);
       const freshContacts = await readAll("Contacts");
       const freshQualified = freshContacts.filter(
-        (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+        (c) => c.recherche_id === recherche_id && c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
       );
       return json({ generated: updates.length, total: freshQualified.length, remaining: 0, done: true, contacts: freshQualified });
     }
@@ -139,7 +139,7 @@ export default async (request: Request) => {
     // Re-read to return fresh data
     const freshContacts = await readAll("Contacts");
     const freshQualified = freshContacts.filter(
-      (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+      (c) => c.recherche_id === recherche_id && c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
     );
     const remaining = freshQualified.filter((c) => !c.phrase_perso).length;
 

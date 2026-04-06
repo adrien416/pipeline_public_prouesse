@@ -94,10 +94,10 @@ export function launchSearch(params: SearchParams) {
 }
 
 // ─── Score ───
-export function startBackgroundScoring(recherche_id: string, custom_instructions?: string) {
+export function startBackgroundScoring(recherche_id: string, custom_instructions?: string, scoring_mode?: "impact" | "pertinence_only") {
   return request<{ ok: boolean; scoring_status: string }>("/score-start", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, custom_instructions }),
+    body: JSON.stringify({ recherche_id, custom_instructions, scoring_mode }),
   });
 }
 

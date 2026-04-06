@@ -187,7 +187,7 @@ export default async () => {
       const rechercheId = contacts[0]?.recherche_id;
       if (rechercheId) {
         const allForRecherche = allContacts.filter(
-          (c) => c.recherche_id === rechercheId && parseInt(c.score_total) >= 7
+          (c) => c.recherche_id === rechercheId && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
         );
         const stillPending = allForRecherche.filter(
           (c) => c.enrichissement_status !== "ok" && c.enrichissement_status !== "pas_de_resultat" && c.enrichissement_status !== "erreur"

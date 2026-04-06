@@ -34,7 +34,7 @@ export default async (request: Request) => {
     const demoIds = auth.role === "admin" ? await getDemoUserIds() : undefined;
     const visibleContacts = filterByUser(allContacts, auth, demoIds);
     const qualified = visibleContacts.filter(
-      (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
+      (c) => c.recherche_id === recherche_id && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
     );
 
     // Demo mode: simulate enrichment
@@ -75,7 +75,7 @@ export default async (request: Request) => {
       if (updates.length > 0) await batchUpdateRows("Contacts", updates);
       const freshContacts = await readAll("Contacts");
       const freshQualified = freshContacts.filter(
-        (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
+        (c) => c.recherche_id === recherche_id && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
       );
       return json({ enriched, not_found: 0, errors: 0, done: true, contacts: freshQualified });
     }
@@ -264,7 +264,7 @@ export default async (request: Request) => {
           // Re-read contacts to return fresh data
           const freshContacts = await readAll("Contacts");
           const freshQualified = freshContacts.filter(
-            (c) => c.recherche_id === recherche_id && parseInt(c.score_total) >= 7
+            (c) => c.recherche_id === recherche_id && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
           );
 
           return json({

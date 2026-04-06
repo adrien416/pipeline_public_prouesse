@@ -111,7 +111,7 @@ export default async (request: Request) => {
     // Get all contacts
     const allContacts = await readAll("Contacts");
     const enriched = allContacts.filter(
-      (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+      (c) => c.recherche_id === recherche_id && c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
     );
 
     // Duplicate domain protection: find domains already contacted in other campaigns

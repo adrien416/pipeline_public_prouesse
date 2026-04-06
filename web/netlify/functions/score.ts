@@ -15,6 +15,14 @@ interface ScoreBody {
   custom_instructions?: string;
 }
 
+/** Returns the qualification threshold based on scoring_mode */
+export function isQualified(contact: Record<string, string>, scoringMode?: string): boolean {
+  if (scoringMode === "pertinence_only") {
+    return Number(contact.score_1) >= 4;
+  }
+  return Number(contact.score_total) >= 7;
+}
+
 function safeDomain(domaine: string): string {
   if (!domaine) return "";
   try {
@@ -51,19 +59,27 @@ async function fetchMetaDescription(domain: string): Promise<string> {
   }
 }
 
-function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, rechercheDescription: string): string {
+function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, rechercheDescription: string, scoringMode?: string): string {
   const host = safeDomain(contact.domaine);
-  return `Tu es un analyste B2B spécialisé en qualification de prospects.
+  const isPertinenceOnly = scoringMode === "pertinence_only";
 
-Contexte de la recherche : "${rechercheDescription}"
+  const criteria = isPertinenceOnly
+    ? `Évalue sur 1 critère :
+1. PERTINENCE (1-5) : l'entreprise correspond-elle bien au secteur/industrie recherché ?
+   1=aucun rapport avec la recherche
+   2=rapport indirect ou marginal
+   3=pertinence modérée (même industrie large mais activité différente)
+   4=bonne correspondance (même secteur, activité similaire)
+   5=correspondance parfaite (exactement le type d'entreprise recherché)
 
-Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
-Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
-Description du site : ${metaDesc || "Non disponible"}
+IMPORTANT : Exclure si l'entreprise est :
+- une association, charité, coopérative, organisme public, ONG
+- une banque d'affaires ou cabinet de conseil M&A
+- une filiale de grand groupe
 
-Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
-
-Évalue sur 2 critères :
+JSON uniquement :
+{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`
+    : `Évalue sur 2 critères :
 1. PERTINENCE (1-5) : l'entreprise correspond-elle bien au secteur/industrie recherché ?
    1=aucun rapport avec la recherche
    2=rapport indirect ou marginal
@@ -86,6 +102,18 @@ On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d
 
 JSON uniquement :
 {"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
+
+  return `Tu es un analyste B2B spécialisé en qualification de prospects.
+
+Contexte de la recherche : "${rechercheDescription}"
+
+Entreprise : ${contact.entreprise} (${contact.secteur || "secteur inconnu"}, ${host || "domaine inconnu"})
+Dirigeant : ${contact.prenom || ""} ${contact.nom || ""} — ${contact.titre || ""}
+Description du site : ${metaDesc || "Non disponible"}
+
+Si la description du site n'est pas disponible, utilise tes CONNAISSANCES sur l'entreprise pour l'évaluer. Tu connais la plupart des entreprises françaises. Si tu ne connais vraiment pas l'entreprise, donne un score neutre (2-3/5 par critère) avec raison "Entreprise inconnue, score estimé".
+
+${criteria}`;
 }
 
 function addCustomInstructions(prompt: string, instructions?: string): string {
@@ -237,7 +265,7 @@ export default async (request: Request) => {
       return json({
         total: searchContacts.length,
         scored: searchContacts.length,
-        qualified: searchContacts.filter((c) => Number(c.score_total) >= 7).length,
+        qualified: searchContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length,
         done: true,
         contacts: searchContacts,
       });
@@ -272,7 +300,7 @@ export default async (request: Request) => {
       return json({
         total: searchContacts.length,
         scored: searchContacts.length,
-        qualified: responseContacts.filter((c) => Number(c.score_total) >= 7).length,
+        qualified: responseContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length,
         done: true,
         contacts: responseContacts,
       });
@@ -342,7 +370,7 @@ export default async (request: Request) => {
     );
 
     const allScored = responseContacts.filter((c) => c.score_total !== "").length;
-    const qualified = responseContacts.filter((c) => Number(c.score_total) >= 7).length;
+    const qualified = responseContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length;
 
     return json({
       total: searchContacts.length,

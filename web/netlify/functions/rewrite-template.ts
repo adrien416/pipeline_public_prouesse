@@ -28,7 +28,7 @@ export default async (request: Request) => {
 
     const allContacts = await readAll("Contacts");
     const qualified = allContacts.filter(
-      (c) => c.recherche_id === recherche_id && c.email && parseInt(c.score_total) >= 7
+      (c) => c.recherche_id === recherche_id && c.email && (c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7)
     );
 
     // Take a sample of contacts for context (up to 5)

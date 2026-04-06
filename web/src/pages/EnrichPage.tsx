@@ -37,7 +37,10 @@ export function EnrichPage({ rechercheId, onComplete, onViewCampaign }: Props) {
   });
 
   const contactsList = contacts.data?.contacts || [];
-  const qualified = contactsList.filter((c) => parseInt(c.score_total) >= 7);
+  // Pertinence-only mode: score_2=0, qualify on score_1 >= 4
+  const qualified = contactsList.filter((c) =>
+    c.score_2 === "0" ? parseInt(c.score_1) >= 4 : parseInt(c.score_total) >= 7
+  );
   const campaignsList = existingCampaigns.data?.campaigns || [];
 
   // Compute live progress from contacts data

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Layout, type Tab } from "./components/Layout";
+import { InitialSetupPage } from "./pages/InitialSetupPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SetupWizardPage } from "./pages/SetupWizardPage";
 import { SearchPage } from "./pages/SearchPage";
@@ -10,7 +11,7 @@ import { EnrichPage } from "./pages/EnrichPage";
 import { CampaignPage } from "./pages/CampaignPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { Spinner } from "./components/Spinner";
-import { checkSetup } from "./api/client";
+import { checkSetup, getAppStatus } from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,6 +38,14 @@ function AppContent() {
   const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
   const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
   const [setupDone, setSetupDone] = useState<boolean | null>(null);
+  const [appConfigured, setAppConfigured] = useState<boolean | null>(null);
+
+  // Check if app is configured (unauthenticated — before login)
+  useEffect(() => {
+    getAppStatus()
+      .then((r) => setAppConfigured(r.configured))
+      .catch(() => setAppConfigured(true)); // If check fails, assume configured
+  }, []);
 
   // Persist state to localStorage
   useEffect(() => {
@@ -71,11 +80,22 @@ function AppContent() {
     }
   }
 
-  if (loading) {
+  if (loading || appConfigured === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Spinner className="h-8 w-8" />
       </div>
+    );
+  }
+
+  if (!appConfigured) {
+    return (
+      <InitialSetupPage
+        onComplete={() => {
+          setAppConfigured(true);
+          window.location.reload();
+        }}
+      />
     );
   }
 

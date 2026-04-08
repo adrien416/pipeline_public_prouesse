@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { APP_CONFIG } from "../config";
 import { ApiKeyInput } from "../components/ApiKeyInput";
 import { SetupProgress } from "../components/SetupProgress";
@@ -57,6 +57,32 @@ export function SetupWizardPage({ onComplete }: Props) {
   const updateStep = useCallback((id: string, state: StepState) => {
     setSteps((prev) => ({ ...prev, [id]: state }));
   }, []);
+
+  // Auto-load Netlify credentials from InitialSetupPage if available
+  useEffect(() => {
+    const savedToken = localStorage.getItem("netlify_setup_token");
+    const savedSiteId = localStorage.getItem("netlify_setup_site_id");
+    if (savedToken && savedSiteId) {
+      setNetlifyToken(savedToken);
+      setSelectedSiteId(savedSiteId);
+      updateStep("netlify", { status: "success", message: "Connecté via la configuration initiale" });
+      setActiveStep(1);
+      // Fetch sites list in background for display
+      fetch(`https://api.netlify.com/api/v1/sites?per_page=100`, {
+        headers: { Authorization: `Bearer ${savedToken}` },
+      })
+        .then((r) => r.ok ? r.json() : [])
+        .then((data) => {
+          const siteList = (data as Array<Record<string, unknown>>).map((s) => ({
+            id: s.id as string,
+            name: s.name as string,
+            url: (s.ssl_url || s.url) as string,
+          }));
+          setNetlifySites(siteList);
+        })
+        .catch(() => { /* ignore */ });
+    }
+  }, [updateStep]);
 
   const completedCount = Object.values(steps).filter((s) => s.status === "success").length;
 
@@ -401,12 +427,15 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "fullenrich" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          Fullenrich trouve les adresses email professionnelles de vos contacts.
+                          Fullenrich trouve les adresses email professionnelles de vos contacts.{" "}
+                          <a href="https://fullenrich.com?via=wDRTwS1HGWy5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                            Créer un compte Fullenrich
+                          </a>
                         </p>
                         <p className="text-xs text-gray-500">
                           Obtenez votre clé sur{" "}
                           <a href="https://app.fullenrich.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            fullenrich.com → Settings → API
+                            fullenrich.com &rarr; Settings &rarr; API
                           </a>
                         </p>
                         <ApiKeyInput value={fullenrichKey} onChange={setFullenrichKey} placeholder="Votre clé API Fullenrich" />

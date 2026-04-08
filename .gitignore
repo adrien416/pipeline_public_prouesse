@@ -37,3 +37,6 @@ web/blob-report/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Netlify folder
+.netlify

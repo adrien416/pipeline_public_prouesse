@@ -9,7 +9,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { recherche_id, action, custom_instructions, scoring_mode } = await request.json();
+    const { recherche_id, action, custom_instructions, scoring_mode, scoring_criteria_prompt } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     const found = await findRowById("Recherches", recherche_id);
@@ -30,7 +30,8 @@ export default async (request: Request) => {
       ...found.data,
       scoring_status: "active",
       scoring_instructions: custom_instructions || "",
-      scoring_mode: scoring_mode || "impact", // "impact" (default) or "pertinence_only"
+      scoring_mode: scoring_mode || "pertinence_only",
+      scoring_criteria_prompt: scoring_criteria_prompt || "",
     }));
 
     return json({ ok: true, scoring_status: "active" });

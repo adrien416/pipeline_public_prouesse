@@ -43,7 +43,7 @@ vi.mock("../netlify/functions/_sheets.js", () => ({
 
 // ─── Mock _auth ───
 vi.mock("../netlify/functions/_auth.js", () => ({
-  requireAuth: () => ({ userId: "admin", email: "adrien@prouesse.vc", role: "admin", nom: "Admin" }),
+  requireAuth: () => ({ userId: "admin", email: "test@example.com", role: "admin", nom: "Admin" }),
   json: (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -229,7 +229,6 @@ describe("score handler — scores one contact", () => {
 
     expect(promptContent).toContain("entreprises d'agritech durable");
     expect(promptContent).toContain("PERTINENCE");
-    expect(promptContent).toContain("IMPACT");
     expect(promptContent).not.toContain("SCALABILITÉ");
     expect(promptContent).not.toContain("POTENTIEL DE CESSION");
   });

@@ -29,14 +29,14 @@ async function sendCompletionNotification(
       method: "POST",
       headers: { "api-key": brevoKey, "Content-Type": "application/json" },
       body: JSON.stringify({
-        sender: { name: "Prouesse Pipeline", email: senderEmail },
+        sender: { name: senderName || "Pipeline", email: senderEmail },
         to: [{ email: senderEmail, name: senderName }],
         subject: `Campagne terminée : ${campaignName}`,
         htmlContent: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;color:#1a1a1a;">
 <h2 style="margin:0 0 16px;">Campagne terminée</h2>
 <p><strong>${campaignName}</strong></p>
 <p>${totalSent} emails envoyés.</p>
-<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Voir les analytics →</a></p>
+<p style="margin-top:16px;"><a href="${process.env.URL || ""}" style="color:#2563eb;">Voir les analytics →</a></p>
 <p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
 </body></html>`,
       }),
@@ -82,17 +82,14 @@ async function generatePhrase(contact: Record<string, string>): Promise<string> 
           role: "user",
           content: `Genere une phrase d'accroche personnalisee pour un email de prospection B2B.
 
-CONTEXTE DU MAIL : L'email parle ensuite de Levaia.fr (valorisation automatique d'entreprise) et de Prouesse (accompagnement des dirigeants a impact : levee, cession, croissance externe). La phrase d'accroche doit AMENER NATURELLEMENT vers ces sujets.
-
 Contact : ${contact.titre} chez ${contact.entreprise}
 Secteur : ${contact.secteur}
 
 Regles STRICTES :
 - NE MENTIONNE JAMAIS le prenom ou le nom du contact
-- NE MENTIONNE PAS Levaia ni Prouesse (c'est dans la suite du mail)
 - Commence directement par le contenu (ex: "En tant que...", "Ton entreprise...", "Dans un secteur comme...")
 - La phrase doit etre SPECIFIQUE au contact : mentionne son titre, son entreprise ou son secteur
-- Elle doit creer un lien logique vers le sujet de la valorisation d'entreprise ou du developpement strategique
+- Elle doit creer un lien logique vers le sujet de l'email qui suit
 - 1-2 phrases max, ton professionnel mais humain, tutoiement
 - Pas de cliche, pas de formules generiques, pas d'invention de faits
 - N'invente PAS de chiffres ou de faits sur l'entreprise
@@ -132,8 +129,8 @@ export default async (request: Request) => {
     if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
 
     // Per-user sender identity
-    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-    const senderName = auth.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "";
 
     // Ensure sheet headers are clean before reading
     const campagneHeaders = await getHeadersForWrite("Campagnes", CAMPAGNES_HEADERS);

@@ -18,13 +18,13 @@ describe("verifyLogin", () => {
   });
 
   it("returns null for wrong password", async () => {
-    expect(await verifyLogin("adrien@prouesse.vc", "wrongpassword")).toBeNull();
+    expect(await verifyLogin("test@example.com", "wrongpassword")).toBeNull();
   });
 
   it("is case-insensitive on email", async () => {
     // Can't test valid login without knowing the password, but we can test case
-    const result1 = await verifyLogin("ADRIEN@PROUESSE.VC", "wrong");
-    const result2 = await verifyLogin("adrien@prouesse.vc", "wrong");
+    const result1 = await verifyLogin("TEST@EXAMPLE.COM", "wrong");
+    const result2 = await verifyLogin("test@example.com", "wrong");
     // Both should fail with wrong password (not fail on email check)
     expect(result1).toBeNull();
     expect(result2).toBeNull();
@@ -116,13 +116,13 @@ describe("requireAuth", () => {
   });
 
   it("returns user object for valid token", () => {
-    const token = jwt.sign({ email: "adrien@prouesse.vc" }, JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ email: "test@example.com" }, JWT_SECRET, { expiresIn: "1h" });
     const req = new Request("http://localhost/api/test", {
       headers: { cookie: `auth_token=${token}` },
     });
     const result = requireAuth(req);
     expect(result).not.toBeInstanceOf(Response);
-    expect((result as { email: string }).email).toBe("adrien@prouesse.vc");
+    expect((result as { email: string }).email).toBe("test@example.com");
   });
 });
 

@@ -30,7 +30,7 @@ async function sendScoringNotification(
 <h2 style="margin:0 0 16px;">Scoring terminé</h2>
 <p>Recherche : <strong>${description}</strong></p>
 <p>${scored} contacts scorés — <strong>${qualified} qualifiés</strong> (>= 7/10)</p>
-<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Voir les résultats →</a></p>
+<p style="margin-top:16px;"><a href="${process.env.URL || ""}" style="color:#2563eb;">Voir les résultats →</a></p>
 <p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
 </body></html>`,
       }),
@@ -57,7 +57,7 @@ export default async () => {
     const rechHeaders = await getHeadersForWrite("Recherches", RECHERCHES_HEADERS);
 
     // Look up sender email from Users sheet
-    let senderEmail = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+    let senderEmail = process.env.SENDER_EMAIL || "";
     try {
       const users = await readAll("Users");
       for (const r of activeScoring) {
@@ -163,26 +163,22 @@ export default async () => {
             } catch { /* ignore */ }
           }
 
-          const isPertinenceOnly = recherche.scoring_mode === "pertinence_only";
-          const scoringCriteria = isPertinenceOnly
-            ? `Évalue sur 1 critère :
+          const hasCustomCriteria = recherche.scoring_mode === "custom" && recherche.scoring_criteria_prompt;
+          const scoringCriteria = hasCustomCriteria
+            ? `Évalue sur 2 critères :
+1. PERTINENCE (1-5) : correspondance avec le secteur recherché
+   1=aucun rapport, 2=indirect, 3=modérée, 4=bonne correspondance, 5=parfaite
+2. CRITÈRE PERSONNALISÉ (1-5) : ${recherche.scoring_criteria_prompt}
+   Évalue de 1 (ne correspond pas du tout) à 5 (correspond parfaitement).
+
+JSON uniquement :
+{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`
+            : `Évalue sur 1 critère :
 1. PERTINENCE (1-5) : correspondance avec le secteur recherché
    1=aucun rapport, 2=indirect, 3=modérée, 4=bonne correspondance, 5=parfaite
 
-IMPORTANT : exclure si : association, coopérative, organisme public, ONG, filiale grand groupe, cabinet M&A.
-
 JSON uniquement :
-{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`
-            : `Évalue sur 2 critères :
-1. PERTINENCE (1-5) : correspondance avec le secteur recherché
-   1=aucun rapport, 3=modérée, 5=parfaite
-2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable
-   1=aucun, 3=modéré (éducation, santé), 5=transformateur (dépollution, reforestation)
-
-IMPORTANT : score total <= 3 si : association, coopérative, organisme public, ONG, filiale grand groupe, cabinet M&A.
-
-JSON uniquement :
-{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
+{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`;
 
           const prompt = `Tu es un analyste B2B spécialisé en qualification de prospects.
 

@@ -190,7 +190,7 @@ export async function loginAndSetup(page: Page) {
   await page.goto("/");
 
   // Fill login form
-  await page.getByPlaceholder("adrien@prouesse.vc").fill("adrien@prouesse.vc");
+  await page.getByPlaceholder("votre@email.com").fill("votre@email.com");
   await page.locator('input[type="password"]').fill("testpassword");
 
   // Before clicking, re-route credits to succeed (after login, AuthContext will re-check)

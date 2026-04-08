@@ -67,14 +67,11 @@ const DEFAULT_TEMPLATE = `Bonjour {Prenom},
 
 {Phrase}
 
-On a créé Levaia (levaia.fr) — tu rentres le nom de ton entreprise et tu obtiens une valorisation instantanée, gratuitement.
+On accompagne les dirigeants comme toi sur leurs enjeux de développement — que ce soit une levée, une croissance externe ou simplement structurer la suite.
 
-Chez Prouesse (prouesse.vc), on utilise ça comme point de départ pour accompagner les dirigeants à impact sur leurs prochaines étapes (levée, cession, croissance externe).
+Est-ce que ça te parlerait d'en discuter pour {Entreprise} ?
 
-Curieux de voir ce que ça donne pour {Entreprise} ?
-https://meetings-eu1.hubspot.com/adrien-pannetier
-
-Adrien`;
+Bonne journée`;
 
 const DAYS = [
   { id: "lun", label: "Lun" },
@@ -86,11 +83,7 @@ const DAYS = [
   { id: "dim", label: "Dim" },
 ];
 
-const TEST_EMAILS = [
-  "adrien@lina.finance",
-  "phorrito@gmail.com",
-  "adpannetier@gmail.com",
-];
+const TEST_EMAILS: string[] = [];
 
 export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Props) {
   const qc = useQueryClient();
@@ -1364,7 +1357,7 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
               </div>
 
               <div className="bg-blue-50 rounded-lg px-4 py-2 text-xs text-blue-700">
-                Au maximum {maxParJour} emails envoyés par jour depuis adrien@prouesse.vc
+                Au maximum {maxParJour} emails envoyés par jour
               </div>
 
               <button

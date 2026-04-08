@@ -3,12 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Layout, type Tab } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
+import { SetupWizardPage } from "./pages/SetupWizardPage";
 import { SearchPage } from "./pages/SearchPage";
 import { ScoringPage } from "./pages/ScoringPage";
 import { EnrichPage } from "./pages/EnrichPage";
 import { CampaignPage } from "./pages/CampaignPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { Spinner } from "./components/Spinner";
+import { checkSetup } from "./api/client";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +23,7 @@ const queryClient = new QueryClient({
 
 function loadSavedState() {
   try {
-    const saved = localStorage.getItem("prouesse_session");
+    const saved = localStorage.getItem("pipeline_session");
     if (saved) return JSON.parse(saved);
   } catch { /* ignore */ }
   return null;
@@ -34,13 +36,27 @@ function AppContent() {
   const [tab, setTab] = useState<Tab>(saved?.tab || "search");
   const [rechercheId, setRechercheId] = useState<string | null>(saved?.rechercheId || null);
   const [campaignId, setCampaignId] = useState<string | null>(saved?.campaignId || null);
+  const [setupDone, setSetupDone] = useState<boolean | null>(null);
 
   // Persist state to localStorage
   useEffect(() => {
-    localStorage.setItem("prouesse_session", JSON.stringify({
+    localStorage.setItem("pipeline_session", JSON.stringify({
       tab, rechercheId, campaignId,
     }));
   }, [tab, rechercheId, campaignId]);
+
+  // Check if setup is complete after login
+  useEffect(() => {
+    if (!authenticated) return;
+    // If user explicitly completed setup, skip the check
+    if (localStorage.getItem("pipeline_setup_done") === "true") {
+      setSetupDone(true);
+      return;
+    }
+    checkSetup()
+      .then((r) => setSetupDone(r.configured))
+      .catch(() => setSetupDone(true)); // If check fails, assume configured
+  }, [authenticated]);
 
   function goTo(target: Tab) {
     setTab(target);
@@ -64,6 +80,25 @@ function AppContent() {
   }
 
   if (!authenticated) return <LoginPage />;
+
+  if (setupDone === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (!setupDone) {
+    return (
+      <SetupWizardPage
+        onComplete={() => {
+          localStorage.setItem("pipeline_setup_done", "true");
+          setSetupDone(true);
+        }}
+      />
+    );
+  }
 
   return (
     <Layout activeTab={tab} onTabChange={setTab}>

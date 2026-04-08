@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { APP_CONFIG } from "../config";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -18,17 +19,17 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f1117] px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0f1117] px-4">
       <div className="w-full max-w-sm">
         <div className="bg-[#161822] rounded-2xl shadow-2xl shadow-black/50 border border-white/5 p-8">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">P</span>
+              <span className="text-white font-bold text-lg">{APP_CONFIG.logoLetter}</span>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Prouesse</h1>
-              <p className="text-xs text-gray-500">Pipeline de prospection</p>
+              <h1 className="text-xl font-bold text-white tracking-tight">{APP_CONFIG.name}</h1>
+              <p className="text-xs text-gray-500">{APP_CONFIG.tagline}</p>
             </div>
           </div>
 
@@ -40,7 +41,7 @@ export function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="adrien@prouesse.vc"
+                placeholder="votre@email.com"
                 required
               />
             </div>
@@ -69,6 +70,14 @@ export function LoginPage() {
           </form>
         </div>
       </div>
+
+      {/* Footer */}
+      <p className="mt-6 text-xs text-gray-600">
+        {APP_CONFIG.brandLine} &middot;{" "}
+        <a href={`mailto:${APP_CONFIG.supportEmail}`} className="text-gray-500 hover:text-gray-400 transition-colors">
+          {APP_CONFIG.supportEmail}
+        </a>
+      </p>
     </div>
   );
 }

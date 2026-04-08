@@ -5,8 +5,8 @@ import { readAll, USERS_HEADERS, getHeadersForWrite } from "./_sheets.js";
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
 
-// Fallback env-var auth (backward compat when Users sheet is empty)
-const FALLBACK_EMAIL = process.env.LOGIN_EMAIL || "adrien@prouesse.vc";
+// Fallback env-var auth (when Users sheet is empty)
+const FALLBACK_EMAIL = process.env.LOGIN_EMAIL || "";
 const FALLBACK_HASH = process.env.LOGIN_PASSWORD_HASH;
 
 export interface UserContext {
@@ -62,7 +62,7 @@ export async function verifyLogin(
   }
 
   // Fallback: single-user env vars
-  if (!FALLBACK_HASH) return null;
+  if (!FALLBACK_HASH || !FALLBACK_EMAIL) return null;
   if (email.toLowerCase() !== FALLBACK_EMAIL.toLowerCase()) return null;
   if (!bcrypt.compareSync(password, FALLBACK_HASH)) return null;
 
@@ -71,8 +71,8 @@ export async function verifyLogin(
     email: FALLBACK_EMAIL,
     role: "admin",
     nom: process.env.SENDER_NAME || "Admin",
-    senderEmail: process.env.SENDER_EMAIL || FALLBACK_EMAIL,
-    senderName: process.env.SENDER_NAME || "Admin",
+    senderEmail: process.env.SENDER_EMAIL || FALLBACK_EMAIL || "",
+    senderName: process.env.SENDER_NAME || "",
   };
   const token = jwt.sign(
     {

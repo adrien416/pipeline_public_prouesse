@@ -94,10 +94,10 @@ export function launchSearch(params: SearchParams) {
 }
 
 // ─── Score ───
-export function startBackgroundScoring(recherche_id: string, custom_instructions?: string, scoring_mode?: "impact" | "pertinence_only") {
+export function startBackgroundScoring(recherche_id: string, custom_instructions?: string, scoring_mode?: "custom" | "pertinence_only", scoring_criteria_prompt?: string) {
   return request<{ ok: boolean; scoring_status: string }>("/score-start", {
     method: "POST",
-    body: JSON.stringify({ recherche_id, custom_instructions, scoring_mode }),
+    body: JSON.stringify({ recherche_id, custom_instructions, scoring_mode, scoring_criteria_prompt }),
   });
 }
 
@@ -241,6 +241,29 @@ export function triggerSend(campagne_id: string, force = false) {
   return request<{ sent: number; remaining: number; error?: string; skipped_domain?: string }>("/send", {
     method: "POST",
     body: JSON.stringify({ campagne_id, force }),
+  });
+}
+
+// ─── Setup ───
+export function checkSetup() {
+  return request<{
+    configured: boolean;
+    checks: {
+      anthropic: boolean;
+      fullenrich: boolean;
+      brevo: boolean;
+      google_sheets: boolean;
+    };
+  }>("/setup-check");
+}
+
+export function netlifyProxy(action: string, data?: Record<string, unknown>, netlifyToken?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (netlifyToken) headers["X-Netlify-Token"] = netlifyToken;
+  return request<Record<string, unknown>>(`/netlify-proxy?action=${action}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(data || {}),
   });
 }
 

@@ -13,3 +13,15 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+[template.environment]
+  ANTHROPIC_API_KEY = "Votre clé API Anthropic (Claude)"
+  FULLENRICH_API_KEY = "Votre clé API Fullenrich"
+  BREVO_API_KEY = "Votre clé API Brevo"
+  GOOGLE_SERVICE_ACCOUNT_KEY = "Clé Google Service Account en base64"
+  GOOGLE_SHEETS_ID = "ID de votre Google Spreadsheet"
+  JWT_SECRET = "Un secret aléatoire (ex: openssl rand -hex 32)"
+  LOGIN_EMAIL = "Votre email de connexion"
+  LOGIN_PASSWORD_HASH = "Hash bcrypt de votre mot de passe"
+  SENDER_EMAIL = "Email expéditeur"
+  SENDER_NAME = "Nom expéditeur"

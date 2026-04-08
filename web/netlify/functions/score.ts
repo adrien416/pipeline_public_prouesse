@@ -17,10 +17,11 @@ interface ScoreBody {
 
 /** Returns the qualification threshold based on scoring_mode */
 export function isQualified(contact: Record<string, string>, scoringMode?: string): boolean {
-  if (scoringMode === "pertinence_only") {
-    return Number(contact.score_1) >= 4;
+  if (scoringMode === "custom") {
+    return Number(contact.score_total) >= 7;
   }
-  return Number(contact.score_total) >= 7;
+  // Default: pertinence only
+  return Number(contact.score_1) >= 4;
 }
 
 function safeDomain(domaine: string): string {
@@ -59,12 +60,12 @@ async function fetchMetaDescription(domain: string): Promise<string> {
   }
 }
 
-function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, rechercheDescription: string, scoringMode?: string): string {
+function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, rechercheDescription: string, scoringMode?: string, customCriteriaPrompt?: string): string {
   const host = safeDomain(contact.domaine);
-  const isPertinenceOnly = scoringMode === "pertinence_only";
+  const hasSecondCriteria = scoringMode === "custom" && customCriteriaPrompt;
 
-  const criteria = isPertinenceOnly
-    ? `Évalue sur 1 critère :
+  const criteria = hasSecondCriteria
+    ? `Évalue sur 2 critères :
 1. PERTINENCE (1-5) : l'entreprise correspond-elle bien au secteur/industrie recherché ?
    1=aucun rapport avec la recherche
    2=rapport indirect ou marginal
@@ -72,14 +73,12 @@ function buildScoringPrompt(contact: Record<string, string>, metaDesc: string, r
    4=bonne correspondance (même secteur, activité similaire)
    5=correspondance parfaite (exactement le type d'entreprise recherché)
 
-IMPORTANT : Exclure si l'entreprise est :
-- une association, charité, coopérative, organisme public, ONG
-- une banque d'affaires ou cabinet de conseil M&A
-- une filiale de grand groupe
+2. CRITÈRE PERSONNALISÉ (1-5) : ${customCriteriaPrompt}
+   Évalue de 1 (ne correspond pas du tout) à 5 (correspond parfaitement).
 
 JSON uniquement :
-{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`
-    : `Évalue sur 2 critères :
+{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`
+    : `Évalue sur 1 critère :
 1. PERTINENCE (1-5) : l'entreprise correspond-elle bien au secteur/industrie recherché ?
    1=aucun rapport avec la recherche
    2=rapport indirect ou marginal
@@ -87,21 +86,8 @@ JSON uniquement :
    4=bonne correspondance (même secteur, activité similaire)
    5=correspondance parfaite (exactement le type d'entreprise recherché)
 
-2. IMPACT SOCIAL & ENVIRONNEMENTAL (1-5) : impact positif mesurable ?
-   1=aucun impact (consulting généraliste, immobilier classique)
-   2=impact indirect ou marginal
-   3=contribution positive modérée (éducation, santé, alimentation saine, mobilité douce, économie circulaire)
-   4=impact significatif et mesurable (cleantech, énergies renouvelables, agriculture durable, inclusion sociale)
-   5=impact transformateur sur un enjeu majeur (dépollution, reforestation, accès à l'eau)
-
-IMPORTANT : Donne un score total <= 3 (non qualifié) si l'entreprise est :
-- une association, charité, coopérative, organisme public, ONG
-- une banque d'affaires ou cabinet de conseil M&A
-- une filiale de grand groupe (ex: RATP Solutions Ville, Engie Green, EDF Renouvelables...)
-On cherche des entreprises indépendantes avec des fondateurs. Les entreprises d'éducation/formation SONT acceptées.
-
 JSON uniquement :
-{"pertinence": <1-5>, "impact": <1-5>, "raison": "<2-3 phrases>"}`;
+{"pertinence": <1-5>, "impact": 0, "raison": "<2-3 phrases>"}`;
 
   return `Tu es un analyste B2B spécialisé en qualification de prospects.
 
@@ -146,11 +132,13 @@ async function scoreContact(
   rechercheDescription: string,
   allContacts?: Record<string, string>[],
   customInstructions?: string,
+  scoringMode?: string,
+  customCriteriaPrompt?: string,
 ): Promise<{ score_1: number; score_2: number; score_total: number; raison: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non définie — ajoute-la dans les variables d'environnement Netlify");
 
-  const basePrompt = buildScoringPrompt(contact, metaDesc, rechercheDescription);
+  const basePrompt = buildScoringPrompt(contact, metaDesc, rechercheDescription, scoringMode, customCriteriaPrompt);
 
   const feedbackContext = allContacts ? buildFeedbackContext(allContacts) : "";
   const prompt = addCustomInstructions(basePrompt + feedbackContext, customInstructions);
@@ -265,7 +253,7 @@ export default async (request: Request) => {
       return json({
         total: searchContacts.length,
         scored: searchContacts.length,
-        qualified: searchContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length,
+        qualified: searchContacts.filter((c) => isQualified(c, recherche?.data?.scoring_mode)).length,
         done: true,
         contacts: searchContacts,
       });
@@ -300,7 +288,7 @@ export default async (request: Request) => {
       return json({
         total: searchContacts.length,
         scored: searchContacts.length,
-        qualified: responseContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length,
+        qualified: responseContacts.filter((c) => isQualified(c, recherche?.data?.scoring_mode)).length,
         done: true,
         contacts: responseContacts,
       });
@@ -332,7 +320,9 @@ export default async (request: Request) => {
       };
     } else {
       const metaDesc = await fetchMetaDescription(contact.domaine);
-      scores = await scoreContact(contact, metaDesc, rechercheDescription, allContacts, body.custom_instructions);
+      const scoringMode = recherche.data.scoring_mode || "pertinence_only";
+      const criteriaPrompt = recherche.data.scoring_criteria_prompt || "";
+      scores = await scoreContact(contact, metaDesc, rechercheDescription, allContacts, body.custom_instructions, scoringMode, criteriaPrompt);
     }
 
     // Apply score to this contact AND all unscored contacts from the same company
@@ -370,7 +360,7 @@ export default async (request: Request) => {
     );
 
     const allScored = responseContacts.filter((c) => c.score_total !== "").length;
-    const qualified = responseContacts.filter((c) => (c.score_2 === "0" ? Number(c.score_1) >= 4 : Number(c.score_total) >= 7)).length;
+    const qualified = responseContacts.filter((c) => isQualified(c, recherche?.data?.scoring_mode)).length;
 
     return json({
       total: searchContacts.length,

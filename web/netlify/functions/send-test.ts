@@ -35,8 +35,8 @@ export default async (request: Request) => {
     const brevoKey = process.env.BREVO_API_KEY;
     if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
 
-    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-    const senderName = auth.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "";
 
     const campFound = await findRowById("Campagnes", campagne_id);
     if (!campFound) return json({ error: "Campagne introuvable" }, 404);

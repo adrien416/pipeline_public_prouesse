@@ -4,7 +4,6 @@
  */
 
 import { google, sheets_v4 } from "googleapis";
-import { decryptGoogleKey } from "./_google-key.js";
 
 let sheetsClient: sheets_v4.Sheets | null = null;
 
@@ -28,19 +27,11 @@ function colLetter(n: number): string {
 }
 
 function getAuth() {
-  // Option 1: env var base64 (backward compat)
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (b64) {
-    const credentials = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
-    return new google.auth.GoogleAuth({
-      credentials,
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
+  if (!b64) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY non définie — ajoutez la clé du service account Google encodée en base64 dans les variables d'environnement Netlify");
   }
-
-  // Option 2: clé chiffrée dans le code, déchiffrée avec GOOGLE_KEY_PASSPHRASE
-  const keyJson = decryptGoogleKey();
-  const credentials = JSON.parse(keyJson);
+  const credentials = JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
@@ -408,7 +399,7 @@ export const CONTACTS_HEADERS = [
 
 export const RECHERCHES_HEADERS = [
   "id", "description", "mode", "filtres_json", "nb_resultats", "date",
-  "user_id", "scoring_status", "scoring_instructions", "scoring_mode",
+  "user_id", "scoring_status", "scoring_instructions", "scoring_mode", "scoring_criteria_prompt",
 ];
 
 export const CAMPAGNES_HEADERS = [

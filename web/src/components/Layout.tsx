@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CreditsDisplay } from "./CreditsDisplay";
 import { useAuth } from "../contexts/AuthContext";
+import { APP_CONFIG } from "../config";
 
 export type Tab = "search" | "scoring" | "enrich" | "campaign" | "analytics";
 
@@ -22,7 +23,7 @@ export function Layout({ children, activeTab, onTabChange }: Props) {
   const { logout, user } = useAuth();
 
   return (
-    <div className="min-h-screen bg-[#0f1117]">
+    <div className="min-h-screen bg-[#0f1117] flex flex-col">
       {/* Demo banner */}
       {user?.role === "demo" && (
         <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-4 py-2 text-center text-sm text-yellow-400">
@@ -33,14 +34,12 @@ export function Layout({ children, activeTab, onTabChange }: Props) {
       <header className="bg-[#161822] border-b border-white/5 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Logo Prouesse */}
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">P</span>
+                <span className="text-white font-bold text-sm">{APP_CONFIG.logoLetter}</span>
               </div>
               <div>
-                <span className="text-base font-bold text-white tracking-tight">Prouesse</span>
-                <span className="text-[10px] text-gray-500 ml-1.5 font-medium">Pipeline</span>
+                <span className="text-base font-bold text-white tracking-tight">{APP_CONFIG.name}</span>
               </div>
             </div>
           </div>
@@ -92,7 +91,13 @@ export function Layout({ children, activeTab, onTabChange }: Props) {
           </nav>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+      <main className="max-w-7xl mx-auto px-4 py-6 flex-1">{children}</main>
+      <footer className="border-t border-white/5 py-3 text-center text-xs text-gray-600">
+        {APP_CONFIG.brandLine} &middot;{" "}
+        <a href={`mailto:${APP_CONFIG.supportEmail}`} className="text-gray-500 hover:text-gray-400 transition-colors">
+          Contact
+        </a>
+      </footer>
     </div>
   );
 }

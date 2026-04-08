@@ -42,7 +42,7 @@ async function sendEnrichNotification(
 <h2 style="margin:0 0 16px;">Enrichissement terminé</h2>
 <p>Recherche : <strong>${description}</strong></p>
 <p>${enriched} emails trouvés sur ${total} contacts qualifiés.</p>
-<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Créer une campagne →</a></p>
+<p style="margin-top:16px;"><a href="${process.env.URL || ""}" style="color:#2563eb;">Créer une campagne →</a></p>
 <p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
 </body></html>`,
       }),
@@ -195,7 +195,7 @@ export default async () => {
         );
         if (stillPending.length === 0) {
           const brevoKey = process.env.BREVO_API_KEY;
-          const senderEmail = process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+          const senderEmail = process.env.SENDER_EMAIL || "";
           const recherches = await readAll("Recherches");
           const recherche = recherches.find((r) => r.id === rechercheId);
           const totalQualified = allForRecherche.length;

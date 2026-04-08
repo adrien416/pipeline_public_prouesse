@@ -72,7 +72,7 @@ REGLES STRICTES :
 - Termine par une question ouverte simple pour obtenir une reponse
 - Pas d'emojis, pas de bullet points
 - L'objet doit etre court, naturel, et peut utiliser {Entreprise}
-- Signe "Adrien" a la fin
+- Signe avec le prenom de l'expediteur a la fin
 ${instructions ? `\nINSTRUCTIONS SUPPLEMENTAIRES DE L'UTILISATEUR :\n${instructions}\n` : ""}
 Reponds UNIQUEMENT en JSON valide :
 {"sujet": "<nouvel objet>", "corps": "<nouveau corps>"}`,

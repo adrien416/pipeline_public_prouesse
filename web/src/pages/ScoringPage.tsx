@@ -115,7 +115,8 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
-  const [includeImpact, setIncludeImpact] = useState(true);
+  const [useCustomCriteria, setUseCustomCriteria] = useState(false);
+  const [criteriaPrompt, setCriteriaPrompt] = useState("");
 
   const contacts = useQuery({
     queryKey: ["contacts", rechercheId],
@@ -129,7 +130,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
     if (!contacts.data?.contacts) return;
     const list = contacts.data.contacts;
     const scoredCount = list.filter((c: Record<string, string>) => c.score_total !== "").length;
-    const qualifiedCount = includeImpact
+    const qualifiedCount = useCustomCriteria
       ? list.filter((c: Record<string, string>) => Number(c.score_total) >= 7).length
       : list.filter((c: Record<string, string>) => Number(c.score_1) >= 4).length;
     const total = list.length;
@@ -148,13 +149,14 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
       await startBackgroundScoring(
         rechercheId,
         customInstructions || undefined,
-        includeImpact ? "impact" : "pertinence_only",
+        useCustomCriteria ? "custom" : "pertinence_only",
+        useCustomCriteria ? criteriaPrompt : undefined,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de scoring");
       setScoring(false);
     }
-  }, [rechercheId, customInstructions, includeImpact]);
+  }, [rechercheId, customInstructions, useCustomCriteria, criteriaPrompt]);
 
   const stopScoring = useCallback(async () => {
     try {
@@ -219,7 +221,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
   }
 
   const contactsList = contacts.data?.contacts || [];
-  const qualifiedCount = includeImpact
+  const qualifiedCount = useCustomCriteria
     ? contactsList.filter((c) => parseInt(c.score_total) >= 7).length
     : contactsList.filter((c) => parseInt(c.score_1) >= 4).length;
 
@@ -231,7 +233,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
         <div>
           <h2 className="text-xl font-bold text-gray-900">2. Scoring IA</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {includeImpact ? "Pertinence + Impact (seuil >= 7/10)" : "Pertinence seule (seuil >= 4/5)"} — scoring en arrière-plan
+            {useCustomCriteria ? "Pertinence + Critère personnalisé (seuil >= 7/10)" : "Pertinence seule (seuil >= 4/5)"} — scoring en arrière-plan
           </p>
         </div>
       </div>
@@ -332,14 +334,14 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
           {showPromptEditor && (
             <div className="px-4 pb-4 space-y-3">
               <p className="text-xs text-gray-500">
-                Le scoring évalue chaque contact sur <strong>Pertinence</strong> (1-5) et <strong>Impact social/environnemental</strong> (1-5).
-                Ajoute des instructions pour guider l'IA (ex: secteurs à privilégier, critères supplémentaires...).
+                Le scoring évalue chaque contact sur <strong>Pertinence</strong> (1-5) par rapport à votre recherche.
+                Vous pouvez ajouter un 2ème critère personnalisé et/ou des instructions supplémentaires.
               </p>
               <textarea
                 value={customInstructions}
                 onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="Ex: Privilégie les entreprises qui font du B2B, donne un score d'impact plus élevé aux entreprises dans l'éducation, sois plus strict sur la pertinence..."
-                rows={3}
+                placeholder="Ex: Privilégie les entreprises qui font du B2B, sois plus strict sur la pertinence..."
+                rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
               />
               {customInstructions && (
@@ -351,29 +353,58 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                 </button>
               )}
 
-              {/* Impact toggle */}
-              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                <div>
-                  <span className="text-sm text-gray-700">Inclure le critère Impact</span>
-                  <p className="text-xs text-gray-400">
-                    {includeImpact
-                      ? "Pertinence + Impact = total /10, seuil >= 7"
-                      : "Pertinence seule /5, seuil >= 4"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIncludeImpact(!includeImpact)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    includeImpact ? "bg-blue-600" : "bg-gray-300"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      includeImpact ? "translate-x-6" : "translate-x-1"
+              {/* Custom criteria toggle */}
+              <div className="pt-2 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-gray-700">Ajouter un 2ème critère de scoring</span>
+                    <p className="text-xs text-gray-400">
+                      {useCustomCriteria
+                        ? "Pertinence + Critère personnalisé = total /10, seuil >= 7"
+                        : "Pertinence seule /5, seuil >= 4"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUseCustomCriteria(!useCustomCriteria)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      useCustomCriteria ? "bg-blue-600" : "bg-gray-300"
                     }`}
-                  />
-                </button>
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        useCustomCriteria ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {useCustomCriteria && (
+                  <div className="space-y-2">
+                    <textarea
+                      value={criteriaPrompt}
+                      onChange={(e) => setCriteriaPrompt(e.target.value)}
+                      placeholder="Décrivez votre critère (ex: impact social et environnemental positif, taille PME uniquement, potentiel de croissance...)"
+                      rows={2}
+                      className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: "Impact social & environnemental", prompt: "Impact social et environnemental positif mesurable : 1=aucun impact, 3=contribution modérée (éducation, santé, économie circulaire), 5=impact transformateur (dépollution, reforestation, accès à l'eau)" },
+                        { label: "PME uniquement", prompt: "L'entreprise est une PME indépendante (pas une filiale de grand groupe, pas une association/ONG, pas un cabinet de conseil) : 1=grand groupe/filiale, 3=ETI, 5=PME indépendante avec fondateur" },
+                        { label: "Potentiel de croissance", prompt: "Potentiel de croissance et de développement de l'entreprise : 1=marché saturé/en déclin, 3=croissance stable, 5=forte croissance dans un marché porteur" },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          onClick={() => setCriteriaPrompt(preset.prompt)}
+                          className="text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -431,7 +462,7 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                   <tr
                     key={c.id}
                     className={`border-t border-gray-100 ${
-                      scored && (includeImpact ? total < 7 : s1 < 4) ? "opacity-40" : ""
+                      scored && (useCustomCriteria ? total < 7 : s1 < 4) ? "opacity-40" : ""
                     } ${isSaving ? "bg-blue-50/50" : ""}`}
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">

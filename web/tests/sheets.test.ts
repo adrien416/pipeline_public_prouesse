@@ -13,18 +13,18 @@ describe("toRow", () => {
   it("maps object to array in header order", () => {
     const obj = { id: "123", description: "test", mode: "cession", filtres_json: "{}", nb_resultats: "5", date: "2024-01-01" };
     const row = toRow(RECHERCHES_HEADERS, obj);
-    expect(row).toEqual(["123", "test", "cession", "{}", "5", "2024-01-01", "", "", "", ""]);
+    expect(row).toEqual(["123", "test", "cession", "{}", "5", "2024-01-01", "", "", "", "", ""]);
   });
 
   it("fills missing keys with empty string", () => {
     const obj = { id: "123", description: "test" };
     const row = toRow(RECHERCHES_HEADERS, obj);
-    expect(row).toEqual(["123", "test", "", "", "", "", "", "", "", ""]);
+    expect(row).toEqual(["123", "test", "", "", "", "", "", "", "", "", ""]);
   });
 
   it("handles empty object", () => {
     const row = toRow(RECHERCHES_HEADERS, {});
-    expect(row).toEqual(["", "", "", "", "", "", "", "", "", ""]);
+    expect(row).toEqual(["", "", "", "", "", "", "", "", "", "", ""]);
   });
 
   it("ignores extra keys not in headers", () => {
@@ -104,12 +104,12 @@ describe("CONTACTS_HEADERS", () => {
 });
 
 describe("RECHERCHES_HEADERS", () => {
-  it("has 10 columns", () => {
-    expect(RECHERCHES_HEADERS).toHaveLength(10);
+  it("has 11 columns", () => {
+    expect(RECHERCHES_HEADERS).toHaveLength(11);
   });
 
   it("contains all fields", () => {
-    expect(RECHERCHES_HEADERS).toEqual(["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id", "scoring_status", "scoring_instructions", "scoring_mode"]);
+    expect(RECHERCHES_HEADERS).toEqual(["id", "description", "mode", "filtres_json", "nb_resultats", "date", "user_id", "scoring_status", "scoring_instructions", "scoring_mode", "scoring_criteria_prompt"]);
   });
 });
 

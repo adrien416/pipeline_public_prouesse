@@ -1,5 +1,5 @@
 # DOCUMENT DE PASSATION — Prouesse Pipeline
-*Mis a jour le : 2026-04-03*
+*Mis a jour le : 2026-04-08*
 
 ## 0. Pour demarrer immediatement
 ```bash
@@ -241,6 +241,22 @@ POST /api/search (single endpoint, ~15-25s)
 
 58. **Tests** : 144 tests (8 fichiers). 12 nouveaux tests couvrant : mode volume/precision, generate_only, pre_filters user_edited, advanced_filters merge, reranking (CEO > VP), debug/timings/pipeline, non-regression flux simple.
 
+### Session 10 (2026-04-08) — Scoring pertinence-only + phrases custom + doublons visibles
+
+59. **Mode scoring Pertinence-only** : Toggle "Inclure le critere Impact" dans ScoringPage. OFF = score uniquement sur la pertinence (1-5), seuil >= 4/5, impact mis a 0. Adapte dans tout le pipeline (enrich, campaign, generate-phrases, cron-score, cron-enrich).
+
+60. **Doublons visibles dans les resultats** : Les contacts doublons (deja en base) sont retournes dans la reponse (statut="doublon") et affiches dans un banner orange depliable. Bouton "Ajouter" pour les reintegrer dans la liste principale.
+
+61. **Fix "Chercher plus" sur recherches precedentes** : La description est maintenant auto-remplie quand on charge une recherche via "Voir".
+
+62. **Fix resultats obsoletes sur nouvelle recherche** : Les anciens contacts sont effaces des le lancement d'une nouvelle recherche (plus de resultats fantomes en cas d'erreur).
+
+63. **Message d'erreur timeout ameliore** : "Load failed" affiche maintenant "Timeout — la recherche a pris trop de temps. Reassaie ou utilise le mode Volume."
+
+64. **Instructions custom pour phrases IA** : Panneau depliable "Phrases IA" dans CampaignPage avec textarea pour guider l'IA (ex: "parle de valorisation", "ton plus direct"). Les instructions sont injectees dans le prompt de generation.
+
+65. **Bouton "Regenerer toutes les phrases IA"** integre au panneau avec les instructions — efface et regenere avec le nouveau prompt.
+
 **Fichiers supprimes** : `search-filters.ts`, `search-competitors.ts`, `_search-ai.ts` (integres dans search.ts)
 **Fichiers ajoutes** : `score-start.ts`, `cron-score.ts`, `cron-enrich.ts`, `_google-key.ts`
 
@@ -315,7 +331,7 @@ Verifier que la recherche fonctionne : taper "startups dans l'agritech" → veri
 - **Ton** : Professionnel, en francais, tutoiement dans les emails
 - **Header** : Logo "P" gradient bleu + "Prouesse Pipeline" + credits Fullenrich + deconnexion
 - **Tabs** : 5 onglets numerotes, tous toujours accessibles
-- **Scoring** : Pertinence (1-5) + Impact social/environnemental (1-5) = total /10, seuil >= 7
+- **Scoring** : Deux modes — Pertinence + Impact (seuil >= 7/10) OU Pertinence seule (seuil >= 4/5, toggle dans ScoringPage)
 - **Exclusions recherche** : Pas d'associations, pas d'entites publiques, pas de cooperatives, pas de Non-profit, pas de Government
 
 ## 9. Preferences utilisateur (Adrien)
@@ -336,12 +352,15 @@ Verifier que la recherche fonctionne : taper "startups dans l'agritech" → veri
 - L'utilisateur doit pouvoir personnaliser le prompt avant de lancer.
 - Afficher le cout estime avant de lancer.
 - Apprentissage global : utiliser TOUS les feedbacks de TOUTES les recherches.
+- Option pertinence-only (sans impact) pour les cas ou l'impact n'est pas pertinent (ex: vente d'entreprise).
 
 **Campagne** :
 - L'utilisateur doit pouvoir editer les phrases IA individuellement.
 - L'utilisateur doit pouvoir guider la reecriture du template avec des instructions.
+- L'utilisateur doit pouvoir donner des instructions custom pour la generation des phrases IA.
 - Afficher le cout des phrases IA.
 - Boutons assez gros pour mobile (min 44px hauteur).
+- Template par defaut : Levaia.fr hook + Prouesse + lien HubSpot meeting.
 
 **General** :
 - Toujours faire les tests (vitest) avant de push.

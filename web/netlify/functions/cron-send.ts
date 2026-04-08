@@ -33,7 +33,7 @@ async function sendCompletionNotification(
 <h2 style="margin:0 0 16px;">Campagne terminée</h2>
 <p><strong>${campaignName}</strong></p>
 <p>${totalSent} emails envoyés.</p>
-<p style="margin-top:16px;"><a href="https://pipeline-prospection.netlify.app" style="color:#2563eb;">Voir les analytics →</a></p>
+<p style="margin-top:16px;"><a href="${process.env.URL || ""}" style="color:#2563eb;">Voir les analytics →</a></p>
 <p style="color:#6b7280;font-size:12px;margin-top:24px;">— Prouesse Pipeline</p>
 </body></html>`,
       }),
@@ -144,7 +144,7 @@ export default async () => {
           // Send completion notification
           const brevoKey = process.env.BREVO_API_KEY;
           const userInfo = usersMap.get(campaign.user_id);
-          const senderEmail = userInfo?.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
+          const senderEmail = userInfo?.senderEmail || process.env.SENDER_EMAIL || "";
           if (brevoKey && !demoUserIds.has(campaign.user_id)) {
             const sentCount = parseInt(campaign.sent || "0");
             await sendCompletionNotification(campaign.nom || "Sans nom", sentCount, senderEmail, brevoKey);
@@ -229,8 +229,8 @@ export default async () => {
 
         // Sender info
         const userInfo = usersMap.get(campaign.user_id || "") || null;
-        const senderEmail = userInfo?.senderEmail || process.env.SENDER_EMAIL || "adrien@prouesse.vc";
-        const senderName = userInfo?.senderName || process.env.SENDER_NAME || "Adrien Pannetier";
+        const senderEmail = userInfo?.senderEmail || process.env.SENDER_EMAIL || "";
+        const senderName = userInfo?.senderName || process.env.SENDER_NAME || "";
 
         // Send via Brevo
         const brevoResp = await fetch(BREVO_API, {

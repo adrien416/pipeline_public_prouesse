@@ -21,11 +21,11 @@ test.describe("Login", () => {
     await page.goto("/");
 
     // Login page should be visible
-    await expect(page.locator("text=Prouesse")).toBeVisible();
+    await expect(page.locator("text=Prouesse Pipeline")).toBeVisible();
     await expect(page.locator("text=Se connecter")).toBeVisible();
 
     // Fill form
-    await page.getByPlaceholder("adrien@prouesse.vc").fill("adrien@prouesse.vc");
+    await page.getByPlaceholder("votre@email.com").fill("votre@email.com");
     await page.locator('input[type="password"]').fill("testpassword");
 
     // After login, credits should succeed
@@ -49,7 +49,7 @@ test.describe("Login", () => {
 
     await page.goto("/");
 
-    await page.getByPlaceholder("adrien@prouesse.vc").fill("wrong@email.com");
+    await page.getByPlaceholder("votre@email.com").fill("wrong@email.com");
     await page.locator('input[type="password"]').fill("wrongpassword");
     await page.getByRole("button", { name: /connecter/i }).click();
 

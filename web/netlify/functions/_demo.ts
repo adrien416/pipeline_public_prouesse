@@ -175,17 +175,14 @@ export function mockCredits(): { credits: number; used: number } {
   return { credits: 500, used: 47 };
 }
 
-export const DEMO_TEMPLATE_SUJET = "{Entreprise} — valorisation instantanée";
+export const DEMO_TEMPLATE_SUJET = "{Entreprise} — échange ?";
 
 export const DEMO_TEMPLATE_CORPS = `Bonjour {Prenom},
 
 {Phrase}
 
-On a créé Levaia (levaia.fr) — tu rentres le nom de ton entreprise et tu obtiens une valorisation instantanée, gratuitement.
+On accompagne les dirigeants comme toi sur leurs enjeux de développement — que ce soit une levée, une croissance externe ou simplement structurer la suite.
 
-Chez Prouesse (prouesse.vc), on utilise ça comme point de départ pour accompagner les dirigeants à impact sur leurs prochaines étapes (levée, cession, croissance externe).
+Est-ce que ça te parlerait d'en discuter pour {Entreprise} ?
 
-Curieux de voir ce que ça donne pour {Entreprise} ?
-https://meetings-eu1.hubspot.com/adrien-pannetier
-
-Adrien`;
+Bonne journée`;

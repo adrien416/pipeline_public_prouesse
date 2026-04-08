@@ -160,6 +160,8 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
 
   const [generatingPhrases, setGeneratingPhrases] = useState(false);
   const [phraseProgress, setPhraseProgress] = useState({ generated: 0, total: 0 });
+  const [phraseInstructions, setPhraseInstructions] = useState("");
+  const [showPhraseInstructions, setShowPhraseInstructions] = useState(false);
   const [templateLoaded, setTemplateLoaded] = useState(false);
 
   const contactsList = contacts.data || [];
@@ -279,7 +281,7 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
     try {
       let done = false;
       while (!done) {
-        const r = await generatePhrases(rechercheId);
+        const r = await generatePhrases(rechercheId, phraseInstructions || undefined);
         setPhraseProgress({ generated: r.total - (r.remaining ?? 0), total: r.total });
         done = r.done;
         if (r.contacts?.length) {
@@ -979,22 +981,61 @@ export function CampaignPage({ rechercheId, onComplete, onNavigateToSearch }: Pr
           </span>
         </div>
       )}
-      {!generatingPhrases && missingPhrases === 0 && contactsList.length > 0 && (
-        <div className="flex justify-end">
+      {!generatingPhrases && contactsList.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <button
-            onClick={async () => {
-              if (!confirm("Effacer toutes les phrases IA et les regénérer ?")) return;
-              try {
-                await resetPhrases(rechercheId);
-                qc.invalidateQueries({ queryKey: ["contacts", rechercheId] });
-              } catch (err) {
-                console.error("Reset phrases error:", err);
-              }
-            }}
-            className="text-xs text-purple-500 hover:text-purple-700 px-2 py-1"
+            type="button"
+            onClick={() => setShowPhraseInstructions(!showPhraseInstructions)}
+            className="w-full px-4 py-3 flex items-center justify-between text-sm hover:bg-gray-50"
           >
-            Regénérer toutes les phrases IA
+            <span className="font-medium text-gray-700">
+              Phrases IA
+              {phraseInstructions && <span className="ml-2 text-xs text-purple-500">(instructions perso)</span>}
+            </span>
+            <span className="text-xs text-gray-400">{showPhraseInstructions ? "Masquer" : "Configurer"}</span>
           </button>
+          {showPhraseInstructions && (
+            <div className="px-4 pb-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                Instructions pour guider l'IA dans la génération des phrases d'accroche personnalisées.
+              </p>
+              <textarea
+                value={phraseInstructions}
+                onChange={(e) => setPhraseInstructions(e.target.value)}
+                placeholder="Ex: Mentionne que leur secteur est en pleine consolidation, parle de valorisation d'entreprise, adopte un ton plus direct..."
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400"
+              />
+              <div className="flex gap-2">
+                {missingPhrases > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => doGeneratePhrases()}
+                    className="text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg"
+                  >
+                    Générer {missingPhrases} phrases manquantes
+                  </button>
+                )}
+                {missingPhrases === 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("Effacer toutes les phrases IA et les regénérer ?")) return;
+                      try {
+                        await resetPhrases(rechercheId);
+                        qc.invalidateQueries({ queryKey: ["contacts", rechercheId] });
+                      } catch (err) {
+                        console.error("Reset phrases error:", err);
+                      }
+                    }}
+                    className="text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg"
+                  >
+                    Regénérer toutes les phrases
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

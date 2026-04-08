@@ -170,7 +170,7 @@ export function fetchContacts(recherche_id?: string) {
 }
 
 // ─── Campaign ───
-export function generatePhrases(recherche_id: string) {
+export function generatePhrases(recherche_id: string, custom_instructions?: string) {
   return request<{
     generated: number;
     total: number;
@@ -179,7 +179,7 @@ export function generatePhrases(recherche_id: string) {
     contacts: Array<Record<string, string>>;
   }>("/generate-phrases", {
     method: "POST",
-    body: JSON.stringify({ recherche_id }),
+    body: JSON.stringify({ recherche_id, custom_instructions }),
   });
 }
 

@@ -3,7 +3,7 @@ import { requireAuth, json } from "./_auth.js";
 import { readAll, batchUpdateRows, getHeadersForWrite, CONTACTS_HEADERS, toRow } from "./_sheets.js";
 import { mockPhrase } from "./_demo.js";
 
-async function generatePhrase(contact: Record<string, string>): Promise<string> {
+async function generatePhrase(contact: Record<string, string>, customInstructions?: string): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return "";
 
@@ -42,7 +42,7 @@ Exemples de bonnes phrases :
 - "Le secteur de l'edtech bouge vite en ce moment, et c'est souvent dans ces phases que les dirigeants commencent a structurer leur vision long terme."
 - "Diriger une entreprise dans la mobilite durable, c'est passionnant — mais c'est aussi le genre de secteur ou il faut savoir ou on en est pour prendre les bonnes decisions."
 
-JSON uniquement : {"phrase": "<accroche personnalisee>"}`,
+JSON uniquement : {"phrase": "<accroche personnalisee>"}${customInstructions ? `\n\nINSTRUCTIONS SUPPLÉMENTAIRES :\n${customInstructions}` : ""}`,
         }],
       }),
     });
@@ -65,7 +65,7 @@ export default async (request: Request) => {
   if (auth instanceof Response) return auth;
 
   try {
-    const { recherche_id } = await request.json();
+    const { recherche_id, custom_instructions } = await request.json();
     if (!recherche_id) return json({ error: "recherche_id requis" }, 400);
 
     const allContacts = await readAll("Contacts");
@@ -116,7 +116,7 @@ export default async (request: Request) => {
     const BATCH_SIZE = 5;
     const batch = needPhrase.slice(0, BATCH_SIZE);
     const phrases = await Promise.all(
-      batch.map((c) => generatePhrase(c))
+      batch.map((c) => generatePhrase(c, custom_instructions))
     );
 
     // Update contacts with generated phrases

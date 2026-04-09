@@ -752,7 +752,7 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
                 <div className="flex-1 min-w-0">
                   <p className="text-gray-900 truncate">{r.description}</p>
                   <p className="text-xs text-gray-400">
-                    {r.nb_resultats} résultats — {new Date(r.date).toLocaleDateString("fr-FR")}
+                    {r.nb_resultats} résultats{r.date ? ` — ${new Date(r.date).toLocaleDateString("fr-FR")}` : ""}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-3">

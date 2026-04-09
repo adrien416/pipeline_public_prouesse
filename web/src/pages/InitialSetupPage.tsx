@@ -63,6 +63,10 @@ export function InitialSetupPage({ onComplete }: Props) {
         return;
       }
       setSites(siteList);
+      // Auto-select if only one site
+      if (siteList.length === 1) {
+        setSelectedSiteId(siteList[0].id);
+      }
     } catch {
       setNetlifyError("Erreur réseau. Réessayez.");
     }
@@ -255,17 +259,23 @@ export function InitialSetupPage({ onComplete }: Props) {
 
             {sites.length > 0 && (
               <div className="space-y-2">
-                <label className="text-xs text-gray-400">Sélectionnez votre site :</label>
-                <select
-                  value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value)}
-                  className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
-                >
-                  <option value="">Choisir un site...</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>{site.name} — {site.url}</option>
-                  ))}
-                </select>
+                {sites.length === 1 ? (
+                  <p className="text-xs text-green-400">Site d&eacute;tect&eacute; : <strong>{sites[0].name}</strong> ({sites[0].url})</p>
+                ) : (
+                  <>
+                    <label className="text-xs text-gray-400">S&eacute;lectionnez le site que vous venez de d&eacute;ployer :</label>
+                    <select
+                      value={selectedSiteId}
+                      onChange={(e) => setSelectedSiteId(e.target.value)}
+                      className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                    >
+                      <option value="">Choisir un site...</option>
+                      {sites.map((site) => (
+                        <option key={site.id} value={site.id}>{site.name} — {site.url}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             )}
 

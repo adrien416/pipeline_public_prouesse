@@ -104,6 +104,10 @@ export function SetupWizardPage({ onComplete }: Props) {
         return;
       }
       setNetlifySites(sites);
+      // Auto-select if only one site
+      if (sites.length === 1) {
+        setSelectedSiteId(sites[0].id);
+      }
       updateStep("netlify", { status: "success", message: `${sites.length} site(s) trouvé(s)` });
       setActiveStep(1);
     } catch {
@@ -399,14 +403,18 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "anthropic" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          Claude est utilisé pour la recherche, le scoring et la personnalisation des emails.
+                          <strong>A quoi &ccedil;a sert :</strong> Claude (l'IA d'Anthropic) est le cerveau de votre pipeline. Il recherche les entreprises correspondant &agrave; votre cible, score chaque contact par pertinence, et r&eacute;dige des emails personnalis&eacute;s.
                         </p>
-                        <p className="text-xs text-gray-500">
-                          Obtenez votre clé sur{" "}
-                          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            console.anthropic.com → Settings → API Keys
-                          </a>
-                        </p>
+                        <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1">
+                          <p className="font-medium text-gray-300">Comment obtenir votre cl&eacute; :</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>Allez sur <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">console.anthropic.com</a> et cr&eacute;ez un compte</li>
+                            <li>Ajoutez des cr&eacute;dits : <strong>Settings &rarr; Billing &rarr; Add credits</strong> (~5$ pour d&eacute;marrer)</li>
+                            <li><strong>D&eacute;sactivez l'auto-recharge</strong> pour &eacute;viter les mauvaises surprises</li>
+                            <li>Cr&eacute;ez votre cl&eacute; : <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Settings &rarr; API Keys &rarr; Create Key</a></li>
+                            <li>Copiez la cl&eacute; (elle commence par <code className="text-gray-300">sk-ant-...</code>)</li>
+                          </ol>
+                        </div>
                         <ApiKeyInput value={anthropicKey} onChange={setAnthropicKey} placeholder="sk-ant-..." />
                         <button onClick={testAnthropic} className="bg-blue-600 text-white text-sm font-medium rounded-lg px-4 py-2 hover:bg-blue-700">
                           Tester la connexion
@@ -418,17 +426,17 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "fullenrich" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          Fullenrich trouve les adresses email professionnelles de vos contacts.{" "}
-                          <a href="https://fullenrich.com?via=wDRTwS1HGWy5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            Créer un compte Fullenrich
-                          </a>
+                          <strong>A quoi &ccedil;a sert :</strong> Fullenrich trouve l'adresse email professionnelle de chaque contact &agrave; partir de son nom et de son entreprise. Sans email, pas de campagne.
                         </p>
-                        <p className="text-xs text-gray-500">
-                          Obtenez votre clé sur{" "}
-                          <a href="https://app.fullenrich.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            fullenrich.com &rarr; Settings &rarr; API
-                          </a>
-                        </p>
+                        <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1">
+                          <p className="font-medium text-gray-300">Comment obtenir votre cl&eacute; :</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>Cr&eacute;ez un compte sur <a href="https://fullenrich.com?via=wDRTwS1HGWy5" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">fullenrich.com</a> (50 emails gratuits pour d&eacute;marrer)</li>
+                            <li>Allez dans <a href="https://app.fullenrich.com/settings" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Settings &rarr; API</a></li>
+                            <li>Copiez votre cl&eacute; API</li>
+                          </ol>
+                          <p className="text-gray-500 mt-1">Si vous avez besoin de plus de 50 emails, le pack "bulk" est recommand&eacute;.</p>
+                        </div>
                         <ApiKeyInput value={fullenrichKey} onChange={setFullenrichKey} placeholder="Votre clé API Fullenrich" />
                         <button onClick={testFullenrich} className="bg-blue-600 text-white text-sm font-medium rounded-lg px-4 py-2 hover:bg-blue-700">
                           Tester la connexion
@@ -440,14 +448,16 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "brevo" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          Brevo envoie vos emails de prospection. Configurez aussi votre identité d'expéditeur.
+                          <strong>A quoi &ccedil;a sert :</strong> Brevo est le service qui envoie vos emails de prospection. Il g&egrave;re aussi le suivi (ouvertures, clics, r&eacute;ponses). Gratuit jusqu'&agrave; 300 emails/jour.
                         </p>
-                        <p className="text-xs text-gray-500">
-                          Obtenez votre clé sur{" "}
-                          <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            app.brevo.com → Settings → SMTP & API → API Keys
-                          </a>
-                        </p>
+                        <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1">
+                          <p className="font-medium text-gray-300">Comment obtenir votre cl&eacute; :</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>Cr&eacute;ez un compte sur <a href="https://app.brevo.com/account/register" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">app.brevo.com</a></li>
+                            <li>Allez dans <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Settings &rarr; SMTP & API &rarr; API Keys</a></li>
+                            <li>Cliquez <strong>"Generate a new API key"</strong> &rarr; copiez-la (commence par <code className="text-gray-300">xkeysib-...</code>)</li>
+                          </ol>
+                        </div>
                         <ApiKeyInput value={brevoKey} onChange={setBrevoKey} placeholder="xkeysib-..." />
                         <div className="grid grid-cols-2 gap-2">
                           <div>
@@ -479,17 +489,18 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "google" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          Google Sheets sert de base de données pour vos contacts et campagnes.
+                          <strong>A quoi &ccedil;a sert :</strong> Google Sheets est votre base de donn&eacute;es. Tous vos contacts, recherches et campagnes y sont stock&eacute;s. C'est gratuit.
                         </p>
-                        <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1">
-                          <p className="font-medium text-gray-300">Guide rapide :</p>
-                          <ol className="list-decimal list-inside space-y-1">
-                            <li>Allez sur <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">console.cloud.google.com</a></li>
-                            <li>Créez un projet (ou utilisez un existant)</li>
-                            <li>Activez l'API Google Sheets (Bibliothèque → cherchez "Google Sheets API")</li>
-                            <li>Créez un Service Account (IAM → Service Accounts → Créer)</li>
-                            <li>Téléchargez le fichier JSON de la clé</li>
-                            <li>Créez un <a href="https://sheets.new" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">nouveau Google Sheet</a> et partagez-le avec l'email du service account</li>
+                        <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1.5">
+                          <p className="font-medium text-gray-300">C'est l'&eacute;tape la plus longue (~5 min). Suivez bien chaque &eacute;tape :</p>
+                          <ol className="list-decimal list-inside space-y-1.5">
+                            <li>Allez sur <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">console.cloud.google.com</a> et connectez-vous avec votre compte Google</li>
+                            <li>Cr&eacute;ez un <strong>nouveau projet</strong> (bouton en haut &rarr; "New Project" &rarr; donnez un nom &rarr; "Create")</li>
+                            <li>Activez l'API : menu hamburger (3 barres) &rarr; <strong>"APIs & Services"</strong> &rarr; <strong>"Library"</strong> &rarr; cherchez <strong>"Google Sheets API"</strong> &rarr; <strong>"Enable"</strong></li>
+                            <li>Cr&eacute;ez un Service Account : menu &rarr; <strong>"IAM & Admin"</strong> &rarr; <strong>"Service Accounts"</strong> &rarr; <strong>"Create Service Account"</strong> &rarr; donnez un nom &rarr; "Create and Continue" &rarr; "Done"</li>
+                            <li>Cr&eacute;ez une cl&eacute; : cliquez sur le service account &rarr; onglet <strong>"Keys"</strong> &rarr; <strong>"Add Key"</strong> &rarr; <strong>"Create New Key"</strong> &rarr; <strong>JSON</strong> &rarr; "Create" (un fichier .json se t&eacute;l&eacute;charge)</li>
+                            <li>Cr&eacute;ez un <a href="https://sheets.new" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">nouveau Google Sheet</a> &rarr; copiez l'ID depuis l'URL (entre <code className="text-gray-300">/d/</code> et <code className="text-gray-300">/edit</code>)</li>
+                            <li><strong>Partagez le Sheet</strong> avec l'email du service account (il ressemble &agrave; <code className="text-gray-300">nom@projet.iam.gserviceaccount.com</code>) en tant qu'<strong>&Eacute;diteur</strong></li>
                           </ol>
                         </div>
                         <div>

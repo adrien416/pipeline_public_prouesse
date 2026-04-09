@@ -305,9 +305,7 @@ export function SetupWizardPage({ onComplete }: Props) {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-              <span className="text-white font-bold text-xl">{APP_CONFIG.logoLetter}</span>
-            </div>
+            <img src="https://prouesse.vc/logo-white.png" alt="Prouesse" className="h-9" />
           </div>
           <h1 className="text-2xl font-bold text-white">{APP_CONFIG.name}</h1>
           <p className="text-sm text-gray-400 mt-1">Configurez votre pipeline en quelques minutes</p>

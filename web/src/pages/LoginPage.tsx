@@ -24,9 +24,7 @@ export function LoginPage() {
         <div className="bg-[#161822] rounded-2xl shadow-2xl shadow-black/50 border border-white/5 p-8">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">{APP_CONFIG.logoLetter}</span>
-            </div>
+            <img src="https://prouesse.vc/logo-white.png" alt="Prouesse" className="h-9" />
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight">{APP_CONFIG.name}</h1>
               <p className="text-xs text-gray-500">{APP_CONFIG.tagline}</p>

@@ -35,9 +35,7 @@ export function Layout({ children, activeTab, onTabChange }: Props) {
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{APP_CONFIG.logoLetter}</span>
-              </div>
+              <img src="https://prouesse.vc/logo-white.png" alt="Prouesse" className="h-8" />
               <div>
                 <span className="text-base font-bold text-white tracking-tight">{APP_CONFIG.name}</span>
               </div>

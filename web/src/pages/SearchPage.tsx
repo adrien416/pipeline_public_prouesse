@@ -466,9 +466,11 @@ export function SearchPage({ onComplete, onLoadRecherche }: Props) {
       {/* Error */}
       {(search.isError || previewError) && !previewMode && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          Erreur: {search.error instanceof Error
-            ? (search.error.message === "Load failed" ? "Timeout — la recherche a pris trop de temps. Réessaie ou utilise le mode Volume." : search.error.message)
-            : previewError || "Erreur de recherche"}
+          {search.error instanceof Error && search.error.message.includes("504")
+            ? "La recherche a pris trop de temps. C'est normal lors de la première utilisation. Relancez la recherche, ça devrait fonctionner cette fois."
+            : <>Erreur: {search.error instanceof Error
+              ? (search.error.message === "Load failed" ? "Timeout — la recherche a pris trop de temps. Réessaie ou utilise le mode Volume." : search.error.message)
+              : previewError || "Erreur de recherche"}</>}
         </div>
       )}
 

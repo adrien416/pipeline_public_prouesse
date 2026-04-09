@@ -1,0 +1,4 @@
+# The app lives in the web/ directory.
+# This root config tells Netlify where to find it.
+[build]
+  base = "web"

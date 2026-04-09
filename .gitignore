@@ -1,0 +1,45 @@
+# Données générées par le pipeline
+data/boites_brutes.json
+data/boites_qualifiees.json
+data/contacts_enrichis.json
+data/incomplets.json
+data/exclus.json
+data/errors.log
+
+# Environnement
+.env
+.env.local
+.env.*.local
+venv/
+__pycache__/
+*.pyc
+
+# Credentials & keys
+credentials.json
+token.json
+*.key
+*.pem
+service-account.json
+
+# Web app
+web/node_modules/
+web/dist/
+
+# Root node_modules (Husky)
+/node_modules/
+/package-lock.json
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local Netlify folder
+.netlify
+
+# Claude Code config
+.claude/

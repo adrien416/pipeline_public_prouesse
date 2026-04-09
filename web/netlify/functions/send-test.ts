@@ -1,0 +1,126 @@
+import type { Config } from "@netlify/functions";
+import { requireAuth, json } from "./_auth.js";
+import { findRowById, readAll } from "./_sheets.js";
+
+const BREVO_API = "https://api.brevo.com/v3/smtp/email";
+
+/** Strip all leading/trailing whitespace including BOM, NBSP, \r */
+function stripWhitespace(text: string): string {
+  return text.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");
+}
+
+/** Convert plain text to table-based HTML for cross-client compatibility */
+function textToHtml(text: string): string {
+  const escaped = stripWhitespace(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;")
+    .replace(/\n/g, "<br>");
+  return `<!DOCTYPE html><html style="margin:0;padding:0;"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:16px 20px;-webkit-text-size-adjust:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;"><div style="padding:0 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;">${escaped}</div></body></html>`;
+}
+
+export default async (request: Request) => {
+  if (request.method !== "POST") return json({ error: "POST uniquement" }, 405);
+
+  const auth = requireAuth(request);
+  if (auth instanceof Response) return auth;
+
+  try {
+    const { campagne_id, test_email, contact_index } = await request.json();
+    if (!campagne_id) return json({ error: "campagne_id requis" }, 400);
+    if (!test_email) return json({ error: "test_email requis" }, 400);
+
+    const brevoKey = process.env.BREVO_API_KEY;
+    if (!brevoKey && auth.role !== "demo") return json({ error: "BREVO_API_KEY non configuree" }, 500);
+
+    const senderEmail = auth.senderEmail || process.env.SENDER_EMAIL || "";
+    const senderName = auth.senderName || process.env.SENDER_NAME || "";
+
+    const campFound = await findRowById("Campagnes", campagne_id);
+    if (!campFound) return json({ error: "Campagne introuvable" }, 404);
+    const campaign = campFound.data;
+
+    // Find a contact to use as sample data (vary by contact_index for multiple test emails)
+    const allContacts = await readAll("Contacts");
+    const queuedContacts = allContacts.filter(
+      (c) => c.campagne_id === campagne_id && c.email_status === "queued"
+    );
+    const allCampaignContacts = allContacts.filter(
+      (c) => c.campagne_id === campagne_id
+    );
+    const pool = queuedContacts.length > 0 ? queuedContacts : allCampaignContacts;
+    const idx = (typeof contact_index === "number" && pool.length > 0)
+      ? contact_index % pool.length
+      : 0;
+    const sampleContact = pool.length > 0 ? pool[idx] : null;
+
+    const contact = sampleContact || {
+      prenom: "Prenom",
+      nom: "Nom",
+      entreprise: "Entreprise",
+      phrase_perso: "J'ai vu que ton entreprise se développait rapidement dans le secteur tech.",
+    };
+
+    // Build email from template
+    const sujet = campaign.template_sujet
+      .replace(/\{Prenom\}/g, contact.prenom || "")
+      .replace(/\{Entreprise\}/g, contact.entreprise || "");
+
+    const corps = campaign.template_corps
+      .replace(/\{Prenom\}/g, contact.prenom || "")
+      .replace(/\{Entreprise\}/g, contact.entreprise || "")
+      .replace(/\{Phrase\}/g, contact.phrase_perso || "");
+    const corpsClean = stripWhitespace(corps);
+
+    // Demo mode: simulate test send
+    if (auth.role === "demo") {
+      return json({
+        sent: true,
+        test_email,
+        subject: `[TEST] ${sujet}`,
+        contact_used: contact.prenom ? `${contact.prenom} ${contact.nom || ""}`.trim() : "Donnees fictives",
+        demo: true,
+      });
+    }
+
+    // Send test email — does NOT update any counters or statuses
+    const brevoResp = await fetch(BREVO_API, {
+      method: "POST",
+      headers: {
+        "api-key": brevoKey!,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        replyTo: { name: senderName, email: senderEmail },
+        to: [{ email: test_email, name: "Test" }],
+        subject: `[TEST] ${sujet}`,
+        textContent: corpsClean,
+        htmlContent: textToHtml(corpsClean),
+        headers: {
+          "List-Unsubscribe": `<mailto:${senderEmail}?subject=unsubscribe>`,
+        },
+      }),
+    });
+
+    const brevoData = await brevoResp.json();
+
+    if (brevoResp.ok) {
+      return json({
+        sent: true,
+        test_email,
+        subject: `[TEST] ${sujet}`,
+        contact_used: contact.prenom ? `${contact.prenom} ${contact.nom || ""}`.trim() : "Donnees fictives",
+      });
+    }
+
+    return json({ sent: false, error: brevoData.message || "Erreur Brevo" });
+  } catch (err) {
+    console.error("send-test error:", err);
+    return json({ error: "Erreur interne" }, 500);
+  }
+};
+
+export const config: Config = { path: ["/api/send-test"] };

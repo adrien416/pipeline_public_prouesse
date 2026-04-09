@@ -18,8 +18,8 @@ Vous allez avoir besoin de 5 comptes. Créez-les maintenant, ça prend 5 minutes
 |---|---------|---------------|------|------|
 | 1 | **Netlify** | Héberge votre app (comme un serveur) | Gratuit (125K appels/mois) | [Créer un compte](https://app.netlify.com/signup) |
 | 2 | **GitHub** | Stocke le code (Netlify en a besoin) | Gratuit | [Créer un compte](https://github.com/signup) |
-| 3 | **Anthropic** | L'IA qui fait la recherche et le scoring | Payant (~5€ pour démarrer) | [Créer un compte](https://console.anthropic.com/) |
-| 4 | **Fullenrich** | Trouve les emails pros de vos contacts | 50 emails gratuits | [Créer un compte](https://fullenrich.com?via=wDRTwS1HGWy5) |
+| 3 | **Anthropic** | L'IA qui fait la recherche et le scoring | Payant (~5€ pour démarrer). **Pensez à désactiver l'auto-recharge des crédits.** | [Créer un compte](https://console.anthropic.com/) |
+| 4 | **Fullenrich** | Trouve les emails pros de vos contacts | 50 emails gratuits, puis pack "bulk" recommandé | [Créer un compte](https://fullenrich.com?via=wDRTwS1HGWy5) |
 | 5 | **Brevo** | Envoie vos emails de prospection | 300 emails/jour gratuits | [Créer un compte](https://app.brevo.com/account/register) |
 
 Vous aurez aussi besoin d'un **Google Sheet** (gratuit) — l'app vous guide pour ça.

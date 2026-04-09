@@ -67,6 +67,9 @@ export function SetupWizardPage({ onComplete }: Props) {
       setSelectedSiteId(savedSiteId);
       updateStep("netlify", { status: "success", message: "Connecté via la configuration initiale" });
       setActiveStep(1);
+      // Clean up sensitive token from localStorage
+      localStorage.removeItem("netlify_setup_token");
+      localStorage.removeItem("netlify_setup_site_id");
       // Fetch sites list in background for display
       fetch(`https://api.netlify.com/api/v1/sites?per_page=100`, {
         headers: { Authorization: `Bearer ${savedToken}` },
@@ -126,6 +129,18 @@ export function SetupWizardPage({ onComplete }: Props) {
     }
   }
 
+  // ── Helper: test key via server-side proxy (avoids CORS) ──
+  async function testKeyViaServer(service: string, key: string, senderEmail?: string): Promise<boolean> {
+    const resp = await fetch("/api/test-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service, key, sender_email: senderEmail }),
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return data.valid === true;
+  }
+
   // ── Step 2: Anthropic ──
   async function testAnthropic() {
     if (!anthropicKey.trim()) {
@@ -134,20 +149,8 @@ export function SetupWizardPage({ onComplete }: Props) {
     }
     updateStep("anthropic", { status: "testing" });
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 10,
-          messages: [{ role: "user", content: "OK" }],
-        }),
-      });
-      if (resp.ok) {
+      const valid = await testKeyViaServer("anthropic", anthropicKey);
+      if (valid) {
         updateStep("anthropic", { status: "success", message: "Connexion réussie" });
         await injectEnvVar("ANTHROPIC_API_KEY", anthropicKey);
         setActiveStep(2);
@@ -167,10 +170,8 @@ export function SetupWizardPage({ onComplete }: Props) {
     }
     updateStep("fullenrich", { status: "testing" });
     try {
-      const resp = await fetch("https://app.fullenrich.com/api/v1/account/credits", {
-        headers: { Authorization: `Bearer ${fullenrichKey}` },
-      });
-      if (resp.ok) {
+      const valid = await testKeyViaServer("fullenrich", fullenrichKey);
+      if (valid) {
         updateStep("fullenrich", { status: "success", message: "Connexion réussie" });
         await injectEnvVar("FULLENRICH_API_KEY", fullenrichKey);
         setActiveStep(3);
@@ -194,10 +195,8 @@ export function SetupWizardPage({ onComplete }: Props) {
     }
     updateStep("brevo", { status: "testing" });
     try {
-      const resp = await fetch("https://api.brevo.com/v3/account", {
-        headers: { "api-key": brevoKey },
-      });
-      if (resp.ok) {
+      const valid = await testKeyViaServer("brevo", brevoKey, senderEmail);
+      if (valid) {
         updateStep("brevo", { status: "success", message: "Connexion réussie" });
         if (selectedSiteId) {
           await netlifyProxy("set-env-vars", {
@@ -269,15 +268,7 @@ export function SetupWizardPage({ onComplete }: Props) {
 
     setInjecting(true);
     try {
-      // Generate JWT secret
-      const jwtSecret = crypto.randomUUID() + crypto.randomUUID();
-
-      await netlifyProxy("set-env-vars", {
-        site_id: selectedSiteId,
-        env_vars: { JWT_SECRET: jwtSecret },
-      }, netlifyToken);
-
-      // Trigger redeploy
+      // Trigger redeploy (JWT_SECRET already set during initial account creation)
       setDeployState("deploying");
       await netlifyProxy("redeploy", { site_id: selectedSiteId }, netlifyToken);
 

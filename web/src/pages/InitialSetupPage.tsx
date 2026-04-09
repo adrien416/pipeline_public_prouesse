@@ -215,10 +215,10 @@ export function InitialSetupPage({ onComplete }: Props) {
                 <a href="https://app.netlify.com/signup" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Netlify</a> — H&eacute;bergement <span className="text-gray-600">(gratuit jusqu'&agrave; 100GB bande passante / 125K appels functions)</span>
               </li>
               <li>
-                <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Anthropic</a> — IA (Claude) <span className="text-gray-600">(payant &mdash; cr&eacute;dits &agrave; recharger, ~5$ pour d&eacute;marrer)</span>
+                <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Anthropic</a> — IA (Claude) <span className="text-gray-600">(payant &mdash; ~5$ pour d&eacute;marrer, pensez &agrave; d&eacute;sactiver l'auto-recharge)</span>
               </li>
               <li>
-                <a href={FULLENRICH_REFERRAL} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Fullenrich</a> — Enrichissement email <span className="text-gray-600">(50 emails gratuits pour d&eacute;marrer)</span>
+                <a href={FULLENRICH_REFERRAL} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Fullenrich</a> — Enrichissement email <span className="text-gray-600">(50 emails gratuits, puis pack "bulk" recommand&eacute;)</span>
               </li>
               <li>
                 <a href="https://app.brevo.com/account/register" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Brevo</a> — Envoi d'emails <span className="text-gray-600">(gratuit jusqu'&agrave; 300 emails/jour)</span>

@@ -24,7 +24,7 @@ export default async (request: Request) => {
   try {
     if (action === "list-sites") {
       const resp = await fetch(`${NETLIFY_API}/sites?per_page=100`, { headers: netlifyHeaders });
-      if (!resp.ok) return json({ error: "Token Netlify invalide ou expiré" }, 401);
+      if (!resp.ok) return json({ error: "Token Netlify invalide ou expiré" }, 400);
       const sites = await resp.json();
       return json({
         sites: sites.map((s: Record<string, unknown>) => ({

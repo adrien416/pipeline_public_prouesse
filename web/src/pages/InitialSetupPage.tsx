@@ -1,5 +1,4 @@
 import { useState } from "react";
-import bcrypt from "bcryptjs";
 import { APP_CONFIG } from "../config";
 import { ApiKeyInput } from "../components/ApiKeyInput";
 import { Spinner } from "../components/Spinner";
@@ -102,65 +101,25 @@ export function InitialSetupPage({ onComplete }: Props) {
 
     setAccountLoading(true);
     try {
-      // Hash password
-      const salt = bcrypt.genSaltSync(10);
-      const hash = bcrypt.hashSync(password, salt);
-
-      // Generate JWT secret
-      const jwtSecret = crypto.randomUUID() + "-" + crypto.randomUUID();
-
-      // Inject env vars via Netlify API
-      setDeployStatus("Configuration des variables d'environnement...");
+      // Create account via server-side endpoint (avoids CORS issues with Netlify API)
+      setDeployStatus("Création du compte et configuration...");
       setStep("deploying");
 
-      const envVars: Record<string, string> = {
-        JWT_SECRET: jwtSecret,
-        LOGIN_EMAIL: email,
-        LOGIN_PASSWORD_HASH: hash,
-        SENDER_EMAIL: email,
-        SENDER_NAME: name || email.split("@")[0],
-      };
-
-      // Get existing env vars to know which to update vs create
-      const existingResp = await fetch(
-        `${NETLIFY_API}/accounts/me/env?site_id=${selectedSiteId}`,
-        { headers: { Authorization: `Bearer ${netlifyToken}` } }
-      );
-      const existingVars: Array<{ key: string }> = existingResp.ok ? await existingResp.json() : [];
-      const existingKeys = new Set(existingVars.map((v) => v.key));
-
-      for (const [key, value] of Object.entries(envVars)) {
-        if (existingKeys.has(key)) {
-          await fetch(`${NETLIFY_API}/accounts/me/env/${key}?site_id=${selectedSiteId}`, {
-            method: "DELETE",
-            headers: { Authorization: `Bearer ${netlifyToken}` },
-          });
-        }
-        const resp = await fetch(`${NETLIFY_API}/accounts/me/env?site_id=${selectedSiteId}`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${netlifyToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify([{
-            key,
-            scopes: ["builds", "functions", "runtime", "post-processing"],
-            values: [{ value, context: "all" }],
-          }]),
-        });
-        if (!resp.ok) {
-          throw new Error(`Erreur lors de la configuration de ${key}`);
-        }
-      }
-
-      // Trigger redeploy
-      setDeployStatus("Redéploiement en cours...");
-      const deployResp = await fetch(`${NETLIFY_API}/sites/${selectedSiteId}/builds`, {
+      const resp = await fetch("/api/initial-setup", {
         method: "POST",
-        headers: { Authorization: `Bearer ${netlifyToken}` },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          netlify_token: netlifyToken,
+          site_id: selectedSiteId,
+          email,
+          password,
+          name: name || email.split("@")[0],
+        }),
       });
-      if (!deployResp.ok) {
-        throw new Error("Erreur de redéploiement. Vérifiez vos permissions Netlify.");
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || "Erreur lors de la création du compte.");
       }
 
       // Poll deploy status

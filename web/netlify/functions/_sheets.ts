@@ -78,6 +78,7 @@ function getSpreadsheetId(): string {
  * La première ligne est utilisée comme header.
  */
 export async function readAll(tabName: string): Promise<Record<string, string>[]> {
+  await ensureSheetExists(tabName);
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSpreadsheetId(),
@@ -142,6 +143,9 @@ async function ensureGridSize(tabName: string, requiredRows: number): Promise<vo
 
 export async function appendRow(tabName: string, values: string[]): Promise<void> {
   const sheets = getSheets();
+
+  // Ensure sheet tab exists before reading
+  await ensureSheetExists(tabName);
 
   // Find the true last row by reading column A
   const colA = await readRawRange(`${tabName}!A:A`);
@@ -216,6 +220,9 @@ export async function findRowById(
 export async function appendRows(tabName: string, rows: string[][]): Promise<void> {
   if (rows.length === 0) return;
   const sheets = getSheets();
+
+  // Ensure sheet tab exists before reading
+  await ensureSheetExists(tabName);
 
   // Find the true last row by reading column A
   const colA = await readRawRange(`${tabName}!A:A`);

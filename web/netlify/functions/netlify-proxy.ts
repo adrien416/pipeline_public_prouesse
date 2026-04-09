@@ -64,7 +64,6 @@ export default async (request: Request) => {
           headers: netlifyHeaders,
           body: JSON.stringify([{
             key,
-            scopes: ["builds", "functions", "runtime", "post-processing"],
             values: [{ value, context: "all" }],
           }]),
         });

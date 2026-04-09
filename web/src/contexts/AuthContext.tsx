@@ -69,9 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    document.cookie = "auth_token=; Path=/; Max-Age=0";
+    // Call server to clear HttpOnly cookie
+    fetch("/api/logout", { method: "POST" }).catch(() => {});
     setAuthenticated(false);
     setUser(null);
+    localStorage.removeItem("pipeline_setup_done");
   }, []);
 
   return (

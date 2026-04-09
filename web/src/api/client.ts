@@ -244,6 +244,13 @@ export function triggerSend(campagne_id: string, force = false) {
   });
 }
 
+// ─── App Status (unauthenticated) ───
+export async function getAppStatus(): Promise<{ configured: boolean }> {
+  const res = await fetch("/api/app-status");
+  if (!res.ok) return { configured: true }; // If endpoint fails, assume configured
+  return res.json();
+}
+
 // ─── Setup ───
 export function checkSetup() {
   return request<{

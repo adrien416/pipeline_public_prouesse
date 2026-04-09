@@ -2,8 +2,11 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { readAll, USERS_HEADERS, getHeadersForWrite } from "./_sheets.js";
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error("JWT_SECRET environment variable is required");
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET environment variable is required");
+  return secret;
+}
 
 // Fallback env-var auth (when Users sheet is empty)
 const FALLBACK_EMAIL = process.env.LOGIN_EMAIL || "";
@@ -52,7 +55,7 @@ export async function verifyLogin(
           senderEmail: user.senderEmail,
           senderName: user.senderName,
         },
-        JWT_SECRET,
+        getJwtSecret(),
         { expiresIn: "2h" }
       );
       return { token, user };
@@ -83,7 +86,7 @@ export async function verifyLogin(
       senderEmail: user.senderEmail,
       senderName: user.senderName,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: "2h" }
   );
   return { token, user };
@@ -91,7 +94,7 @@ export async function verifyLogin(
 
 export function verifyToken(token: string): UserContext | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as Record<string, string>;
+    const payload = jwt.verify(token, getJwtSecret()) as Record<string, string>;
     return {
       userId: payload.userId || "admin",
       email: payload.email,

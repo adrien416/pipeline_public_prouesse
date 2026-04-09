@@ -209,22 +209,22 @@ export function InitialSetupPage({ onComplete }: Props) {
         {/* Services info */}
         {step === "netlify" && sites.length === 0 && (
           <div className="bg-[#161822] rounded-xl border border-white/5 p-4 mb-6">
-            <p className="text-xs text-gray-400 mb-2 font-medium">Services requis (tous avec offre gratuite) :</p>
-            <ul className="text-xs text-gray-500 space-y-1">
+            <p className="text-xs text-gray-400 mb-2 font-medium">Services requis :</p>
+            <ul className="text-xs text-gray-500 space-y-1.5">
               <li>
-                <a href="https://app.netlify.com/signup" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Netlify</a> — Hébergement
+                <a href="https://app.netlify.com/signup" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Netlify</a> — H&eacute;bergement <span className="text-gray-600">(gratuit jusqu'&agrave; 100GB bande passante / 125K appels functions)</span>
               </li>
               <li>
-                <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Anthropic</a> — IA (Claude)
+                <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Anthropic</a> — IA (Claude) <span className="text-gray-600">(payant &mdash; cr&eacute;dits &agrave; recharger, ~5$ pour d&eacute;marrer)</span>
               </li>
               <li>
-                <a href={FULLENRICH_REFERRAL} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Fullenrich</a> — Enrichissement email
+                <a href={FULLENRICH_REFERRAL} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Fullenrich</a> — Enrichissement email <span className="text-gray-600">(50 emails gratuits pour d&eacute;marrer)</span>
               </li>
               <li>
-                <a href="https://app.brevo.com/account/register" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Brevo</a> — Envoi d'emails
+                <a href="https://app.brevo.com/account/register" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Brevo</a> — Envoi d'emails <span className="text-gray-600">(gratuit jusqu'&agrave; 300 emails/jour)</span>
               </li>
               <li>
-                <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Google Cloud</a> — Base de données (Sheets)
+                <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Google Cloud</a> — Base de donn&eacute;es (Sheets) <span className="text-gray-600">(gratuit)</span>
               </li>
             </ul>
           </div>

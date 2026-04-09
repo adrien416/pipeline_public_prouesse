@@ -18,6 +18,8 @@ export function ApiKeyInput({ value, onChange, placeholder, disabled }: Props) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || "Collez votre clé ici"}
         disabled={disabled}
+        autoComplete="off"
+        data-1p-ignore
         className="w-full bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-20 font-mono"
       />
       {value && (

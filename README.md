@@ -18,7 +18,7 @@ Avant de commencer, créez des comptes sur ces services (tous ont des offres gra
 |---------|------|------|
 | **Netlify** | Héberge votre application | [Créer un compte](https://app.netlify.com/signup) |
 | **Anthropic** | IA pour la recherche et le scoring | [Créer un compte](https://console.anthropic.com/) |
-| **Fullenrich** | Trouve les emails professionnels | [Créer un compte](https://app.fullenrich.com/signup) |
+| **Fullenrich** | Trouve les emails professionnels (50 gratuits) | [Créer un compte](https://fullenrich.com?via=wDRTwS1HGWy5) |
 | **Brevo** | Envoie vos emails de prospection | [Créer un compte](https://app.brevo.com/account/register) |
 | **Google Cloud** | Stocke vos données (via Google Sheets) | [Créer un compte](https://console.cloud.google.com/) |
 
@@ -28,7 +28,7 @@ Avant de commencer, créez des comptes sur ces services (tous ont des offres gra
 
 Cliquez sur le bouton ci-dessous pour déployer votre propre instance :
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/adrien416/pipeline_public)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/adrien416/pipeline_public_prouesse)
 
 > **Note** : Ce bouton crée une copie du code sur votre compte GitHub et la déploie automatiquement sur Netlify. Vous devrez ensuite configurer les clés API.
 

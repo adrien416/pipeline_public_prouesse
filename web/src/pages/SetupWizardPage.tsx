@@ -489,7 +489,7 @@ export function SetupWizardPage({ onComplete }: Props) {
                     {step.id === "google" && (
                       <>
                         <p className="text-xs text-gray-400">
-                          <strong>A quoi &ccedil;a sert :</strong> Google Sheets est votre base de donn&eacute;es. Tous vos contacts, recherches et campagnes y sont stock&eacute;s. C'est gratuit.
+                          <strong>A quoi &ccedil;a sert :</strong> Google Sheets est votre base de donn&eacute;es. Tous vos contacts, recherches et campagnes y sont stock&eacute;s. <strong>C'est 100% gratuit</strong> — un compte Google classique (Gmail) suffit, pas besoin de Google Workspace ni de carte bancaire.
                         </p>
                         <div className="bg-[#1a1d2e] rounded-lg p-3 text-xs text-gray-400 space-y-1.5">
                           <p className="font-medium text-gray-300">C'est l'&eacute;tape la plus longue (~5 min). Suivez bien chaque &eacute;tape :</p>

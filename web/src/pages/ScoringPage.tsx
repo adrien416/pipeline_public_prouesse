@@ -441,8 +441,8 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                 <th className="px-3 py-2 text-left">Site</th>
                 <th className="px-3 py-2 text-center">LinkedIn</th>
                 <th className="px-3 py-2 text-center">Pertinence</th>
-                <th className="px-3 py-2 text-center">Impact</th>
-                <th className="px-3 py-2 text-center">Total</th>
+                {useCustomCriteria && <th className="px-3 py-2 text-center">Crit&egrave;re 2</th>}
+                {useCustomCriteria && <th className="px-3 py-2 text-center">Total</th>}
                 <th className="px-3 py-2 text-left">Raison</th>
                 <th className="px-3 py-2 text-left">Ton feedback</th>
               </tr>
@@ -509,21 +509,25 @@ export function ScoringPage({ rechercheId, onComplete, onBackToSearch }: Props) 
                         <span className="text-gray-300">-</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      {scored ? (
-                        <EditableScore
-                          value={s2}
-                          max={5}
-                          badge="sub"
-                          onSave={(v) => saveScore(c.id, "score_2", v)}
-                        />
-                      ) : (
-                        <span className="text-gray-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {scored ? <TotalScoreBadge total={total} /> : <span className="text-gray-300">-</span>}
-                    </td>
+                    {useCustomCriteria && (
+                      <td className="px-3 py-2 text-center">
+                        {scored ? (
+                          <EditableScore
+                            value={s2}
+                            max={5}
+                            badge="sub"
+                            onSave={(v) => saveScore(c.id, "score_2", v)}
+                          />
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                    )}
+                    {useCustomCriteria && (
+                      <td className="px-3 py-2 text-center">
+                        {scored ? <TotalScoreBadge total={total} /> : <span className="text-gray-300">-</span>}
+                      </td>
+                    )}
                     <td className="px-3 py-2 text-xs text-gray-500 max-w-sm">
                       {c.score_raison ? (
                         <button

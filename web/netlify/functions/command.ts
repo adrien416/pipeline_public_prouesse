@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
-import { isWriteLikeRequest } from "./_commandSafety.js";
+import { isWriteLikeRequest } from "../lib/commandSafety.js";
 
 export type CommandIntent =
   | {

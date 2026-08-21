@@ -26,11 +26,11 @@ const EXAMPLES = [
 ];
 
 function asContacts(rows: Array<Record<string, string>>): Contact[] {
-  return rows as Contact[];
+  return rows as unknown as Contact[];
 }
 
 function asCampaigns(rows: Array<Record<string, string>>): Campagne[] {
-  return rows as Campagne[];
+  return rows as unknown as Campagne[];
 }
 
 export function CommandPalette({ rechercheId, campaignId }: CommandPaletteProps) {

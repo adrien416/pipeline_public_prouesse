@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWriteLikeRequest } from "../netlify/functions/_commandSafety";
+import { isWriteLikeRequest } from "../netlify/lib/commandSafety";
 
 describe("isWriteLikeRequest", () => {
   it.each([
@@ -7,7 +7,7 @@ describe("isWriteLikeRequest", () => {
     "Pourquoi l’envoi ne démarre pas ?",
     "Pourquoi l’envoi ne se lance pas ?",
     "Pourquoi la campagne est en pause ?",
-    "Pourquoi la campagne est active ?",
+    "Pourquoi la campagne est-elle active ?",
   ])("allows read-only campaign diagnostics: %s", (command: string) => {
     expect(isWriteLikeRequest(command)).toBe(false);
   });
@@ -15,6 +15,7 @@ describe("isWriteLikeRequest", () => {
   it.each([
     "Envoie la campagne",
     "Peux-tu envoyer la campagne ?",
+    "Relance la campagne",
     "Lance l’enrichissement",
     "Confirme l’envoi",
     "Ne lance pas la campagne",

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Layout, type Tab } from "./components/Layout";
+import { CommandPalette } from "./components/CommandPalette";
 import { InitialSetupPage } from "./pages/InitialSetupPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SetupWizardPage } from "./pages/SetupWizardPage";
@@ -121,55 +122,58 @@ function AppContent() {
   }
 
   return (
-    <Layout activeTab={tab} onTabChange={setTab}>
-      {tab === "search" && (
-        <SearchPage
-          onComplete={(id) => {
-            setRechercheId(id);
-            goTo("scoring");
-          }}
-          onLoadRecherche={loadRecherche}
-        />
-      )}
-      {tab === "scoring" && rechercheId && (
-        <ScoringPage
-          key={rechercheId}
-          rechercheId={rechercheId}
-          onComplete={() => goTo("enrich")}
-          onBackToSearch={() => setTab("search")}
-        />
-      )}
-      {tab === "scoring" && !rechercheId && (
-        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
-      )}
-      {tab === "enrich" && rechercheId && (
-        <EnrichPage
-          rechercheId={rechercheId}
-          onComplete={() => goTo("campaign")}
-          onViewCampaign={(cId) => {
-            setCampaignId(cId);
-            goTo("analytics");
-          }}
-        />
-      )}
-      {tab === "enrich" && !rechercheId && (
-        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
-      )}
-      {tab === "campaign" && rechercheId && (
-        <CampaignPage
-          rechercheId={rechercheId}
-          onComplete={(cId) => {
-            setCampaignId(cId);
-            goTo("analytics");
-          }}
-          onNavigateToSearch={(id) => loadRecherche(id, "campaign")}
-        />
-      )}
-      {tab === "campaign" && !rechercheId && (
-        <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
-      )}
-      {tab === "analytics" && <AnalyticsPage campaignId={campaignId || undefined} />}
-    </Layout>
+    <>
+      <Layout activeTab={tab} onTabChange={setTab}>
+        {tab === "search" && (
+          <SearchPage
+            onComplete={(id) => {
+              setRechercheId(id);
+              goTo("scoring");
+            }}
+            onLoadRecherche={loadRecherche}
+          />
+        )}
+        {tab === "scoring" && rechercheId && (
+          <ScoringPage
+            key={rechercheId}
+            rechercheId={rechercheId}
+            onComplete={() => goTo("enrich")}
+            onBackToSearch={() => setTab("search")}
+          />
+        )}
+        {tab === "scoring" && !rechercheId && (
+          <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
+        )}
+        {tab === "enrich" && rechercheId && (
+          <EnrichPage
+            rechercheId={rechercheId}
+            onComplete={() => goTo("campaign")}
+            onViewCampaign={(cId) => {
+              setCampaignId(cId);
+              goTo("analytics");
+            }}
+          />
+        )}
+        {tab === "enrich" && !rechercheId && (
+          <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
+        )}
+        {tab === "campaign" && rechercheId && (
+          <CampaignPage
+            rechercheId={rechercheId}
+            onComplete={(cId) => {
+              setCampaignId(cId);
+              goTo("analytics");
+            }}
+            onNavigateToSearch={(id) => loadRecherche(id, "campaign")}
+          />
+        )}
+        {tab === "campaign" && !rechercheId && (
+          <EmptyState message="Sélectionne une recherche dans l'onglet Recherche" onAction={() => setTab("search")} />
+        )}
+        {tab === "analytics" && <AnalyticsPage campaignId={campaignId || undefined} />}
+      </Layout>
+      <CommandPalette rechercheId={rechercheId} campaignId={campaignId} />
+    </>
   );
 }
 

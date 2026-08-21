@@ -95,4 +95,50 @@ describe("diagnoseCampaign", () => {
     expect(result.blockers).toEqual([]);
     expect(result.warnings.some((line) => line.includes("Aucun blocage évident"))).toBe(true);
   });
+
+  it("flags an active campaign when no contact is queued for sending", () => {
+    const c = campaign();
+    const contacts = [
+      contact({
+        id: "sent",
+        campagne_id: c.id,
+        email_status: "sent",
+        email_sent_at: "2026-08-21T11:00:00Z",
+      }),
+      contact({
+        id: "skipped",
+        campagne_id: c.id,
+        email_status: "skipped_duplicate",
+      }),
+    ];
+
+    const result = diagnoseCampaign([c], contacts, c.id);
+
+    expect(result.blockers).toContain("Aucun contact n’est actuellement en file d’attente pour l’envoi.");
+    expect(result.warnings.some((line) => line.includes("Aucun blocage évident"))).toBe(false);
+  });
+
+  it("flags queued contacts without an exploitable email even if another contact has one", () => {
+    const c = campaign();
+    const contacts = [
+      contact({
+        id: "queued-without-email",
+        campagne_id: c.id,
+        email_status: "queued",
+        email: "   ",
+      }),
+      contact({
+        id: "sent-with-email",
+        campagne_id: c.id,
+        email_status: "sent",
+        email: "sent@example.com",
+        email_sent_at: "2026-08-21T11:00:00Z",
+      }),
+    ];
+
+    const result = diagnoseCampaign([c], contacts, c.id);
+
+    expect(result.blockers).toContain("Aucun contact en file d’attente n’a d’adresse email exploitable.");
+    expect(result.warnings.some((line) => line.includes("Aucun blocage évident"))).toBe(false);
+  });
 });

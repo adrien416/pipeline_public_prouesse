@@ -125,7 +125,7 @@ describe("diagnoseCampaign", () => {
         id: "queued-without-email",
         campagne_id: c.id,
         email_status: "queued",
-        email: "   ",
+        email: "",
       }),
       contact({
         id: "sent-with-email",

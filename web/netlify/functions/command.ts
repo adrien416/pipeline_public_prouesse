@@ -1,5 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { requireAuth, json } from "./_auth.js";
+import { isWriteLikeRequest } from "../lib/commandSafety.js";
 
 export type CommandIntent =
   | {
@@ -19,12 +20,10 @@ export type CommandIntent =
 
 type SelectContactsArgs = Extract<CommandIntent, { tool: "select_contacts" }>["args"];
 
-const WRITE_LIKE = /\b(lance|lancer|démarre|demarre|démarrer|demarrer|envoie|envoyer|confirme|confirmer|supprime|supprimer|modifie|modifier|change|changer|active|activer|désactive|desactive|désactiver|desactiver|pause|mettre en pause)\b/i;
-
 function fallbackInterpret(command: string): CommandIntent {
   const text = command.trim().toLowerCase();
 
-  if (WRITE_LIKE.test(text)) {
+  if (isWriteLikeRequest(text)) {
     return {
       tool: "unsupported",
       args: {},
@@ -112,7 +111,7 @@ export default async (request: Request) => {
   if (!command) return json({ error: "Commande vide" }, 400);
   if (command.length > 500) return json({ error: "Commande trop longue" }, 400);
 
-  if (WRITE_LIKE.test(command)) {
+  if (isWriteLikeRequest(command)) {
     return json({
       intent: {
         tool: "unsupported",

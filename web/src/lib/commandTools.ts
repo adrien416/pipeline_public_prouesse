@@ -95,7 +95,8 @@ export function diagnoseCampaign(
   const campaignContacts = contacts.filter((contact) => contact.campagne_id === campaign.id);
   const withEmail = campaignContacts.filter((contact) => Boolean(contact.email?.trim()));
   const unsent = campaignContacts.filter((contact) => !contact.email_sent_at?.trim());
-  const queued = campaignContacts.filter((contact) => normalize(contact.email_status) === "queued");
+  const queued = campaignContacts.filter((contact) => contact.email_status === "queued");
+  const sendableQueued = queued.filter((contact) => Boolean(contact.email));
 
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -109,6 +110,11 @@ export function diagnoseCampaign(
   if (Number.parseInt(campaign.max_par_jour || "0", 10) <= 0) blockers.push("La limite d’envoi quotidienne est nulle.");
   if (campaignContacts.length === 0) blockers.push("Aucun contact n’est rattaché à cette campagne.");
   if (campaignContacts.length > 0 && withEmail.length === 0) blockers.push("Aucun contact de la campagne n’a d’adresse email.");
+  if (campaignContacts.length > 0 && queued.length === 0) {
+    blockers.push("Aucun contact n’est actuellement en file d’attente pour l’envoi.");
+  } else if (queued.length > 0 && sendableQueued.length === 0 && withEmail.length > 0) {
+    blockers.push("Aucun contact en file d’attente n’a d’adresse email exploitable.");
+  }
 
   const missingEmail = campaignContacts.length - withEmail.length;
   if (missingEmail > 0) warnings.push(`${missingEmail} contact(s) de la campagne n’ont pas d’adresse email.`);
@@ -116,7 +122,7 @@ export function diagnoseCampaign(
 
   facts.push(`Statut : ${campaign.status || "inconnu"}.`);
   facts.push(`${campaignContacts.length} contact(s) rattaché(s), dont ${withEmail.length} avec email.`);
-  facts.push(`${unsent.length} contact(s) sans date d’envoi, ${queued.length} actuellement en file d’attente.`);
+  facts.push(`${unsent.length} contact(s) sans date d’envoi, ${queued.length} en file d’attente, dont ${sendableQueued.length} éligible(s) à l’envoi.`);
   if (campaign.jours_semaine) facts.push(`Jours configurés : ${campaign.jours_semaine}.`);
   if (campaign.heure_debut || campaign.heure_fin) {
     facts.push(`Fenêtre configurée : ${campaign.heure_debut || "?"}–${campaign.heure_fin || "?"}.`);

@@ -3,8 +3,8 @@ import {
   fetchCampaigns,
   fetchContacts,
   getEnrichEstimate,
-  interpretCommand,
 } from "../api/client";
+import { interpretCommand } from "../api/command";
 import { diagnoseCampaign, selectContacts } from "../lib/commandTools";
 import type { Campagne, Contact } from "../types";
 

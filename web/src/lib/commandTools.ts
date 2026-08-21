@@ -96,7 +96,7 @@ export function diagnoseCampaign(
   const withEmail = campaignContacts.filter((contact) => Boolean(contact.email?.trim()));
   const unsent = campaignContacts.filter((contact) => !contact.email_sent_at?.trim());
   const queued = campaignContacts.filter((contact) => contact.email_status === "queued");
-  const sendableQueued = queued.filter((contact) => Boolean(contact.email?.trim()));
+  const sendableQueued = queued.filter((contact) => Boolean(contact.email));
 
   const blockers: string[] = [];
   const warnings: string[] = [];

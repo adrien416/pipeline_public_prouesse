@@ -17,21 +17,34 @@ export type CommandIntent =
   | { tool: "diagnose_campaign"; args: Record<string, never> }
   | { tool: "unsupported"; args: Record<string, never>; reason?: string };
 
+type SelectContactsArgs = Extract<CommandIntent, { tool: "select_contacts" }>["args"];
+
+const WRITE_LIKE = /\b(lance|lancer|démarre|demarre|démarrer|demarrer|envoie|envoyer|confirme|confirmer|supprime|supprimer|modifie|modifier|change|changer|active|activer|désactive|desactive|désactiver|desactiver|pause|mettre en pause)\b/i;
+
 function fallbackInterpret(command: string): CommandIntent {
   const text = command.trim().toLowerCase();
+
+  // Fail closed: the local fallback must never reinterpret a write request as a read-only action.
+  if (WRITE_LIKE.test(text)) {
+    return {
+      tool: "unsupported",
+      args: {},
+      reason: "Les actions d’écriture, d’envoi, de confirmation et de lancement restent hors du périmètre de la palette.",
+    };
+  }
 
   if (/enrich|crédit|credit|coût|cout/.test(text)) {
     return { tool: "preview_enrichment", args: {} };
   }
 
-  if (/campagne|envoi|envoie|brevo|bloqu|part pas|ne part/.test(text)) {
+  if (/campagne|envoi|brevo|bloqu|part pas|ne part/.test(text)) {
     return { tool: "diagnose_campaign", args: {} };
   }
 
   if (/contact|score|email|secteur|sélection|selection/.test(text)) {
     const scoreMatch = text.match(/(?:score\s*)?(?:>=|>|au moins|min(?:imum)?\s*)\s*(\d+(?:[.,]\d+)?)/);
     const limitMatch = text.match(/(?:top|premier(?:s)?|limite|maximum|max)\s*(\d{1,3})/);
-    const sectorMatch = text.match(/secteur\s+([\p{L}\d][\p{L}\d\s&'’-]{1,40})/u);
+    const sectorMatch = text.match(/secteur\s+([\p{L}\d][\p{L}\d\s&'’-]{0,40}?)(?=\s+(?:avec|sans|score|top|max|minimum|au moins)\b|$)/u);
     const queryMatch = text.match(/(?:contenant|avec le mot|entreprise)\s+["“]?([^"”]+)["”]?$/);
 
     return {
@@ -71,7 +84,7 @@ function sanitizeIntent(value: unknown): CommandIntent | null {
   }
   if (tool !== "select_contacts") return null;
 
-  const args: CommandIntent["args"] & Record<string, unknown> = {};
+  const args: SelectContactsArgs = {};
   if (typeof rawArgs.query === "string") args.query = rawArgs.query.slice(0, 120);
   if (typeof rawArgs.min_score === "number" && Number.isFinite(rawArgs.min_score)) args.min_score = rawArgs.min_score;
   if (typeof rawArgs.has_email === "boolean") args.has_email = rawArgs.has_email;
@@ -80,7 +93,7 @@ function sanitizeIntent(value: unknown): CommandIntent | null {
   if (typeof rawArgs.max_results === "number" && Number.isFinite(rawArgs.max_results)) {
     args.max_results = Math.max(1, Math.min(Math.round(rawArgs.max_results), 200));
   }
-  return { tool, args } as CommandIntent;
+  return { tool, args };
 }
 
 export default async (request: Request) => {
@@ -99,6 +112,18 @@ export default async (request: Request) => {
 
   if (!command) return json({ error: "Commande vide" }, 400);
   if (command.length > 500) return json({ error: "Commande trop longue" }, 400);
+
+  // Keep the write gate outside the model so a prompt/classification error cannot authorize it.
+  if (WRITE_LIKE.test(command)) {
+    return json({
+      intent: {
+        tool: "unsupported",
+        args: {},
+        reason: "Les actions d’écriture, d’envoi, de confirmation et de lancement restent hors du périmètre de la palette.",
+      },
+      interpreted_by: "local_write_gate",
+    });
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return json({ intent: fallbackInterpret(command), interpreted_by: "local" });

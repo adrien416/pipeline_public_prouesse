@@ -24,7 +24,6 @@ const WRITE_LIKE = /\b(lance|lancer|démarre|demarre|démarrer|demarrer|envoie|e
 function fallbackInterpret(command: string): CommandIntent {
   const text = command.trim().toLowerCase();
 
-  // Fail closed: the local fallback must never reinterpret a write request as a read-only action.
   if (WRITE_LIKE.test(text)) {
     return {
       tool: "unsupported",
@@ -113,7 +112,6 @@ export default async (request: Request) => {
   if (!command) return json({ error: "Commande vide" }, 400);
   if (command.length > 500) return json({ error: "Commande trop longue" }, 400);
 
-  // Keep the write gate outside the model so a prompt/classification error cannot authorize it.
   if (WRITE_LIKE.test(command)) {
     return json({
       intent: {

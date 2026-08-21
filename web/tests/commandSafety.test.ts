@@ -19,12 +19,19 @@ describe("isWriteLikeRequest", () => {
     "Lance l’enrichissement",
     "Confirme l’envoi",
     "Ne lance pas la campagne",
+    "N’envoie pas cette campagne",
+    "Mettre la campagne en pause",
+    "Rendre la campagne active",
   ])("blocks action requests: %s", (command: string) => {
     expect(isWriteLikeRequest(command)).toBe(true);
   });
 
-  it("keeps fail-closed behavior for a diagnostic followed by an action", () => {
-    expect(isWriteLikeRequest("Pourquoi ma campagne n’envoie pas ? Envoie-la.")).toBe(true);
-    expect(isWriteLikeRequest("Pourquoi la campagne est en pause ? Active-la.")).toBe(true);
+  it.each([
+    "Pourquoi ma campagne n’envoie pas ? Envoie-la.",
+    "Pourquoi la campagne est en pause ? Active-la.",
+    "Pourquoi ma campagne n’envoie pas ? N’envoie pas cette campagne.",
+    "Pourquoi l’envoi ne démarre pas ? Ne lance pas la campagne.",
+  ])("keeps fail-closed behavior for mixed diagnostic/action requests: %s", (command: string) => {
+    expect(isWriteLikeRequest(command)).toBe(true);
   });
 });

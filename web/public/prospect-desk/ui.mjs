@@ -1,81 +1,136 @@
-
-import { PROFILES, POLICY_VERSION, evaluate, channelGate, makeDraft, lintDraft, approvalCurrent, approveDraft, draftFingerprint } from './prospect-core.mjs';
+import { evaluate, channelGate, makeDraft, lintDraft, approveDraft, approvalCurrent, draftFingerprint } from './prospect-core.mjs';
 import { demoProspects, DEMO_NOW } from './fixtures.mjs';
+
+// Intentionally no network or send capability. Shared team approvals belong on
+// an authenticated server, never in this demo or its browser state.
 const $ = id => document.getElementById(id);
-const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const prospects = demoProspects();
-const missions = new Map(prospects.map(p=>[p.id,p.mission]));
-const drafts = new Map(), approvals = new Map(), reviews = [];
-let selectedId='p1', channel='email', filter='all', query='', checkId=0, toastTimer;
-const labels={review:'À relire',research:'À documenter',hold:'Suivi humain',excluded:'Écarté'};
-const current = () => prospects.find(p=>p.id===selectedId);
-const currentMission = () => missions.get(selectedId);
-const key = () => selectedId+'|'+currentMission()+'|'+channel;
-const currentDraft = () => {const k=key(); if(!drafts.has(k)) drafts.set(k,makeDraft(current(),currentMission(),channel,DEMO_NOW)); return drafts.get(k);};
-function toast(message){$('toast').textContent=message;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').textContent='',4800);}
-function dateLabel(value){if(!value)return 'Non renseignée';const date=new Date(value);return Number.isFinite(date.getTime()) ? date.toLocaleDateString('fr-FR',{timeZone:'Europe/Paris',day:'numeric',month:'short',year:'numeric'}) : 'Date invalide';}
-function renderQueue(){
- const matching=prospects.filter(p=>{const s=evaluate(p,missions.get(p.id),DEMO_NOW).state;return (filter==='all'||filter===s)&&[p.company,p.firstName,p.title,p.sector].join(' ').toLocaleLowerCase('fr').includes(query);});
- $('queue').innerHTML=matching.length? matching.map(p=>{const s=evaluate(p,missions.get(p.id),DEMO_NOW).state;return `<button class="lead ${p.id===selectedId?'selected':''}" data-prospect="${escapeHtml(p.id)}" aria-pressed="${p.id===selectedId}"><span class="line1"><strong>${escapeHtml(p.company)}</strong><span class="state ${s}">${labels[s]}</span></span><span class="who">${escapeHtml(p.firstName)} · ${escapeHtml(p.title)}</span><div class="sector">${escapeHtml(p.sector)}</div></button>`;}).join(''):'<div class="empty">Aucun cas dans cette vue. Change le filtre ou la recherche.</div>';
- $('queue').querySelectorAll('[data-prospect]').forEach(b=>b.addEventListener('click',()=>{selectedId=b.dataset.prospect;channel='email';render();}));
- document.querySelectorAll('[data-filter]').forEach(b=>{b.classList.toggle('active',b.dataset.filter===filter);b.setAttribute('aria-pressed',String(b.dataset.filter===filter));});
- const states=prospects.map(p=>evaluate(p,missions.get(p.id),DEMO_NOW).state);
- $('readyCount').textContent=states.filter(s=>s==='review').length;
- $('researchCount').textContent=states.filter(s=>s==='research').length;
- $('approvalCount').textContent=approvals.size;
+const ready = prospects.filter(p => evaluate(p,p.mission,DEMO_NOW).eligible);
+const held = prospects.filter(p => !evaluate(p,p.mission,DEMO_NOW).eligible);
+const drafts = new Map();
+const decisions = new Map();
+const channels = {email:'Email',linkedin:'LinkedIn',whatsapp:'WhatsApp'};
+let currentId = ready[0]?.id || null, channel = 'email', revision = 0, lastAction = null, toastTimer;
+const current = () => ready.find(p => p.id === currentId);
+const key = (id=currentId,c=channel) => `${id}|${c}`;
+function draft(p=current(), c=channel) {
+  const k=key(p.id,c);
+  if (!drafts.has(k)) drafts.set(k,makeDraft(p,p.mission,c,DEMO_NOW));
+  return drafts.get(k);
 }
-function renderContext(){
- const p=current(),m=currentMission(),d=evaluate(p,m,DEMO_NOW),e=d.evidence;
- $('context').innerHTML=`<div class="eyebrow">${escapeHtml(p.sector)} · cas fictif</div><h2>${escapeHtml(p.company)}</h2><p class="who">${escapeHtml(p.firstName)} · ${escapeHtml(p.title)}</p><p class="description">${escapeHtml(p.summary)}</p><label class="mission-label" for="mission">L’objectif de cette relation</label><select id="mission">${Object.entries(PROFILES).map(([id,v])=>`<option value="${id}" ${id===m?'selected':''}>${escapeHtml(v.label)}</option>`).join('')}</select><div class="divider"></div><p class="fact-label ${e?'':'warning'}">${e?'01 / Fait validé dans le scénario':'01 / Fait utilisable manquant'}</p><p class="fact">${e?escapeHtml(e.outreachText):'Pas d’accroche inventée pour remplir une campagne.'}</p><p class="fact-date">${e?'Événement : '+escapeHtml(dateLabel(e.eventAt))+' · source relue':escapeHtml(d.gaps[0]||d.blocks[0]||'Revue nécessaire')}</p><button class="source-btn" id="showEvidence">Voir les pièces et leur statut ↗</button><div class="hypothesis"><div class="eyebrow">02 / Hypothèse, pas un fait</div><p>${e?escapeHtml(PROFILES[m].questions[e.kind]):'Documenter le projet et le rôle avant de choisir l’angle commercial.'}</p></div><div class="divider"></div><div class="eyebrow">03 / Ce qu’on ne sait pas</div><ul class="facts-list">${(p.unknowns.length?p.unknowns:['Aucune nouvelle prise de contact autorisée.']).map(x=>'<li>'+escapeHtml(x)+'</li>').join('')}</ul>${[...d.blocks,...d.gaps].length?'<div class="stop">'+[...d.blocks,...d.gaps].map(escapeHtml).join('<br>')+'</div>':''}<div class="panel-footer">${!p.doNotContact?`<button id="exclude" class="quiet small">${p.excluded?'Annuler l’exclusion locale':'Écarter ce prospect'}</button>`:'<span class="micro">Une opposition n’est jamais levée depuis cet écran.</span>'}</div>`;
- $('mission').addEventListener('change',e=>{missions.set(selectedId,e.target.value);for(const k of [...approvals.keys()])if(k.startsWith(selectedId+'|'))approvals.delete(k);reviews.push({action:'mission_changed',id:selectedId,mission:e.target.value});render();});
- $('showEvidence').addEventListener('click',()=>{
-  $('evidenceContent').innerHTML=d.inspected.length? d.inspected.map(({evidence:e,issues})=>`<div class="dialogrow"><span>Fait proposé (fictif)</span>${escapeHtml(e.outreachText)}</div><div class="dialogrow"><span>Source simulée</span><code>${escapeHtml(e.url)}</code></div><div class="dialogrow"><span>Événement / observation</span>${escapeHtml(dateLabel(e.eventAt))} / ${escapeHtml(dateLabel(e.observedAt))}</div><div class="dialogrow"><span>Contrôles de structure et fraîcheur</span>${issues.length?issues.map(escapeHtml).join('<br>'):'Pièce recevable dans la simulation. Source non consultée par cette page.'}</div>`).join(''):'<p>Aucune pièce dans ce scénario.</p>';
-  $('evidenceDialog').showModal();
- });
- if($('exclude'))$('exclude').addEventListener('click',()=>{if(p.excluded){p.excluded=false;reviews.push({action:'local_exclusion_removed',id:p.id});render();}else{$('excludeReason').value='';$('excludeDialog').showModal();$('excludeReason').focus();}});
+const pending = () => ready.filter(p => !decisions.has(p.id));
+const approved = () => [...decisions.entries()].filter(([,d]) => d.type === 'approved');
+function toast(message) { $('toast').textContent=message; clearTimeout(toastTimer); toastTimer=setTimeout(() => $('toast').textContent='',4000); }
+function updateCounts() {
+  $('approvedCount').textContent=approved().length;
+  $('remaining').textContent=`${pending().length} message${pending().length>1?'s':''} à relire`;
+  $('doneText').textContent=`${approved().length} message${approved().length>1?'s':''} validé${approved().length>1?'s':''}. Rien n’a été envoyé.`;
+  $('resume').hidden=![...decisions.values()].some(d=>d.type==='passed');
 }
-function renderComposer(){
- const p=current(),m=currentMission(),d=currentDraft(),g=channelGate(p,m,channel,DEMO_NOW);
- document.querySelectorAll('[data-channel]').forEach(b=>{b.classList.toggle('active',b.dataset.channel===channel);b.setAttribute('aria-pressed',String(b.dataset.channel===channel));});
- const recipient=channel==='email'?p.email:channel==='linkedin'?'Profil fictif de '+p.firstName:p.phone||'Aucun numéro autorisé';
- $('recipient').innerHTML=`À : <b>${escapeHtml(recipient)}</b>`;
- $('subjectWrap').hidden=channel!=='email';$('subject').value=d.subject;$('subject').disabled=!g.allowed;
- $('message').value=d.body;$('message').disabled=!g.allowed;
- $('message').placeholder=!g.allowed?'La rédaction est suspendue. Les points à résoudre sont indiqués ci-dessous.':'';
- $('shorten').disabled=!g.allowed||channel!=='email';
- $('channelNotice').textContent=g.notice;
- refreshControls();
+function showUndo() {
+  $('undo').replaceChildren();
+  if(!lastAction)return;
+  const text=document.createElement('span');text.textContent=lastAction.label;
+  const button=document.createElement('button');button.textContent='Annuler';button.id='undoButton';
+  button.addEventListener('click',()=>{
+    if(!lastAction)return;
+    const action=lastAction;lastAction=null;
+    if(action.before)decisions.set(action.id,action.before);else decisions.delete(action.id);
+    currentId=action.id;channel=action.channel;revision++;render();
+  });
+  $('undo').append(text,button);
 }
-async function refreshControls(){
- const ticket=++checkId,k=key(),p=current(),m=currentMission(),d=currentDraft();
- const issues=lintDraft(d,p,m,DEMO_NOW);let approved=false;
- if(!globalThis.crypto?.subtle)issues.push('Validation indisponible : ouvrir cette page dans un navigateur sur HTTPS.');
- try{approved=await approvalCurrent(approvals.get(k),d,p,m,DEMO_NOW);}catch{issues.push('Validation indisponible dans ce navigateur.');}
- if(ticket!==checkId||k!==key())return;
- if(!approved)approvals.delete(k);
- $('approvalCount').textContent=approvals.size;
- $('draftBadge').textContent=approved?'Validé ici · non envoyé':issues.length?'À compléter':'Brouillon';
- $('quality').classList.toggle('block',issues.length>0);
- $('quality').innerHTML=issues.length?'<strong>À résoudre avant de valider</strong><ul>'+issues.map(i=>'<li>'+escapeHtml(i)+'</li>').join('')+'</ul>':`<strong>${approved?'Relecture validée dans cet onglet':'Prêt pour la relecture humaine'}</strong>Fait relié à une pièce · angle formulé en question · ${d.body.trim().split(/\s+/).length} mots. Vérifie encore la justesse et le ton.`;
- $('approve').disabled=issues.length>0||approved;$('approve').textContent=approved?'Brouillon validé':'Valider le brouillon';$('copy').disabled=!approved;
+function render() {
+  revision++; updateCounts();showUndo();
+  $('review').hidden=!current();$('done').hidden=!!current();
+  const p=current();if(!p)return;
+  const d=draft(),decision=evaluate(p,p.mission,DEMO_NOW),e=decision.evidence,g=channelGate(p,p.mission,channel,DEMO_NOW);
+  $('company').textContent=p.company;$('who').textContent=`${p.firstName} · ${p.title}`;$('reason').textContent=p.summary;
+  $('channelLabel').textContent=channels[channel];$('subjectWrap').hidden=channel!=='email';
+  $('subject').value=d.subject;$('message').value=d.body;$('subject').disabled=!g.allowed;$('message').disabled=!g.allowed;
+  $('message').placeholder=g.allowed?'':'Ce canal n’est pas disponible pour ce contact.';
+  $('contextDetails').open=false;$('channelDetails').open=false;
+  $('context').innerHTML=`<p><strong>Fait utilisé :</strong> ${esc(e?.outreachText || 'Aucune source utilisable.')}</p>${e?`<p class="source">Source fictive : ${esc(e.url)}<br>Événement du ${esc(e.eventAt.slice(0,10))}.</p>`:''}<p><strong>À vérifier :</strong> ${p.unknowns.map(esc).join(' · ') || 'Aucune nouvelle sollicitation autorisée.'}</p><p>Un projet annoncé ne prouve pas qu’un financement est recherché.</p>`;
+  for(const b of document.querySelectorAll('[data-channel]')) {
+    const gate=channelGate(p,p.mission,b.dataset.channel,DEMO_NOW);
+    b.disabled=!gate.allowed;b.setAttribute('aria-pressed',String(b.dataset.channel===channel));
+    b.title=gate.allowed?'Préparer un brouillon':gate.issues.join(' ; ');
+  }
+  const whatsapp=channelGate(p,p.mission,'whatsapp',DEMO_NOW);
+  $('channelNotice').textContent=(channel==='linkedin'?'LinkedIn : préparation et copie manuelles. Aucun envoi automatique.':channel==='whatsapp'?'WhatsApp : accord fictif enregistré. Brouillon seulement.':'Email proposé par défaut.')+(!whatsapp.allowed?' WhatsApp indisponible : aucun accord utilisable enregistré.':'');
+  resizeEditor();refreshControls();
 }
-function render(){renderQueue();renderContext();renderComposer();}
-document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;renderQueue();}));
-document.querySelectorAll('[data-channel]').forEach(b=>b.addEventListener('click',()=>{channel=b.dataset.channel;renderComposer();}));
-$('search').addEventListener('input',e=>{query=e.target.value.toLocaleLowerCase('fr');renderQueue();});
-for(const field of ['subject','message'])$(field).addEventListener('input',()=>{const d=currentDraft();d[field==='message'?'body':'subject']=$(field).value;approvals.delete(key());refreshControls();});
+function resizeEditor() {
+  const editor=$('message');
+  editor.style.height='auto';
+  editor.style.height=Math.max(220,editor.scrollHeight+4)+'px';
+}
+function refreshControls() {
+  const p=current();if(!p)return;
+  const issues=lintDraft(draft(),p,p.mission,DEMO_NOW);
+  if(!globalThis.crypto?.subtle)issues.push('La validation nécessite un navigateur sur HTTPS ou localhost.');
+  $('errors').replaceChildren(...issues.map(i=>{const line=document.createElement('div');line.textContent=i;return line;}));
+  $('approve').disabled=issues.length>0;
+}
+function next() {currentId=pending()[0]?.id || null;channel='email';render();}
 $('approve').addEventListener('click',async()=>{
- const k=key(),p=structuredClone(current()),m=currentMission(),d=structuredClone(currentDraft());
- $('approve').disabled=true;
- try{const a=await approveDraft(d,p,m,DEMO_NOW,'Relecteur de démonstration');if(k!==key()||await draftFingerprint(d,p,m)!==await draftFingerprint(currentDraft(),current(),m))return;approvals.set(k,a);reviews.push({action:'draft_approved',id:p.id,mission:m,channel:d.channel,hash:a.hash});toast('Brouillon validé localement. Aucun message envoyé.');}
- catch(e){toast(e.message||'Validation impossible.');}finally{refreshControls();}
+  if(!current()||$('approve').disabled)return;
+  const id=currentId,c=channel,r=revision,p=structuredClone(current()),d=structuredClone(draft());
+  $('approve').disabled=true;
+  try {
+    const approval=await approveDraft(d,p,p.mission,DEMO_NOW,'Relecteur de démonstration');
+    if(currentId!==id||channel!==c||revision!==r)return;
+    if(await draftFingerprint(d,p,p.mission)!==await draftFingerprint(draft(),current(),p.mission))return;
+    if(currentId!==id||channel!==c||revision!==r)return;
+    lastAction={id,channel:c,before:decisions.get(id),label:`${p.company} : message validé.`};
+    decisions.set(id,{type:'approved',channel:c,approval});next();
+  }catch(e){toast(e.message||'Validation impossible.');}finally{refreshControls();}
 });
-$('copy').addEventListener('click',async()=>{
- try{const k=key(),p=current(),m=currentMission(),d=currentDraft();if(!await approvalCurrent(approvals.get(k),d,p,m,DEMO_NOW)||k!==key()){toast('Le contexte a changé. Relis le brouillon.');refreshControls();return;}await navigator.clipboard.writeText(d.subject?d.subject+'\n\n'+d.body:d.body);toast('Brouillon fictif copié. Aucun envoi.');}catch{toast('Copie indisponible ici. Sélectionne le texte dans l’éditeur.');}
+$('skip').addEventListener('click',()=>{
+  const p=current();if(!p)return;
+  revision++;lastAction={id:p.id,channel,before:decisions.get(p.id),label:`${p.company} : gardé pour plus tard.`};
+  decisions.set(p.id,{type:'passed',channel});next();
 });
-$('shorten').addEventListener('click',()=>{drafts.set(key(),makeDraft(current(),currentMission(),channel,DEMO_NOW,true));approvals.delete(key());renderComposer();toast('Version raccourcie. Validation précédente annulée.');});
-$('confirmExclude').addEventListener('click',()=>{const reason=$('excludeReason').value.trim();if(!reason){$('excludeReason').focus();return;}current().excluded=true;for(const k of [...approvals.keys()])if(k.startsWith(selectedId+'|'))approvals.delete(k);reviews.push({action:'excluded',id:selectedId,reason});$('excludeDialog').close();render();toast('Prospect écarté dans la démonstration.');});
-$('help').addEventListener('click',()=>$('helpDialog').showModal());
-document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>$(b.dataset.close).close()));
-$('export').addEventListener('click',()=>{const payload={simulation:true,realMessagesSent:0,policyVersion:POLICY_VERSION,date:DEMO_NOW,reviews,drafts:[...drafts.entries()],approvals:[...approvals.entries()]};const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='prouesse-revue-fictive.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Export local de la démonstration. Aucun compte modifié.');});
+for(const field of ['subject','message'])$(field).addEventListener('input',()=>{
+  if(!current())return;draft()[field==='message'?'body':'subject']=$(field).value;
+  decisions.delete(currentId);lastAction=null;revision++;showUndo();updateCounts();resizeEditor();refreshControls();
+});
+for(const button of document.querySelectorAll('[data-channel]'))button.addEventListener('click',()=>{
+  if(button.disabled||!current()||channel===button.dataset.channel)return;
+  channel=button.dataset.channel;decisions.delete(currentId);lastAction=null;render();$('channelDetails').open=true;
+});
+async function renderHistory() {
+  // Even copying rechecks the exact draft, recipient, evidence and permissions.
+  for(const [id,d] of approved()) {
+    const p=ready.find(p=>p.id===id);
+    if(!await approvalCurrent(d.approval,draft(p,d.channel),p,p.mission,DEMO_NOW))decisions.delete(id);
+  }
+  updateCounts();
+  const rows=(type)=>[...decisions.entries()].filter(([,d])=>d.type===type).map(([id,d])=>{
+    const p=ready.find(p=>p.id===id);
+    return `<div class="row"><div><strong>${esc(p.company)}</strong><p>${esc(p.firstName)} · ${esc(channels[d.channel])}</p></div><button class="small" data-open="${esc(id)}">${type==='passed'?'Reprendre':'Relire'}</button></div>`;
+  }).join('');
+  $('history').innerHTML=`<h3>Messages validés (${approved().length})</h3>${rows('approved')||'<p class="empty-history">Aucun pour l’instant.</p>'}${[...decisions.values()].some(d=>d.type==='passed')?'<h3>Pour plus tard</h3>'+rows('passed'):''}`;
+  $('heldSummary').textContent=`${held.length} contacts non proposés`;
+  $('held').innerHTML=held.map(p=>{const d=evaluate(p,p.mission,DEMO_NOW);return `<div class="row"><div><strong>${esc(p.company)}</strong><p>${esc([...d.blocks,...d.gaps][0])}</p></div></div>`;}).join('');
+  $('copyApproved').disabled=!approved().length;
+  for(const b of $('history').querySelectorAll('[data-open]'))b.addEventListener('click',()=>{
+    currentId=b.dataset.open;channel=decisions.get(currentId)?.channel||'email';
+    decisions.delete(currentId);lastAction=null;$('historyDialog').close();render();$('company').setAttribute('tabindex','-1');$('company').focus();
+  });
+}
+async function openHistory() {try{await renderHistory();if(!$('historyDialog').open)$('historyDialog').showModal();}catch{toast('La sélection ne peut pas être vérifiée. Réessaie dans un navigateur sécurisé.');}}
+$('historyButton').addEventListener('click',openHistory);$('showApproved').addEventListener('click',openHistory);
+$('closeHistory').addEventListener('click',()=>$('historyDialog').close());
+$('resume').addEventListener('click',()=>{for(const [id,d] of decisions)if(d.type==='passed')decisions.delete(id);lastAction=null;next();});
+$('copyApproved').addEventListener('click',async()=>{
+  try {
+    await renderHistory();const list=approved();if(!list.length)return;
+    const body=list.map(([id,d])=>{const p=ready.find(p=>p.id===id),text=draft(p,d.channel);return `${p.company} · ${channels[d.channel]}\n${text.subject?text.subject+'\n\n':''}${text.body}`;}).join('\n\n════════════════════\n\n');
+    await navigator.clipboard.writeText(body);toast('Messages fictifs copiés. Aucun envoi.');
+  }catch{toast('Copie indisponible. Ouvre le message avec « Relire » pour sélectionner son texte.');}
+});
 render();
+
+window.addEventListener('resize',()=>{if(current())resizeEditor();});

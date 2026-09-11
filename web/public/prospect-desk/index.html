@@ -2,23 +2,86 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
-<title>Prouesse · Mes prochains contacts</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<script src="./preview-clean.js"></script>
+<title>Prouesse · Une campagne, une validation</title>
 <style>
-:root{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f5f4f3;background:#0b1221;font-size:15px;line-height:1.55;--muted:#adb8ca;--line:#2b354a;--accent:#ed579f}*{box-sizing:border-box}body{margin:0}button,input,textarea{font:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:9px;padding:11px 17px;background:transparent;color:inherit;font-weight:550}button:hover:not(:disabled){border-color:#c7cfdf}button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:21px 5vw;border-bottom:1px solid var(--line)}.brand{font-family:Georgia,serif;font-size:23px;letter-spacing:.05em}.brand span{font:12px Inter,system-ui,sans-serif;letter-spacing:0;color:var(--muted);border-left:1px solid var(--line);padding-left:16px;margin-left:16px}.header-actions{display:flex;align-items:center;gap:18px}.demo{font-size:11px;color:#e7b9d1}.small{font-size:12px;padding:7px 11px}main{max-width:760px;margin:0 auto;padding:36px 24px 32px}h1{font:400 36px/1.15 Georgia,serif;letter-spacing:-.025em;margin:0 0 9px}.intro{font-size:14px;color:var(--muted);margin:0 0 23px}.progress{display:flex;justify-content:space-between;align-items:center;margin:0 0 10px;font-size:12px;color:var(--muted)}.progress strong{color:#f0d0e1;font-weight:500}.card{background:#f8f6f2;color:#212939;border-radius:14px;border:1px solid #f8f6f2;overflow:hidden}.contact{padding:23px 27px 20px;border-bottom:1px solid #dcdddF}.contact h2{font-size:22px;line-height:1.2;margin:0 0 5px;letter-spacing:-.025em}.who{color:#656d7c;font-size:12px;margin:0}.reason{font-size:13px;line-height:1.6;margin:12px 0 0;padding-left:12px;border-left:2px solid var(--accent);color:#424c5c}.form{padding:18px 27px 0}label{display:block;font-size:11px;font-weight:650;color:#5e6675;margin-bottom:5px}.subject{width:100%;padding:7px 0 12px;background:transparent;color:#212939;border:0;border-bottom:1px solid #dbdce1;font-size:14px;font-weight:550;border-radius:0}textarea{display:block;width:100%;height:320px;min-height:220px;resize:vertical;border:0;background:transparent;color:#212939;padding:16px 0 8px;font-size:14px;line-height:1.85}textarea:disabled{opacity:1;min-height:120px;height:180px}.editor-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.options{padding:0 27px}.options details{border-top:1px solid #dcdde2;padding:10px 0;font-size:12px;color:#586172}.options summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:3px 0}.options summary::-webkit-details-marker{display:none}.options summary:after{content:'+';font-size:17px;font-weight:400;color:#7c8494}details[open]>summary:after{content:'−'}.details-body{padding:6px 0 5px;line-height:1.65}.details-body p{margin:8px 0}.details-body strong{color:#323d50;font-weight:550}.source{font-size:10px;word-break:break-all;color:#6f7785}.channels{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0}.channels button{border-color:#c8cdd7;color:#3a4557;font-size:12px;padding:7px 12px}.channels button[aria-pressed=true]{background:#202b40;border-color:#202b40;color:white}.channel-note{font-size:11px;margin:5px 0;color:#626d7d}.errors{font-size:12px;color:#813c3c;background:#f0e1e2;padding:12px;border-radius:7px;margin:9px 0}.errors:empty{display:none}.actions{padding:16px 27px 22px;border-top:1px solid #dedfe3;display:flex;align-items:center;gap:10px}.primary{color:#25132a;background:var(--accent);border-color:var(--accent);font-weight:700}.card .secondary{color:#445068;border-color:#bdc4d0}.actions .primary{flex:1}.micro{font-size:11px;color:var(--muted);margin:10px 0 0;text-align:center}.undo{display:flex;gap:12px;align-items:center;justify-content:center;font-size:12px;color:#e3c6d7;margin-top:17px;min-height:30px}.undo:empty{display:none}.undo button{padding:4px 10px;font-size:11px}.done{border:1px solid var(--line);border-radius:14px;text-align:center;padding:50px 24px;background:#111c2e}.done h2{font:400 30px Georgia,serif;margin:0 0 12px}.done p{color:var(--muted);font-size:14px;margin:0 0 20px}.done button{margin:5px}.footer{font-size:10px;color:#8f9bb1;text-align:center;margin:24px 0 0}dialog{max-width:min(600px,94vw);width:600px;border-radius:13px;border:1px solid var(--line);background:#111b2d;color:#f5f4f3;padding:24px;max-height:85vh}dialog::backdrop{background:#030817bb}dialog h2{font:400 27px Georgia,serif;margin:0 0 19px}dialog h3{font-size:12px;color:var(--muted);font-weight:550;margin:22px 0 10px}.dialog-head{display:flex;justify-content:space-between;align-items:start;gap:14px}.row{padding:13px 0;border-top:1px solid var(--line);display:flex;gap:14px;align-items:center;justify-content:space-between}.row strong{display:block;font-size:14px;font-weight:550}.row p{color:var(--muted);font-size:12px;margin:3px 0 0}.row button{flex-shrink:0}.empty-history{font-size:13px;color:var(--muted)}.not-sent{color:#e7b9d1;font-size:12px;margin:0 0 14px}.dialog-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);max-width:90vw;background:#f2d3e3;color:#1b2334;padding:12px 19px;border-radius:9px;font-size:12px;box-shadow:0 5px 30px #0005;z-index:10}.toast:empty{display:none}[hidden]{display:none!important}@media(max-width:600px){header{padding:15px 17px}.brand{font-size:19px}.brand span{display:none}.header-actions{gap:9px}.demo{font-size:9px}main{padding:25px 16px}h1{font-size:31px}.intro{font-size:13px}.contact{padding:19px 20px 16px}.contact h2{font-size:21px}.form{padding:15px 20px 0}.options{padding:0 20px}.actions{padding:15px 20px 18px;gap:8px}.actions button{font-size:13px;padding:12px}textarea{font-size:14px;height:390px;line-height:1.8}.subject{font-size:13px}.footer{line-height:1.65}.row{align-items:start}.row button{font-size:11px;padding:6px 9px}}@media(prefers-reduced-motion:no-preference){button{transition:background .15s,border-color .15s}}
+html,body{margin:0;min-width:0;background:#0b1221}
+#pp-app{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f3f4f6;font-size:15px;line-height:1.55;--line:#2b364b;--muted:#afbacd;--pink:#ef68ab;min-height:100vh}
+#pp-app *,#pp-app *:before,#pp-app *:after{box-sizing:border-box}
+#pp-app button,#pp-app input,#pp-app textarea{font:inherit}
+#pp-app button{cursor:pointer;border:1px solid var(--line);border-radius:8px;color:inherit;background:transparent;padding:10px 16px;font-weight:550}
+#pp-app button:disabled{opacity:.45;cursor:not-allowed}
+#pp-app button:hover:not(:disabled){border-color:#b7c2d6}
+#pp-app :focus-visible{outline:3px solid var(--pink);outline-offset:4px}
+#pp-app .pp-header{border-bottom:1px solid var(--line);padding:19px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+#pp-app .pp-brand{font-family:Georgia,serif;font-size:23px;letter-spacing:.05em}
+#pp-app .pp-brand span{font:12px system-ui,sans-serif;letter-spacing:0;color:var(--muted);border-left:1px solid var(--line);margin-left:17px;padding-left:17px}
+#pp-app .pp-demo{font-size:11px;color:#edc4da}
+#pp-app .pp-shell{width:calc(100% - 40px);max-width:940px;margin:0 auto;padding:30px 0 18px}
+#pp-app h1{font:400 37px/1.15 Georgia,serif;letter-spacing:-.025em;margin:0 0 10px}
+#pp-app .pp-intro{color:var(--muted);margin:0 0 22px;font-size:14px}
+#pp-app .pp-card{background:#121d30;border:1px solid var(--line);border-radius:12px;padding:22px 25px;margin-bottom:16px}
+#pp-app .pp-card h2{font-size:16px;font-weight:650;margin:0 0 14px}
+#pp-app .pp-brief{display:grid;grid-template-columns:1fr 1.25fr;gap:24px}
+#pp-app .pp-label{color:#c4cede;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:5px}
+#pp-app .pp-brief p{font-size:13px;color:#e5e8ef;margin:0}
+#pp-app .pp-settings{font-size:11px;color:var(--muted);margin:17px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+#pp-app .pp-headline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#pp-app .pp-headline h2{margin-bottom:3px}
+#pp-app .pp-hint{font-size:12px;color:var(--muted);margin:0 0 12px}
+#pp-app .pp-sample{display:grid;grid-template-columns:190px minmax(0,1fr) auto;align-items:center;gap:18px;border-top:1px solid var(--line);padding:14px 0}
+#pp-app .pp-sample strong{display:block;font-size:14px;font-weight:550}
+#pp-app .pp-sample small{font-size:11px;color:var(--muted);display:block}
+#pp-app .pp-sample p{font-size:12px;margin:0;color:#d5dce8}
+#pp-app .pp-small{font-size:12px;padding:7px 11px;white-space:nowrap}
+#pp-app .pp-checks{font-size:12px;color:var(--muted);padding:12px 0 2px}
+#pp-app .pp-checks summary{cursor:pointer;color:#dce3ee}
+#pp-app .pp-exception{border-top:1px solid var(--line);padding:10px 0;font-size:12px}
+#pp-app .pp-exception:first-child{margin-top:10px}
+#pp-app .pp-exception strong{color:#ecdae5;font-weight:550}
+#pp-app .pp-actions{position:sticky;bottom:0;z-index:2;background:#0b1221;box-shadow:0 -8px 16px #0b1221;padding:15px 0 calc(12px + env(safe-area-inset-bottom));display:flex;gap:20px;justify-content:space-between;align-items:center;border-top:1px solid var(--line)}
+#pp-app .pp-actions strong{display:block;font-size:15px}
+#pp-app .pp-actions small{font-size:11px;color:var(--muted);display:block}
+#pp-app .pp-primary{background:var(--pink);border-color:var(--pink);color:#241327;font-weight:700;white-space:nowrap}
+#pp-app .pp-foot{font-size:10px;color:#9ca9bf;margin:12px 0 0;text-align:center}
+#pp-app .pp-success{background:#182c2d;border:1px solid #426963;border-radius:9px;padding:15px 18px;font-size:13px;margin-bottom:16px;color:#d9ebe5}
+#pp-app .pp-success p{margin:5px 0 0;font-size:12px}
+#pp-app .pp-notice{font-size:12px;color:#eed0e1;min-height:18px;margin:6px 0 12px}
+#pp-app dialog{width:680px;max-width:calc(100vw - 30px);max-height:calc(100dvh - 34px);border:1px solid #444d60;border-radius:12px;padding:22px;background:#f8f6f2;color:#222b3b;overflow-y:auto}
+#pp-app dialog::backdrop{background:#030919c4}
+#pp-app .pp-dialog-head{display:flex;justify-content:space-between;align-items:start;gap:18px;margin-bottom:14px}
+#pp-app .pp-dialog-head h2{font-size:20px;line-height:1.2;margin:0}
+#pp-app .pp-dialog-head p{color:#626a79;font-size:12px;margin:5px 0 0}
+#pp-app dialog button{border-color:#b4becd;color:#273449}
+#pp-app dialog label{font-size:11px;color:#626a79;font-weight:600;display:block;margin:12px 0 4px}
+#pp-app dialog input,#pp-app dialog textarea{border:1px solid #c5cbd5;background:white;border-radius:7px;color:#222b3b;width:100%;padding:11px;font-size:13px;line-height:1.65}
+#pp-app dialog textarea{min-height:220px;height:min(42vh,350px);resize:vertical}
+#pp-app .pp-source{font-size:11px;color:#596475;overflow-wrap:anywhere;margin-top:12px}
+#pp-app .pp-dialog-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px}
+#pp-app .pp-form-errors{font-size:12px;color:#8a3030;margin:10px 0}
+#pp-app [hidden]{display:none!important}
+/* This standalone page has no embedded third-party content. Do not loosen its
+   CSP for a feedback widget; hide only Netlify's optional injected wrapper. */
+body[data-pp-demo] [data-netlify-deploy-id][data-netlify-site-id],
+body[data-pp-demo] iframe[src^="https://app.netlify.com/"]{display:none!important}
+@media(max-width:700px){#pp-app .pp-header{padding:16px 18px}#pp-app .pp-brand{font-size:20px}#pp-app .pp-brand span{display:none}#pp-app .pp-demo{font-size:10px}#pp-app .pp-shell{width:calc(100% - 30px);padding-top:24px}#pp-app h1{font-size:31px}#pp-app .pp-intro{font-size:13px}#pp-app .pp-card{padding:18px}#pp-app .pp-brief{grid-template-columns:1fr;gap:15px}#pp-app .pp-sample{grid-template-columns:minmax(0,1fr) auto;gap:9px;padding:13px 0}#pp-app .pp-sample p{grid-column:1;grid-row:2}#pp-app .pp-sample button{grid-column:2;grid-row:1 / span 2}#pp-app .pp-actions{gap:10px;align-items:stretch;flex-direction:column}#pp-app .pp-actions button{width:100%}#pp-app .pp-headline{align-items:start}#pp-app .pp-small{font-size:11px;padding:7px 9px}#pp-app .pp-hint{font-size:11px}#pp-app dialog{padding:18px}#pp-app .pp-dialog-actions button{font-size:12px}}
 </style>
 </head>
-<body>
-<header><div class="brand">PROUESSE<span>Prospection</span></div><div class="header-actions"><span class="demo">Démo · aucun envoi</span><button class="small" id="historyButton">Ma sélection <span id="approvedCount">0</span></button></div></header>
-<main><h1>Tes prochains contacts.</h1><p class="intro">Lis le message, ajuste-le au besoin, puis valide.</p>
-<section id="review"><div class="progress"><span id="remaining"></span><strong id="channelLabel">Email</strong></div>
-<article class="card"><div class="contact"><h2 id="company"></h2><p class="who" id="who"></p><p class="reason" id="reason"></p></div>
-<div class="form"><div id="subjectWrap"><label for="subject">Objet</label><input id="subject" class="subject" autocomplete="off"></div><label for="message" class="editor-label">Modifier le message</label><textarea id="message" spellcheck="false"></textarea><div class="errors" id="errors" aria-live="polite"></div></div>
-<div class="options"><details id="contextDetails"><summary>Pourquoi ce contact ?</summary><div class="details-body" id="context"></div></details>
-<details id="channelDetails"><summary>Autres canaux</summary><div class="channels" role="group" aria-label="Choisir un canal"><button data-channel="email">Email</button><button data-channel="linkedin">LinkedIn</button><button data-channel="whatsapp">WhatsApp</button></div><p class="channel-note" id="channelNotice"></p></details></div>
-<div class="actions"><button id="skip" class="secondary">Passer</button><button id="approve" class="primary">Valider et suivant</button></div></article><p class="micro">Aucun envoi. La vraie signature sera à reprendre dans la version connectée.</p></section>
-<section class="done" id="done" hidden><h2>La sélection est revue.</h2><p id="doneText"></p><button id="showApproved" class="primary">Voir mes messages</button><button id="resume" hidden>Reprendre les contacts passés</button></section>
-<div class="undo" id="undo" role="status"></div><p class="footer">Cas fictifs, non reliés à vos comptes. Les décisions restent dans cet onglet et se réinitialisent au rechargement.</p></main>
-<dialog id="historyDialog"><div class="dialog-head"><h2>Ma sélection</h2><button id="closeHistory" class="small">Fermer</button></div><p class="not-sent">Messages validés ici, jamais envoyés.</p><div id="history"></div><details><summary id="heldSummary"></summary><div id="held"></div></details><div class="dialog-actions"><button id="copyApproved" class="primary small">Copier les messages validés</button></div></dialog>
-<div class="toast" id="toast" role="status"></div><script type="module" src="./ui.mjs"></script>
+<body data-pp-demo>
+<div id="pp-app">
+<header class="pp-header"><div class="pp-brand">PROUESSE<span>Prospection</span></div><span class="pp-demo">Démo · données fictives · aucun envoi</span></header>
+<main class="pp-shell">
+<h1>Une campagne. Une validation.</h1>
+<p class="pp-intro">Vérifie la cible, l’approche et quelques exemples. Tu valides le lot, pas chaque message.</p>
+<div id="batchSuccess" class="pp-success" role="status" hidden></div>
+<section class="pp-card" aria-labelledby="briefTitle"><h2 id="briefTitle">Le cadre de la campagne</h2><div class="pp-brief"><div><span class="pp-label">À qui ?</span><p id="target"></p></div><div><span class="pp-label">Pour leur dire quoi ?</span><p id="angle"></p></div></div><p class="pp-settings">Email · message différent pour chaque entreprise · messages initiaux seulement, sans relance automatique dans ce lot.</p></section>
+<section class="pp-card" aria-labelledby="examplesTitle"><div class="pp-headline"><h2 id="examplesTitle">Quelques exemples, pas une liste de tâches.</h2><button id="moreSamples" class="pp-small">Voir les autres</button></div><p class="pp-hint">La lecture des exemples est facultative. Le bouton du bas valide tous les messages prêts du lot.</p><div id="samples"></div><details class="pp-checks"><summary id="exceptionsSummary"></summary><div id="exceptions"></div></details></section>
+<p id="batchNotice" class="pp-notice" role="status"></p>
+<div class="pp-actions"><div><strong id="batchCount"></strong><small id="batchScope">Accord limité au lot préparé. Les cas douteux restent à l’écart.</small></div><button id="approveBatch" class="pp-primary">Valider le lot</button><button id="reopenBatch" hidden>Annuler la validation</button></div>
+<p class="pp-foot">Prototype non connecté. Votre validation ne déclenche aucun envoi. Les décisions restent dans cet onglet.</p>
+</main>
+<dialog id="messageDialog" aria-labelledby="messageTitle"><div class="pp-dialog-head"><div><h2 id="messageTitle"></h2><p id="messagePerson"></p></div><button id="closeMessage" class="pp-small">Fermer</button></div><label for="messageSubject">Objet</label><input id="messageSubject"><label for="messageBody">Message</label><textarea id="messageBody"></textarea><div class="pp-source" id="messageSource"></div><div id="messageErrors" class="pp-form-errors" aria-live="polite"></div><div class="pp-dialog-actions"><button id="removeMessage">Retirer de ce lot</button><button id="saveMessage">Enregistrer les changements</button></div></dialog>
+</div>
+<script type="module" src="./ui.mjs"></script>
 </body></html>

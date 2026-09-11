@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; img-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<script src="./preview-clean.js"></script>
+<title>Prouesse · Une campagne, une validation</title>
+<style>
+html,body{margin:0;min-width:0;background:#0b1221}
+#pp-app{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f3f4f6;font-size:15px;line-height:1.55;--line:#2b364b;--muted:#afbacd;--pink:#ef68ab;min-height:100vh}
+#pp-app *,#pp-app *:before,#pp-app *:after{box-sizing:border-box}
+#pp-app button,#pp-app input,#pp-app textarea{font:inherit}
+#pp-app button{cursor:pointer;border:1px solid var(--line);border-radius:8px;color:inherit;background:transparent;padding:10px 16px;font-weight:550}
+#pp-app button:disabled{opacity:.45;cursor:not-allowed}
+#pp-app button:hover:not(:disabled){border-color:#b7c2d6}
+#pp-app :focus-visible{outline:3px solid var(--pink);outline-offset:4px}
+#pp-app .pp-header{border-bottom:1px solid var(--line);padding:19px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+#pp-app .pp-brand{font-family:Georgia,serif;font-size:23px;letter-spacing:.05em}
+#pp-app .pp-brand span{font:12px system-ui,sans-serif;letter-spacing:0;color:var(--muted);border-left:1px solid var(--line);margin-left:17px;padding-left:17px}
+#pp-app .pp-demo{font-size:11px;color:#edc4da}
+#pp-app .pp-shell{width:calc(100% - 40px);max-width:940px;margin:0 auto;padding:30px 0 18px}
+#pp-app h1{font:400 37px/1.15 Georgia,serif;letter-spacing:-.025em;margin:0 0 10px}
+#pp-app .pp-intro{color:var(--muted);margin:0 0 22px;font-size:14px}
+#pp-app .pp-card{background:#121d30;border:1px solid var(--line);border-radius:12px;padding:22px 25px;margin-bottom:16px}
+#pp-app .pp-card h2{font-size:16px;font-weight:650;margin:0 0 14px}
+#pp-app .pp-brief{display:grid;grid-template-columns:1fr 1.25fr;gap:24px}
+#pp-app .pp-label{color:#c4cede;font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:5px}
+#pp-app .pp-brief p{font-size:13px;color:#e5e8ef;margin:0}
+#pp-app .pp-settings{font-size:11px;color:var(--muted);margin:17px 0 0;padding-top:14px;border-top:1px solid var(--line)}
+#pp-app .pp-headline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#pp-app .pp-headline h2{margin-bottom:3px}
+#pp-app .pp-hint{font-size:12px;color:var(--muted);margin:0 0 12px}
+#pp-app .pp-sample{display:grid;grid-template-columns:190px minmax(0,1fr) auto;align-items:center;gap:18px;border-top:1px solid var(--line);padding:14px 0}
+#pp-app .pp-sample strong{display:block;font-size:14px;font-weight:550}
+#pp-app .pp-sample small{font-size:11px;color:var(--muted);display:block}
+#pp-app .pp-sample p{font-size:12px;margin:0;color:#d5dce8}
+#pp-app .pp-small{font-size:12px;padding:7px 11px;white-space:nowrap}
+#pp-app .pp-checks{font-size:12px;color:var(--muted);padding:12px 0 2px}
+#pp-app .pp-checks summary{cursor:pointer;color:#dce3ee}
+#pp-app .pp-exception{border-top:1px solid var(--line);padding:10px 0;font-size:12px}
+#pp-app .pp-exception:first-child{margin-top:10px}
+#pp-app .pp-exception strong{color:#ecdae5;font-weight:550}
+#pp-app .pp-actions{position:sticky;bottom:0;z-index:2;background:#0b1221;box-shadow:0 -8px 16px #0b1221;padding:15px 0 calc(12px + env(safe-area-inset-bottom));display:flex;gap:20px;justify-content:space-between;align-items:center;border-top:1px solid var(--line)}
+#pp-app .pp-actions strong{display:block;font-size:15px}
+#pp-app .pp-actions small{font-size:11px;color:var(--muted);display:block}
+#pp-app .pp-primary{background:var(--pink);border-color:var(--pink);color:#241327;font-weight:700;white-space:nowrap}
+#pp-app .pp-foot{font-size:10px;color:#9ca9bf;margin:12px 0 0;text-align:center}
+#pp-app .pp-success{background:#182c2d;border:1px solid #426963;border-radius:9px;padding:15px 18px;font-size:13px;margin-bottom:16px;color:#d9ebe5}
+#pp-app .pp-success p{margin:5px 0 0;font-size:12px}
+#pp-app .pp-notice{font-size:12px;color:#eed0e1;min-height:18px;margin:6px 0 12px}
+#pp-app dialog{width:680px;max-width:calc(100vw - 30px);max-height:calc(100dvh - 34px);border:1px solid #444d60;border-radius:12px;padding:22px;background:#f8f6f2;color:#222b3b;overflow-y:auto}
+#pp-app dialog::backdrop{background:#030919c4}
+#pp-app .pp-dialog-head{display:flex;justify-content:space-between;align-items:start;gap:18px;margin-bottom:14px}
+#pp-app .pp-dialog-head h2{font-size:20px;line-height:1.2;margin:0}
+#pp-app .pp-dialog-head p{color:#626a79;font-size:12px;margin:5px 0 0}
+#pp-app dialog button{border-color:#b4becd;color:#273449}
+#pp-app dialog label{font-size:11px;color:#626a79;font-weight:600;display:block;margin:12px 0 4px}
+#pp-app dialog input,#pp-app dialog textarea{border:1px solid #c5cbd5;background:white;border-radius:7px;color:#222b3b;width:100%;padding:11px;font-size:13px;line-height:1.65}
+#pp-app dialog textarea{min-height:220px;height:min(42vh,350px);resize:vertical}
+#pp-app .pp-source{font-size:11px;color:#596475;overflow-wrap:anywhere;margin-top:12px}
+#pp-app .pp-dialog-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px}
+#pp-app .pp-form-errors{font-size:12px;color:#8a3030;margin:10px 0}
+#pp-app [hidden]{display:none!important}
+/* This standalone page has no embedded third-party content. Do not loosen its
+   CSP for a feedback widget; hide only Netlify's optional injected wrapper. */
+body[data-pp-demo] [data-netlify-deploy-id][data-netlify-site-id],
+body[data-pp-demo] iframe[src^="https://app.netlify.com/"]{display:none!important}
+@media(max-width:700px){#pp-app .pp-header{padding:16px 18px}#pp-app .pp-brand{font-size:20px}#pp-app .pp-brand span{display:none}#pp-app .pp-demo{font-size:10px}#pp-app .pp-shell{width:calc(100% - 30px);padding-top:24px}#pp-app h1{font-size:31px}#pp-app .pp-intro{font-size:13px}#pp-app .pp-card{padding:18px}#pp-app .pp-brief{grid-template-columns:1fr;gap:15px}#pp-app .pp-sample{grid-template-columns:minmax(0,1fr) auto;gap:9px;padding:13px 0}#pp-app .pp-sample p{grid-column:1;grid-row:2}#pp-app .pp-sample button{grid-column:2;grid-row:1 / span 2}#pp-app .pp-actions{gap:10px;align-items:stretch;flex-direction:column}#pp-app .pp-actions button{width:100%}#pp-app .pp-headline{align-items:start}#pp-app .pp-small{font-size:11px;padding:7px 9px}#pp-app .pp-hint{font-size:11px}#pp-app dialog{padding:18px}#pp-app .pp-dialog-actions button{font-size:12px}}
+</style>
+</head>
+<body data-pp-demo>
+<div id="pp-app">
+<header class="pp-header"><div class="pp-brand">PROUESSE<span>Prospection</span></div><span class="pp-demo">Démo · données fictives · aucun envoi</span></header>
+<main class="pp-shell">
+<h1>Une campagne. Une validation.</h1>
+<p class="pp-intro">Vérifie la cible, l’approche et quelques exemples. Tu valides le lot, pas chaque message.</p>
+<div id="batchSuccess" class="pp-success" role="status" hidden></div>
+<section class="pp-card" aria-labelledby="briefTitle"><h2 id="briefTitle">Le cadre de la campagne</h2><div class="pp-brief"><div><span class="pp-label">À qui ?</span><p id="target"></p></div><div><span class="pp-label">Pour leur dire quoi ?</span><p id="angle"></p></div></div><p class="pp-settings">Email · message différent pour chaque entreprise · messages initiaux seulement, sans relance automatique dans ce lot.</p></section>
+<section class="pp-card" aria-labelledby="examplesTitle"><div class="pp-headline"><h2 id="examplesTitle">Quelques exemples, pas une liste de tâches.</h2><button id="moreSamples" class="pp-small">Voir les autres</button></div><p class="pp-hint">La lecture des exemples est facultative. Le bouton du bas valide tous les messages prêts du lot.</p><div id="samples"></div><details class="pp-checks"><summary id="exceptionsSummary"></summary><div id="exceptions"></div></details></section>
+<p id="batchNotice" class="pp-notice" role="status"></p>
+<div class="pp-actions"><div><strong id="batchCount"></strong><small id="batchScope">Accord limité au lot préparé. Les cas douteux restent à l’écart.</small></div><button id="approveBatch" class="pp-primary">Valider le lot</button><button id="reopenBatch" hidden>Annuler la validation</button></div>
+<p class="pp-foot">Prototype non connecté. Votre validation ne déclenche aucun envoi. Les décisions restent dans cet onglet.</p>
+</main>
+<dialog id="messageDialog" aria-labelledby="messageTitle"><div class="pp-dialog-head"><div><h2 id="messageTitle"></h2><p id="messagePerson"></p></div><button id="closeMessage" class="pp-small">Fermer</button></div><label for="messageSubject">Objet</label><input id="messageSubject"><label for="messageBody">Message</label><textarea id="messageBody"></textarea><div class="pp-source" id="messageSource"></div><div id="messageErrors" class="pp-form-errors" aria-live="polite"></div><div class="pp-dialog-actions"><button id="removeMessage">Retirer de ce lot</button><button id="saveMessage">Enregistrer les changements</button></div></dialog>
+</div>
+<script type="module" src="./ui.mjs"></script>
+</body></html>
